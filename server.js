@@ -14,8 +14,11 @@ app.use(express.json());
 // Test endpoint'i
 app.get('/', (req, res) => {
     res.send('Restoran API calisiyor');
-    app.use('/api/products', productRoutes);
 });
+
+// Route kayıtları
+app.use('/api/products', productRoutes);
+app.use('/api/categories', categoriesRoutes);
 
 // Sunucuyu başlat
 async function startServer() {
