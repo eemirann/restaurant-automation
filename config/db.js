@@ -16,10 +16,10 @@ const dbConfig = {
 async function connectDB() {
     try {
         const pool = await sql.connect(dbConfig);
-        console.log('Veritabanina basarili');
+        console.log('Başarılı');
         return pool;
     } catch (err) {
-        console.error('Veritabani basarisiz:', err);
+        console.error('Başarısız:', err);
         throw err;
     }
 }
