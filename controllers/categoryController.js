@@ -29,4 +29,26 @@ async function getCategoriesById(req, res) {
     }
 }
 
-module.exports = { getAllCategories, getCategoriesById };
+async function createCategory(reg, res) {
+    try{
+        const{ Name } = req.body;
+
+        if (!Name) {
+            return res.status(400).json({error: 'Kategori adı zorunludur'});
+        }
+
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('Name', sql.NVarChar, Name)
+            .query('INSERT INTO Categories (Name) OUTPUT INSERTED.* VALUES (@Name)');
+
+            res.status(201).json(result.recordset[0]);
+        }  catch (err) {
+            console.error('Kategori oluşturulurken hata:', err);
+            res.status(500).json({ error: 'Kategori oluşturulamadı'});
+        }  
+    }
+    
+
+
+module.exports = { getAllCategories, getCategoriesById, createCategory };
