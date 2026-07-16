@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const productRoutes = require('./routes/products');
 const categoriesRoutes = require('./routes/categories');
+const orderRoutes = require('./routes/orders');
 const { connectDB } = require('./config/db');
 
 const app = express();
@@ -19,6 +20,7 @@ app.get('/', (req, res) => {
 // Route kayıtları
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoriesRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Sunucuyu başlat
 async function startServer() {
