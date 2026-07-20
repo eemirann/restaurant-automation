@@ -3,6 +3,7 @@ const cors = require('cors');
 const productRoutes = require('./routes/products');
 const categoriesRoutes = require('./routes/categories');
 const orderRoutes = require('./routes/orders');
+const paymentRoutes = require('./routes/payment');
 const { connectDB } = require('./config/db');
 
 const app = express();
@@ -21,6 +22,7 @@ app.get('/', (req, res) => {
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Sunucuyu başlat
 async function startServer() {

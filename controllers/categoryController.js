@@ -16,7 +16,7 @@ async function getCategoriesById(req, res) {
         const pool = await connectDB();
         const result = await pool.request()
             .input('id', sql.Int, req.params.id)
-            .query('SELECT * FROM Categories where Id = @id');
+            .query('SELECT * FROM Categories WHERE CategoryId = @id');
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Kategori bulunamadı'});
@@ -60,9 +60,9 @@ async function updateCategory(req, res) {
 
         const pool = await connectDB();
         const result = await pool.request()
-            .input('Id', sql.Int, id)
+            .input('CategoryId', sql.Int, id)
             .input('Name', sql.NVarChar, Name)
-            .query('UPDATE Categories SET Name = @Name OUTPUT INSERTED.* WHERE Id = @Id');
+            .query('UPDATE Categories SET Name = @Name OUTPUT INSERTED.* WHERE CategoryId = @CategoryId');
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Kategori bulunamadı'});
@@ -82,8 +82,8 @@ async function deleteCategory(req, res) {
 
     const pool = await connectDB();
     const result = await pool.request()
-        .input('Id',sql.Int, id)
-        .query('UPDATE Categories SET IsActive = 0 OUTPUT INSERTED.* WHERE Id = @Id');
+        .input('CategoryId', sql.Int, id)
+        .query('UPDATE Categories SET IsActive = 0 OUTPUT INSERTED.* WHERE CategoryId = @CategoryId');
 
     if (result.recordset.length === 0) {
         return res.status(404).json({ error: 'Kategori bulunamadı'});
@@ -96,10 +96,5 @@ async function deleteCategory(req, res) {
     }
 
 }
-
-
-
-    
-
 
 module.exports = { getAllCategories, getCategoriesById, createCategory, updateCategory, deleteCategory };

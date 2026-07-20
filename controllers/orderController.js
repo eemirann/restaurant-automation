@@ -22,6 +22,7 @@ async function createOrder(req, res) {
     }
 
     const transaction = new sql.Transaction(pool);
+    const lowStockWarnings = [];         //stok yönetimi uyarı
 
     try {
         await transaction.begin();
@@ -37,19 +38,14 @@ async function createOrder(req, res) {
     .input('TotalAmount', sql.Decimal(10, 2), totalAmount)
     .input('Note', sql.NVarChar, Note || null)
     .query(`DECLARE @InsertedOrders TABLE (
-            Id INT, TableId INT, UserId INT, TotalAmount DECIMAL(10,2),
-            Status NVARCHAR(50), Note NVARCHAR(MAX), CreatedAt DATETIME
-        );
-        INSERT INTO Orders (TableId, UserId, TotalAmount, Note)
-        OUTPUT 
-            INSERTED.Id, INSERTED.TableId, INSERTED.UserId, 
+            OrderId INT, TableId INT, UserId INT, TotalAmount DECIMAL(10,2),
+            Status NVARCHAR(50), Note NVARCHAR(MAX), CreatedAt DATETIME);
+            INSERT INTO Orders (TableId, UserId, TotalAmount, Note) OUTPUT INSERTED.OrderId, INSERTED.TableId, INSERTED.UserId, 
             INSERTED.TotalAmount, INSERTED.Status, 
-            INSERTED.Note, INSERTED.CreatedAt
-        INTO @InsertedOrders (Id, TableId, UserId, TotalAmount, Status, Note, CreatedAt)
-        VALUES (@TableId, @UserId, @TotalAmount, @Note);
-        SELECT * FROM @InsertedOrders;`);
+            INSERTED.Note, INSERTED.CreatedAt INTO @InsertedOrders (OrderId, TableId, UserId, TotalAmount, Status, Note, CreatedAt) VALUES (@TableId, @UserId, @TotalAmount, @Note);
+            SELECT * FROM @InsertedOrders;`);
 
-const newOrderId = orderResult.recordset[0].Id;
+    const newOrderId = orderResult.recordset[0].OrderId;
 
         for(const item of Items) {
             await new sql.Request(transaction)
@@ -60,6 +56,24 @@ const newOrderId = orderResult.recordset[0].Id;
                 .input('VariantId', sql.Int, item.VariantId || null)
                 .input('Note', sql.NVarChar, item.Note || null)
                 .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
+
+            const stockResult = await new sql.Request(transaction)
+                .input('ProductId', sql.Int, item.ProductId)
+                .input('Quantity', sql.Int, item.Quantity)
+                .query(`UPDATE Stock SET Quantity = Quantity - @Quantity OUTPUT INSERTED.Quantity, INSERTED.MinStockLevel WHERE ProductId = @ProductId AND IsTracked = 1`);
+
+            if (stockResult.recordset.length > 0) {
+                const newQuantity = stockResult.recordset[0].Quantity;
+                const minLevel = stockResult.recordset[0].MinStockLevel;
+
+                if (newQuantity <= minLevel) {
+                    lowStockWarnings.push({
+                        ProductId: item.ProductId,
+                        RemainingStock: newQuantity,
+                        IsNegative: newQuantity < 0
+                    });
+                }
+            }
         }
 
         await transaction.commit();
@@ -67,7 +81,8 @@ const newOrderId = orderResult.recordset[0].Id;
         res.status(201).json({
             message: 'Sipariş başarıyla oluşturuldu.',
             order: orderResult.recordset[0],
-            totalAmount: totalAmount
+            totalAmount: totalAmount,
+            lowStockWarnings: lowStockWarnings
         });
 
     } catch (err) {
