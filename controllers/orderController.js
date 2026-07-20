@@ -7,25 +7,49 @@ async function createOrder(req, res) {
         return res.status(400).json({ error: 'Masa, kullanıcı ve an az bir ürün zorunludur'});
     }
 
-    const pool = await connectDB();
+    for (const item of Items) {
+        if (typeof item.ProductId !== 'number'|| !Number.isInteger(item.Quantity) || item.Quantity <= 0 || typeof item.UnitPrice !== 'number' || item.UnitPrice <= 0) {
+            return res.status(400).json({ error: 'Her ürün için geçererli değer giriniz'});
+        }
+    }
+
+    let pool;               //consttan lete geçtim try bloğu dışında değişken atıyorum)
+    try {
+        pool = await connectDB();
+    } catch (err) {
+        console.error('Veritabanına bağlanılamadı', err);
+        return res.status(500).json({ error: 'Veritabanı bağlantı hatası'});
+    }
+
     const transaction = new sql.Transaction(pool);
 
     try {
         await transaction.begin();
-                                            //total amount girmiyoruz hesaplıyoruz
-        let totalAmount = 0;
+
+        let totalAmount = 0;             
         Items.forEach(item => {
-            totalAmount += item.Quantity * item.UnitPrice;
+            totalAmount += item.Quantity * item.UnitPrice;             //total amount girmiyoruz hesaplıyoruz
         });
 
         const orderResult = await new sql.Request(transaction)
-            .input('TableId', sql.Int, TableId)
-            .input('UserId', sql.Int, UserId)
-            .input('TotalAmount', sql.Decimal(10,2), totalAmount)
-            .input('Note', sql.NVarChar, Note || null)
-            .query('INSERT INTO Orders (TableId, UserId, TotalAmount, Note)OUTPUT INSERTED.* VALUES (@TableId, @UserId, @TotalAmount, @Note)');
+    .input('TableId', sql.Int, TableId)
+    .input('UserId', sql.Int, UserId)
+    .input('TotalAmount', sql.Decimal(10, 2), totalAmount)
+    .input('Note', sql.NVarChar, Note || null)
+    .query(`DECLARE @InsertedOrders TABLE (
+            Id INT, TableId INT, UserId INT, TotalAmount DECIMAL(10,2),
+            Status NVARCHAR(50), Note NVARCHAR(MAX), CreatedAt DATETIME
+        );
+        INSERT INTO Orders (TableId, UserId, TotalAmount, Note)
+        OUTPUT 
+            INSERTED.Id, INSERTED.TableId, INSERTED.UserId, 
+            INSERTED.TotalAmount, INSERTED.Status, 
+            INSERTED.Note, INSERTED.CreatedAt
+        INTO @InsertedOrders (Id, TableId, UserId, TotalAmount, Status, Note, CreatedAt)
+        VALUES (@TableId, @UserId, @TotalAmount, @Note);
+        SELECT * FROM @InsertedOrders;`);
 
-        const newOrderId = orderResult.recordset[0].Id;
+const newOrderId = orderResult.recordset[0].Id;
 
         for(const item of Items) {
             await new sql.Request(transaction)
@@ -42,17 +66,20 @@ async function createOrder(req, res) {
 
         res.status(201).json({
             message: 'Sipariş başarıyla oluşturuldu.',
-            orderId: newOrderId,
+            order: orderResult.recordset[0],
             totalAmount: totalAmount
         });
 
     } catch (err) {
-
+    try {
         await transaction.rollback();
-        console.error('Sipariş oluşturulurken hata:',err);
-        res.status(500).json ({ error: 'Sipariş oluşturulamadı'})
+    } catch (rollbackErr) {
+        console.error('Rollback sırasında ek hata (muhtemelen zaten abort olmuş):', rollbackErr.message);
     }
-    
+    console.error('Sipariş oluşturulurken asıl hata:', err);
+    res.status(500).json({ error: 'Sipariş oluşturulamadı' });
+}
+
 }
 
 module.exports = { createOrder };
