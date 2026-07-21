@@ -1,16 +1,24 @@
 const express = require('express');
 const router = express.Router();
-const { createPayment, getPaymentsByOrder, deletePayment, refundPayment } = require('../controllers/paymentController');
+const { verifyToken, requireRole } = require('../middleware/authMiddleware');
+const {
+    createPayment,
+    getPaymentsByOrder,
+    getOrderBalance,
+    deletePayment,
+    restorePayment,
+    refundPayment
+} = require('../controllers/paymentController');
 
-// Herkes erişebilir (garson dahil - normal ödeme akışı)
-router.post('/', createPayment);
-router.get('/order/:orderId', getPaymentsByOrder);
+// Giriş yapmış herkes erişebilir (Garson, Kasiyer, Yönetici - normal ödeme akışı)
+// Not: İndirim (DiscountAmount) uygulama kontrolü controller içinde role göre yapılıyor
+router.post('/', verifyToken, createPayment);
+router.get('/order/:orderId', verifyToken, getPaymentsByOrder);
+router.get('/order/:orderId/balance', verifyToken, getOrderBalance);
 
-// SADECE YÖNETİCİ - garson bu iki işlemi yapamayacak
-// TODO: Auth eklendiğinde buraya requireRole('manager') gibi bir middleware takılacak
-// Örnek: router.delete('/:id', requireRole('manager'), deletePayment);
-// Örnek: router.post('/:id/refund', requireRole('manager'), refundPayment);
-router.delete('/:id', deletePayment);
-router.post('/:id/refund', refundPayment);
+// SADECE ADMIN - garson ve kasiyer bu işlemleri yapamaz
+router.delete('/:id', verifyToken, requireRole('Admin'), deletePayment);
+router.patch('/:id/restore', verifyToken, requireRole('Admin'), restorePayment);
+router.post('/:id/refund', verifyToken, requireRole('Admin'), refundPayment);
 
 module.exports = router;
