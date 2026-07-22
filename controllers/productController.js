@@ -108,4 +108,58 @@ async function deleteProduct(req, res) {
     }
 }
 
-module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct };
+// ============================================================
+// ÜRÜNÜ TEKRAR AKTİF ET (SADECE ADMIN)
+// ============================================================
+async function reactivateProduct(req, res) {
+    const { id } = req.params;
+    try {
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('ProductId', sql.Int, id)
+            .query(`UPDATE Products SET IsActive = 1 OUTPUT INSERTED.* WHERE ProductId = @ProductId`);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Ürün bulunamadı' });
+        }
+        return res.status(200).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Ürün aktif edilirken hata:', err);
+        return res.status(500).json({ error: 'Ürün aktif edilemedi' });
+    }
+}
+
+// ============================================================
+// ÜRÜN RESMİ YÜKLE (SADECE ADMIN)
+// ============================================================
+async function uploadProductImage(req, res) {
+    const { id } = req.params;
+
+    if (!req.file) {
+        return res.status(400).json({ error: 'Resim dosyası gerekli' });
+    }
+
+    try {
+        const pool = await connectDB();
+        const imageUrl = `/uploads/products/${req.file.filename}`;
+
+        await pool.request()
+            .input('Id', sql.Int, id)
+            .input('ImageUrl', sql.NVarChar(255), imageUrl)
+            .query('UPDATE Products SET ImageUrl = @ImageUrl WHERE ProductId = @Id');
+
+        const updated = await pool.request()
+            .input('Id', sql.Int, id)
+            .query('SELECT * FROM Products WHERE ProductId = @Id');
+
+        if (updated.recordset.length === 0) {
+            return res.status(404).json({ error: 'Ürün bulunamadı' });
+        }
+        return res.status(200).json(updated.recordset[0]);
+    } catch (err) {
+        console.error('Ürün resmi yüklenirken hata:', err);
+        return res.status(500).json({ error: 'Resim yüklenemedi' });
+    }
+}
+
+module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, reactivateProduct, uploadProductImage };

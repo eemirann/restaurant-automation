@@ -17,6 +17,7 @@ const PORT = process.env.PORT || 3000;
 // Middleware'ler
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static('uploads')); // ürün resimleri buradan servis edilir
 
 // Test endpoint'i
 app.get('/', (req, res) => {

@@ -253,4 +253,228 @@ async function transferTable(req, res) {
     }
 }
 
-module.exports = { getAllTables, transferTable };
+// ============================================================
+// TEK MASAYI DETAYIYLA GETİR (varsa aktif siparişiyle birlikte)
+// Aktif sipariş = Status NOT IN ('Paid','Cancelled','Merged')
+// ============================================================
+async function getTableById(req, res) {
+    const { id } = req.params;
+
+    try {
+        const pool = await connectDB();
+
+        const tableResult = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT TableId, TableNumber, Capacity, Status FROM Tables WHERE TableId = @TableId`);
+
+        if (tableResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Masa bulunamadı' });
+        }
+
+        const orderResult = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT OrderId, UserId, Status, TotalAmount, Note, CreatedAt FROM Orders
+                    WHERE TableId = @TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
+
+        let activeOrder = null;
+        if (orderResult.recordset.length > 0) {
+            const order = orderResult.recordset[0];
+            const detailsResult = await pool.request()
+                .input('OrderId', sql.Int, order.OrderId)
+                .query(`SELECT ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
+
+            activeOrder = { ...order, items: detailsResult.recordset };
+        }
+
+        return res.status(200).json({
+            ...tableResult.recordset[0],
+            activeOrder
+        });
+    } catch (err) {
+        console.error('Masa detayı getirilirken hata:', err);
+        return res.status(500).json({ error: 'Masa detayı getirilemedi' });
+    }
+}
+
+// ============================================================
+// MASA DURUMUNU ELLE GÜNCELLE (Empty / Occupied / Reserved)
+// Aktif bir siparişi olan masanın durumu elle değiştirilemez;
+// bunun için sipariş/transfer akışları (create/cancel/transfer) kullanılır.
+// ============================================================
+async function updateTableStatus(req, res) {
+    const { id } = req.params;
+    const { Status } = req.body;
+
+    const ALLOWED_STATUSES = ['Empty', 'Occupied', 'Reserved'];
+
+    if (!Status || !ALLOWED_STATUSES.includes(Status)) {
+        return res.status(400).json({ error: `Status şunlardan biri olmalı: ${ALLOWED_STATUSES.join(', ')}` });
+    }
+
+    try {
+        const pool = await connectDB();
+
+        const tableResult = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT TableId FROM Tables WHERE TableId = @TableId`);
+
+        if (tableResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Masa bulunamadı' });
+        }
+
+        const activeOrderResult = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT OrderId FROM Orders WHERE TableId = @TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
+
+        if (activeOrderResult.recordset.length > 0) {
+            return res.status(400).json({
+                error: 'Bu masada aktif bir sipariş var, durumu elle değiştirilemez. Siparişi taşıyın/iptal edin/kapatın.'
+            });
+        }
+
+        const result = await pool.request()
+            .input('TableId', sql.Int, id)
+            .input('Status', sql.NVarChar(20), Status)
+            .query(`UPDATE Tables SET Status = @Status WHERE TableId = @TableId`);
+
+        const updated = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT * FROM Tables WHERE TableId = @TableId`);
+
+        return res.status(200).json(updated.recordset[0]);
+    } catch (err) {
+        console.error('Masa durumu güncellenirken hata:', err);
+        return res.status(500).json({ error: 'Masa durumu güncellenemedi' });
+    }
+}
+
+// ============================================================
+// YENİ MASA OLUŞTUR (SADECE ADMIN)
+// ============================================================
+async function createTable(req, res) {
+    const { TableNumber, Capacity } = req.body;
+
+    if (!TableNumber || !Capacity) {
+        return res.status(400).json({ error: 'TableNumber ve Capacity zorunludur' });
+    }
+
+    try {
+        const pool = await connectDB();
+
+        const existing = await pool.request()
+            .input('TableNumber', sql.Int, TableNumber)
+            .query(`SELECT TableId FROM Tables WHERE TableNumber = @TableNumber`);
+
+        if (existing.recordset.length > 0) {
+            return res.status(409).json({ error: `${TableNumber} numaralı masa zaten var` });
+        }
+
+        const result = await pool.request()
+            .input('TableNumber', sql.Int, TableNumber)
+            .input('Capacity', sql.Int, Capacity)
+            .query(`INSERT INTO Tables (TableNumber, Capacity, Status) OUTPUT INSERTED.*
+                    VALUES (@TableNumber, @Capacity, 'Empty')`);
+
+        return res.status(201).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Masa oluşturulurken hata:', err);
+        return res.status(500).json({ error: 'Masa oluşturulamadı' });
+    }
+}
+
+// ============================================================
+// MASA BİLGİLERİNİ DÜZENLE (SADECE ADMIN)
+// Sadece TableNumber / Capacity düzenlenir; Status için updateTableStatus kullanılır.
+// ============================================================
+async function updateTable(req, res) {
+    const { id } = req.params;
+    const { TableNumber, Capacity } = req.body;
+
+    if (!TableNumber && !Capacity) {
+        return res.status(400).json({ error: 'Güncellemek için TableNumber veya Capacity gönderin' });
+    }
+
+    try {
+        const pool = await connectDB();
+
+        const tableResult = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT TableId, TableNumber, Capacity FROM Tables WHERE TableId = @TableId`);
+
+        if (tableResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Masa bulunamadı' });
+        }
+
+        if (TableNumber) {
+            const existing = await pool.request()
+                .input('TableNumber', sql.Int, TableNumber)
+                .input('TableId', sql.Int, id)
+                .query(`SELECT TableId FROM Tables WHERE TableNumber = @TableNumber AND TableId != @TableId`);
+
+            if (existing.recordset.length > 0) {
+                return res.status(409).json({ error: `${TableNumber} numaralı masa zaten var` });
+            }
+        }
+
+        const finalTableNumber = TableNumber || tableResult.recordset[0].TableNumber;
+        const finalCapacity = Capacity || tableResult.recordset[0].Capacity;
+
+        const result = await pool.request()
+            .input('TableId', sql.Int, id)
+            .input('TableNumber', sql.Int, finalTableNumber)
+            .input('Capacity', sql.Int, finalCapacity)
+            .query(`UPDATE Tables SET TableNumber = @TableNumber, Capacity = @Capacity WHERE TableId = @TableId`);
+
+        const updated = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT * FROM Tables WHERE TableId = @TableId`);
+
+        return res.status(200).json(updated.recordset[0]);
+    } catch (err) {
+        console.error('Masa güncellenirken hata:', err);
+        return res.status(500).json({ error: 'Masa güncellenemedi' });
+    }
+}
+
+// ============================================================
+// MASA SİL (SADECE ADMIN)
+// Aktif siparişi varsa engellenir; geçmiş sipariş kaydı (FK) varsa
+// veritabanı hatası yakalanıp anlaşılır mesaj döndürülür.
+// ============================================================
+async function deleteTable(req, res) {
+    const { id } = req.params;
+
+    try {
+        const pool = await connectDB();
+
+        const tableResult = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT TableId FROM Tables WHERE TableId = @TableId`);
+
+        if (tableResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Masa bulunamadı' });
+        }
+
+        const activeOrderResult = await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`SELECT OrderId FROM Orders WHERE TableId = @TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
+
+        if (activeOrderResult.recordset.length > 0) {
+            return res.status(400).json({ error: 'Bu masada aktif bir sipariş var, önce kapatılmadan silinemez.' });
+        }
+
+        await pool.request()
+            .input('TableId', sql.Int, id)
+            .query(`DELETE FROM Tables WHERE TableId = @TableId`);
+
+        return res.status(200).json({ message: 'Masa silindi.' });
+    } catch (err) {
+        if (err.number === 547) { // SQL Server foreign key constraint violation
+            return res.status(409).json({ error: 'Bu masaya ait geçmiş sipariş/transfer kayıtları var, bu yüzden silinemez.' });
+        }
+        console.error('Masa silinirken hata:', err);
+        return res.status(500).json({ error: 'Masa silinemedi' });
+    }
+}
+
+module.exports = { getAllTables, transferTable, getTableById, updateTableStatus, createTable, updateTable, deleteTable };
