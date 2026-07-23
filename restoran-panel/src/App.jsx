@@ -10,6 +10,8 @@ import Tables from './pages/Tables';
 import Payments from './pages/Payments';
 import Products from './pages/Products';
 import Users from './pages/Users';
+import Stock from './pages/Stock';
+import StockMovements from './pages/StockMovements';
 
 function Page({ children }) {
   return (
@@ -44,6 +46,22 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['Admin']}>
                 <Layout><Users /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stock"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><Stock /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stock-movements"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><StockMovements /></Layout>
               </ProtectedRoute>
             }
           />

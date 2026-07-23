@@ -4,7 +4,7 @@ import axios from 'axios';
 const BASE_URL = 'http://localhost:3000/api';
 
 // Ürün resimleri /api olmadan, sunucu kökünden servis ediliyor (örn. /uploads/products/x.jpg)
-const API_ORIGIN = BASE_URL.replace(/\/api$/, '');
+export const API_ORIGIN = BASE_URL.replace(/\/api$/, '');
 export const imageUrl = (path) => (path ? `${API_ORIGIN}${path}` : null);
 
 const client = axios.create({

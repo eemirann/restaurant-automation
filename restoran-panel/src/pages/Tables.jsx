@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import client, { imageUrl } from '../api/client';
+import { getSocket } from '../api/socket';
 import { useAuth } from '../context/AuthContext';
 import PaymentDrawer from '../components/PaymentDrawer';
 
@@ -42,23 +43,74 @@ export default function Tables() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingTable, setEditingTable] = useState(null);
 
-  const fetchTables = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const [quickPaymentTableId, setQuickPaymentTableId] = useState(null);
+  const [quickBillTableId, setQuickBillTableId] = useState(null);
+  const [flashTableId, setFlashTableId] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // silent=true : arka planda otomatik yenilemede kullanılır, yükleniyor/hata state'lerine dokunmaz
+  const fetchTables = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const res = await client.get('/tables', {
         params: filter ? { status: filter } : {},
       });
       setTables(res.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Masalar getirilemedi.');
+      if (!silent) setError(err.response?.data?.error || 'Masalar getirilemedi.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [filter]);
 
   useEffect(() => {
     fetchTables();
+  }, [fetchTables]);
+
+  // Ödeme tamamen tahsil edildiğinde: bildirim göster, kartı kısa süreliğine
+  // yeşile boyayıp normale döndür, masa listesini tazele.
+  // Not: yenileme burada merkezi olarak yapılır (çağıran taraf ayrıca fetchTables
+  // çağırmayı unutsa bile liste güncel kalsın diye).
+  const handlePaymentSuccess = useCallback((tableId) => {
+    setToast({ message: 'Ödeme başarıyla tamamlandı.' });
+    setFlashTableId(tableId);
+    fetchTables();
+    setTimeout(() => setFlashTableId((cur) => (cur === tableId ? null : cur)), 1400);
+  }, [fetchTables]);
+
+  // Gerçek zamanlı senkronizasyon: backend, herhangi bir masa/sipariş/ödeme
+  // değişikliğinden sonra Socket.IO ile 'tables:changed' yayınlıyor — bu sayede
+  // aynı anda başka bir cihazdan (garson/kasiyer) yapılan değişiklik de anlık
+  // yansır, manuel "yenile"ye gerek kalmaz. Soket koparsa diye uzun aralıklı
+  // (30sn) bir yedek yenileme de tutulur.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+
+    const handleChanged = () => fetchTables({ silent: true });
+    socket.on('tables:changed', handleChanged);
+    socket.on('connect', handleChanged); // (yeniden) bağlanınca kaçırılmış olabilecek güncellemeyi telafi et
+
+    return () => {
+      socket.off('tables:changed', handleChanged);
+      socket.off('connect', handleChanged);
+    };
+  }, [fetchTables]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchTables({ silent: true });
+    }, 30000);
+    return () => clearInterval(interval);
   }, [fetchTables]);
 
   useEffect(() => {
@@ -96,7 +148,7 @@ export default function Tables() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={fetchTables}
+            onClick={() => fetchTables()}
             className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
                        border border-sand rounded-sm px-3 py-2 transition-colors"
           >
@@ -158,30 +210,84 @@ export default function Tables() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {tables.map((table) => {
             const cfg = STATUS_CONFIG[table.Status] || STATUS_CONFIG.Empty;
+            const isFlashing = flashTableId === table.TableId;
+            const hasActiveOrder = Boolean(table.ActiveOrderId);
+
             return (
               <div
                 key={table.TableId}
                 onClick={() => setSelectedTableId(table.TableId)}
-                className={`relative rounded-sm border ${cfg.border} ${cfg.bg} px-5 py-6 cursor-pointer
-                            transition-transform hover:-translate-y-0.5 hover:shadow-sm`}
+                className={`relative rounded-sm border px-5 py-5 cursor-pointer
+                            transition-all duration-700 hover:-translate-y-0.5 hover:shadow-sm
+                            ${isFlashing
+                              ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-300'
+                              : `${cfg.border} ${cfg.bg}`}`}
               >
-                <span className={`absolute top-4 right-4 w-2 h-2 rounded-full ${cfg.dot}`} />
-                <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-3">
-                  Masa
-                </p>
+                <div className="flex items-start justify-between mb-2">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-slate">
+                    Masa
+                  </p>
+                  <span className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide
+                                     ${isFlashing ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : `${cfg.border} ${cfg.bg}`}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isFlashing ? 'bg-emerald-500' : cfg.dot}`} />
+                    {isFlashing ? 'Ödendi' : cfg.label}
+                  </span>
+                </div>
+
                 <p className="font-display text-3xl font-semibold text-ink mb-3">
                   {table.TableNumber}
                 </p>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-xs text-slate">
-                    {table.Capacity} kişilik
-                  </span>
-                  <span className="font-mono text-[10px] uppercase tracking-wide text-slate">
-                    {cfg.label}
+
+                <div className="flex items-center gap-4 mb-3 font-mono text-xs text-slate">
+                  {table.Capacity ? (
+                    <span className="flex items-center gap-1" title="Kapasite">
+                      👥 {table.Capacity}
+                    </span>
+                  ) : null}
+                  <span className="flex items-center gap-1" title="Sipariş edilen ürün adedi">
+                    🧾 {table.ItemCount || 0}
                   </span>
                 </div>
+
+                <div className={`rounded-sm px-3 py-2 mb-3 ${isFlashing ? 'bg-emerald-500/10' : 'bg-ink/[0.03]'}`}>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-slate mb-0.5">Güncel Tutar</p>
+                  <p className={`font-mono text-lg font-semibold ${hasActiveOrder ? 'text-ink' : 'text-slate'}`}>
+                    {money(table.CurrentTotal)}
+                  </p>
+                </div>
+
+                {/* Hızlı aksiyonlar — liste her 4sn'de bir sessizce kendiliğinden tazelendiği için ayrı bir "yenile" butonu yok */}
+                <div className="grid grid-cols-3 gap-1.5 mb-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSelectedTableId(table.TableId); }}
+                    className="font-mono text-[10px] uppercase tracking-wide text-ink border border-sand rounded-sm py-1.5
+                               hover:border-ember hover:text-ember transition-colors"
+                    title="Sipariş Ekle"
+                  >
+                    ➕ Ekle
+                  </button>
+                  <button
+                    disabled={!hasActiveOrder}
+                    onClick={(e) => { e.stopPropagation(); if (hasActiveOrder) setQuickPaymentTableId(table.TableId); }}
+                    className="font-mono text-[10px] uppercase tracking-wide text-ink border border-sand rounded-sm py-1.5
+                               hover:border-ember hover:text-ember transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:border-sand disabled:hover:text-ink"
+                    title="Ödeme Al"
+                  >
+                    💳 Öde
+                  </button>
+                  <button
+                    disabled={!hasActiveOrder}
+                    onClick={(e) => { e.stopPropagation(); if (hasActiveOrder) setQuickBillTableId(table.TableId); }}
+                    className="font-mono text-[10px] uppercase tracking-wide text-ink border border-sand rounded-sm py-1.5
+                               hover:border-ember hover:text-ember transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:border-sand disabled:hover:text-ink"
+                    title="Fatura Gör"
+                  >
+                    📄 Fatura
+                  </button>
+                </div>
+
                 {isAdmin && (
-                  <div className="flex gap-2 pt-2 border-t border-sand/60 mt-1">
+                  <div className="flex gap-2 pt-2 border-t border-sand/60 mt-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditingTable(table); }}
                       className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember"
@@ -202,6 +308,34 @@ export default function Tables() {
         </div>
       )}
 
+      {quickPaymentTableId && (
+        <QuickPaymentModal
+          tableId={quickPaymentTableId}
+          productName={productName}
+          onClose={() => setQuickPaymentTableId(null)}
+          onFullyPaid={() => {
+            handlePaymentSuccess(quickPaymentTableId);
+            fetchTables();
+          }}
+        />
+      )}
+
+      {quickBillTableId && (
+        <BillModal
+          tableId={quickBillTableId}
+          productName={productName}
+          onClose={() => setQuickBillTableId(null)}
+        />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[100] bg-ink text-cream font-mono text-sm px-5 py-3 rounded-sm shadow-lg
+                         border border-ink/50 flex items-center gap-2 animate-[toastIn_0.25s_ease-out]">
+          <style>{`@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+          <span className="text-moss">✓</span> {toast.message}
+        </div>
+      )}
+
       {selectedTableId && (
         <TableDetailModal
           tableId={selectedTableId}
@@ -212,6 +346,7 @@ export default function Tables() {
           productName={productName}
           onClose={() => setSelectedTableId(null)}
           onChanged={fetchTables}
+          onPaymentSuccess={handlePaymentSuccess}
         />
       )}
 
@@ -246,7 +381,7 @@ export default function Tables() {
 // ============================================================
 // Masa detay paneli: aktif sipariş, elle durum değiştirme, taşı/birleştir
 // ============================================================
-function TableDetailModal({ tableId, tables, products, categories, userId, productName, onClose, onChanged }) {
+function TableDetailModal({ tableId, tables, products, categories, userId, productName, onClose, onChanged, onPaymentSuccess }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -254,21 +389,35 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
   const [actionMessage, setActionMessage] = useState('');
   const [showTransferForm, setShowTransferForm] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const res = await client.get(`/tables/${tableId}`);
       setDetail(res.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Masa detayı getirilemedi.');
+      if (!silent) setError(err.response?.data?.error || 'Masa detayı getirilemedi.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [tableId]);
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Bu modal açıkken başka bir cihazdan aynı masa/sipariş değiştirilirse
+  // (ör. başka bir garson ürün ekler, kasiyer ödeme alır) anlık yansısın diye.
+  // Bunsuz `detail` sadece bu modaldaki kullanıcının kendi aksiyonlarında tazeleniyordu.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+
+    const handleChanged = () => load({ silent: true });
+    socket.on('tables:changed', handleChanged);
+    return () => socket.off('tables:changed', handleChanged);
   }, [load]);
 
   const markStatus = async (status) => {
@@ -302,24 +451,71 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 
   const cfg = STATUS_CONFIG[detail.Status] || STATUS_CONFIG.Empty;
   const otherTables = tables.filter((t) => t.TableId !== detail.TableId);
+  const canTransfer =
+    detail.activeOrder && !['Paid', 'Cancelled', 'Merged'].includes(detail.activeOrder.Status);
+
+  // Başlıkta, masa numarasının yanında gösterilen kompakt kapasite + durum bilgisi.
+  const headerMeta = (
+    <div className="flex items-center gap-2 font-mono text-xs">
+      <span className="inline-flex items-center gap-1.5 border border-sand rounded-sm px-2.5 py-1 bg-cream/30 text-slate">
+        👥 <span className="text-ink font-semibold">{detail.Capacity ? `${detail.Capacity} kişi` : '—'}</span>
+      </span>
+      <span className={`inline-flex items-center gap-1.5 border rounded-sm px-2.5 py-1 ${cfg.border} ${cfg.bg}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+        <span className="text-ink font-semibold">{cfg.label}</span>
+      </span>
+    </div>
+  );
+
+  // Sağ üstte kare, emojili "Taşı" butonu — sadece taşınabilir aktif sipariş varken.
+  const headerActions = canTransfer ? (
+    <button
+      onClick={() => setShowTransferForm((v) => !v)}
+      title="Siparişi Taşı / Birleştir"
+      className={`w-11 h-11 flex flex-col items-center justify-center rounded-sm border transition-colors ${
+        showTransferForm
+          ? 'border-ember bg-ember/10 text-ember'
+          : 'border-sand text-slate hover:border-ember hover:text-ember'
+      }`}
+    >
+      <span className="text-base leading-none">🔀</span>
+      <span className="text-[8px] uppercase tracking-wide mt-0.5">Taşı</span>
+    </button>
+  ) : null;
 
   return (
-    <ModalShell onClose={onClose} title={`Masa ${detail.TableNumber}`} eyebrow="Masa Detayı" size="xl">
-      <div className="flex flex-wrap gap-x-8 gap-y-2 mb-5 font-mono text-xs text-slate">
-        <span>Kapasite <span className="text-ink font-semibold">{detail.Capacity} kişi</span></span>
-        <span className="flex items-center gap-1.5">
-          Durum
-          <span className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-0.5 ${cfg.border} ${cfg.bg}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-            <span className="text-ink font-semibold">{cfg.label}</span>
-          </span>
-        </span>
-      </div>
-
+    <ModalShell
+      onClose={onClose}
+      title={`Masa ${detail.TableNumber}`}
+      eyebrow="Masa Detayı"
+      size="xl"
+      meta={headerMeta}
+      actions={headerActions}
+    >
       {(actionError || actionMessage) && (
         <p className={`text-sm font-medium border-l-2 pl-3 mb-4 ${actionError ? 'text-ember border-ember' : 'text-moss border-moss'}`}>
           {actionError || actionMessage}
         </p>
+      )}
+
+      {/* Taşı/Birleştir formu — sağ üstteki butondan açılınca en üstte belirir */}
+      {canTransfer && showTransferForm && (
+        <div className="mb-5">
+          <TransferForm
+            fromTableId={detail.TableId}
+            orderId={detail.activeOrder.OrderId}
+            otherTables={otherTables}
+            onCancel={() => setShowTransferForm(false)}
+            onDone={(msg) => {
+              setShowTransferForm(false);
+              setActionMessage(msg);
+              setActionError('');
+              onChanged();
+              onClose();
+            }}
+            onError={(msg) => setActionError(msg)}
+          />
+        </div>
       )}
 
       {detail.activeOrder ? (
@@ -346,40 +542,18 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
                 order={detail.activeOrder}
                 resolveProductName={(productId) => productName(productId)}
                 tableLabel={`Masa ${detail.TableNumber}`}
-                onPaid={async () => {
+                triggerClassName="w-full flex items-center justify-center gap-2 font-mono text-base uppercase tracking-wide
+                                  text-cream bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800
+                                  rounded-sm px-6 py-4 min-h-[3.25rem] transition-colors shadow-sm"
+                triggerLabel={<><span className="text-lg leading-none">💳</span> Ödeme Al</>}
+                onPaid={async (fullyPaid) => {
                   await load();
                   onChanged();
+                  if (fullyPaid) onPaymentSuccess?.(detail.TableId);
                 }}
               />
             </div>
           )}
-
-          <div className="mt-6 pt-5 border-t border-sand">
-          {!showTransferForm ? (
-            <button
-              onClick={() => setShowTransferForm(true)}
-              className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                         hover:bg-ember/90 rounded-sm px-4 py-2.5 transition-colors w-full"
-            >
-              Siparişi Taşı / Birleştir
-            </button>
-          ) : (
-            <TransferForm
-              fromTableId={detail.TableId}
-              orderId={detail.activeOrder.OrderId}
-              otherTables={otherTables}
-              onCancel={() => setShowTransferForm(false)}
-              onDone={(msg) => {
-                setShowTransferForm(false);
-                setActionMessage(msg);
-                setActionError('');
-                onChanged();
-                onClose();
-              }}
-              onError={(msg) => setActionError(msg)}
-            />
-          )}
-          </div>
         </>
       ) : (
         <>
@@ -431,6 +605,44 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [itemActionBusy, setItemActionBusy] = useState(null); // güncellenmekte olan OrderDetailsId
+
+  // Zaten gönderilmiş (mevcut) sipariş kalemini azalt/artır/sil.
+  // Toplam backend'de yeniden hesaplanır; onOrdered çağrısı masa/sipariş verisini tazeler.
+  const changeExistingItemQuantity = async (item, delta) => {
+    setLocalError('');
+    setItemActionBusy(item.OrderDetailsId);
+    try {
+      const newQuantity = item.Quantity + delta;
+      if (newQuantity <= 0) {
+        await client.delete(`/orders/${existingOrderId}/items/${item.OrderDetailsId}`);
+      } else {
+        await client.patch(`/orders/${existingOrderId}/items/${item.OrderDetailsId}`, { Quantity: newQuantity });
+      }
+      await onOrdered?.('Sipariş güncellendi.');
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Sipariş güncellenemedi.';
+      setLocalError(msg);
+      onError?.(msg);
+    } finally {
+      setItemActionBusy(null);
+    }
+  };
+
+  const removeExistingItem = async (item) => {
+    setLocalError('');
+    setItemActionBusy(item.OrderDetailsId);
+    try {
+      await client.delete(`/orders/${existingOrderId}/items/${item.OrderDetailsId}`);
+      await onOrdered?.('Ürün siparişten çıkarıldı.');
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Ürün çıkarılamadı.';
+      setLocalError(msg);
+      onError?.(msg);
+    } finally {
+      setItemActionBusy(null);
+    }
+  };
 
   const activeProducts = products.filter((p) => p.IsActive !== false && p.IsActive !== 0);
 
@@ -681,12 +893,43 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 <div className="border border-sand rounded-sm divide-y divide-sand bg-white/60">
                   {existingOrder.items.map((item, i) => {
                     const product = products.find((p) => p.ProductId === item.ProductId);
+                    const busy = itemActionBusy === item.OrderDetailsId;
                     return (
-                      <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
-                        <span className="text-ink">{product?.Name || `Ürün #${item.ProductId}`}</span>
-                        <span className="font-mono text-xs text-slate">
-                          <span className="text-ink">{item.Quantity}×</span> {money(item.UnitPrice)}
-                        </span>
+                      <div key={item.OrderDetailsId ?? i} className="flex items-center justify-between px-3 py-2 text-sm gap-2">
+                        <span className="text-ink truncate">{product?.Name || `Ürün #${item.ProductId}`}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => changeExistingItemQuantity(item, -1)}
+                            className="w-7 h-7 flex items-center justify-center font-mono text-sm text-slate hover:text-ember
+                                       border border-sand rounded-sm select-none disabled:opacity-30"
+                          >
+                            −
+                          </button>
+                          <span className="font-mono text-xs text-ink w-4 text-center">{item.Quantity}</span>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => changeExistingItemQuantity(item, 1)}
+                            className="w-7 h-7 flex items-center justify-center font-mono text-sm text-cream bg-ember hover:bg-ember/90
+                                       rounded-sm select-none disabled:opacity-40"
+                          >
+                            +
+                          </button>
+                          <span className="font-mono text-xs text-slate w-16 text-right">
+                            {money(item.Quantity * item.UnitPrice)}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => removeExistingItem(item)}
+                            title="Siparişten çıkar"
+                            className="w-7 h-7 flex items-center justify-center font-mono text-xs text-slate hover:text-ember disabled:opacity-30"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -948,13 +1191,13 @@ function TableFormModal({ title, initial, onClose, onSubmit }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!tableNumber || !capacity) {
-      setError('Masa numarası ve kapasite zorunludur.');
+    if (!tableNumber) {
+      setError('Masa numarası zorunludur.');
       return;
     }
     setSubmitting(true);
     try {
-      await onSubmit({ TableNumber: Number(tableNumber), Capacity: Number(capacity) });
+      await onSubmit({ TableNumber: Number(tableNumber), Capacity: capacity ? Number(capacity) : null });
     } catch (err) {
       setError(err.response?.data?.error || 'İşlem başarısız oldu.');
     } finally {
@@ -977,12 +1220,15 @@ function TableFormModal({ title, initial, onClose, onSubmit }) {
           />
         </div>
         <div>
-          <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Kapasite</label>
+          <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+            Kapasite <span className="normal-case text-slate/70">(opsiyonel)</span>
+          </label>
           <input
             type="number"
             min="1"
             value={capacity}
             onChange={(e) => setCapacity(e.target.value)}
+            placeholder="ör. 4"
             className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
                        focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
           />
@@ -1016,9 +1262,133 @@ function TableFormModal({ title, initial, onClose, onSubmit }) {
 }
 
 // ============================================================
-// Ortak modal kabuğu
+// Hızlı ödeme — masa kartındaki 💳 butonu için. Tam ekran/detay modalı
+// açmadan, doğrudan PaymentDrawer'ı (autoOpen/hideTrigger ile) gösterir.
+// Mevcut GET /tables/:id ve /payments API'lerini yeniden kullanır.
 // ============================================================
-function ModalShell({ title, eyebrow, onClose, children, size = 'md' }) {
+function QuickPaymentModal({ tableId, productName, onClose, onFullyPaid }) {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    client
+      .get(`/tables/${tableId}`)
+      .then((res) => { if (active) setDetail(res.data); })
+      .catch((err) => { if (active) setError(err.response?.data?.error || 'Sipariş getirilemedi.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [tableId]);
+
+  if (loading) return null;
+
+  if (error || !detail?.activeOrder) {
+    return (
+      <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
+        <div className="bg-white rounded-sm border border-sand w-full max-w-sm p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <p className="text-ember text-sm font-medium mb-4">
+            {error || 'Bu masada ödeme alınacak aktif bir sipariş yok.'}
+          </p>
+          <button
+            onClick={onClose}
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ink border border-sand rounded-sm px-4 py-2"
+          >
+            Kapat
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <PaymentDrawer
+      order={detail.activeOrder}
+      resolveProductName={productName}
+      tableLabel={`Masa ${detail.TableNumber}`}
+      autoOpen
+      hideTrigger
+      onClose={onClose}
+      onPaid={async (fullyPaid) => {
+        if (fullyPaid) onFullyPaid?.();
+      }}
+    />
+  );
+}
+
+// ============================================================
+// Salt-okunur fatura görünümü — masa kartındaki 📄 butonu için.
+// Yeni bir backend endpoint'i gerekmez, GET /tables/:id yeterli.
+// ============================================================
+function BillModal({ tableId, productName, onClose }) {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    client
+      .get(`/tables/${tableId}`)
+      .then((res) => { if (active) setDetail(res.data); })
+      .catch((err) => { if (active) setError(err.response?.data?.error || 'Fatura getirilemedi.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [tableId]);
+
+  const order = detail?.activeOrder;
+
+  return (
+    <ModalShell onClose={onClose} title={detail ? `Masa ${detail.TableNumber} — Fatura` : 'Fatura'} eyebrow="Fatura">
+      {loading ? (
+        <p className="text-slate font-mono text-sm">Yükleniyor...</p>
+      ) : error ? (
+        <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{error}</p>
+      ) : !order ? (
+        <p className="text-slate font-mono text-sm">Bu masada aktif bir sipariş yok.</p>
+      ) : (
+        <>
+          <div className="border border-sand rounded-sm overflow-hidden mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-cream/60 border-b border-sand text-left font-mono text-[10px] uppercase tracking-wide text-slate">
+                  <th className="px-3 py-2">Ürün</th>
+                  <th className="px-3 py-2 text-center">Adet</th>
+                  <th className="px-3 py-2 text-right">B. Fiyat</th>
+                  <th className="px-3 py-2 text-right">Tutar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(order.items || []).map((item, i) => (
+                  <tr key={i} className="border-b border-sand last:border-b-0">
+                    <td className="px-3 py-2 text-ink">{productName(item.ProductId)}</td>
+                    <td className="px-3 py-2 text-center font-mono text-xs text-ink">{item.Quantity}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs text-slate">{money(item.UnitPrice)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs text-ink font-medium">
+                      {money(item.Quantity * item.UnitPrice)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex justify-between items-center font-mono text-sm">
+            <span className="text-slate uppercase tracking-wide text-xs">Toplam</span>
+            <span className="text-ink font-semibold text-base">{money(order.TotalAmount)}</span>
+          </div>
+        </>
+      )}
+    </ModalShell>
+  );
+}
+
+// ============================================================
+// Ortak modal kabuğu
+//  - meta: başlığın yanında (masa no yanı) gösterilecek bilgiler (kapasite/durum vb.)
+//  - actions: sağ üstte, "Kapat" butonundan önce gösterilecek hızlı aksiyonlar
+// ============================================================
+function ModalShell({ title, eyebrow, meta, actions, onClose, children, size = 'md' }) {
   const widthClass = size === 'xl' ? 'max-w-[90vw]' : size === 'lg' ? 'max-w-3xl' : 'max-w-lg';
   const heightClass = size === 'xl' ? 'max-h-[92vh]' : 'max-h-[88vh]';
   return (
@@ -1027,14 +1397,26 @@ function ModalShell({ title, eyebrow, onClose, children, size = 'md' }) {
         className={`bg-white rounded-sm border border-sand w-full ${widthClass} ${heightClass} overflow-auto shadow-lg`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-sand flex items-start justify-between">
-          <div>
-            {eyebrow && <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">{eyebrow}</p>}
-            <h2 className="font-display text-xl font-semibold text-ink">{title}</h2>
+        <div className="px-6 py-4 border-b border-sand flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 flex-wrap min-w-0">
+            <div className="shrink-0">
+              {eyebrow && <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">{eyebrow}</p>}
+              <h2 className="font-display text-xl font-semibold text-ink leading-tight">{title}</h2>
+            </div>
+            {meta}
           </div>
-          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-ink">
-            Kapat ✕
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {actions}
+            <button
+              onClick={onClose}
+              title="Kapat"
+              className="w-11 h-11 flex flex-col items-center justify-center rounded-sm border border-sand
+                         text-slate hover:border-ember hover:text-ember transition-colors"
+            >
+              <span className="text-base leading-none">✕</span>
+              <span className="text-[8px] uppercase tracking-wide mt-0.5">Kapat</span>
+            </button>
+          </div>
         </div>
         <div className="px-6 py-5">{children}</div>
       </div>

@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/payments', label: 'Ödemeler', roles: null, num: '04' },
   { to: '/products', label: 'Ürünler', roles: ['Admin'], num: '05' },
   { to: '/users', label: 'Kullanıcılar', roles: ['Admin'], num: '06' },
+  { to: '/stock', label: 'Stok', roles: ['Admin'], num: '07' },
 ];
 
 const ROLE_LABELS = {

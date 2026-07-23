@@ -1,4 +1,6 @@
 const { sql, connectDB } = require('../config/db');
+const { emitTablesChanged } = require('../config/socket');
+const { recalculateOrderStatus } = require('./paymentController');
 
 // ============================================================
 // SİPARİŞ OLUŞTUR
@@ -137,6 +139,7 @@ async function createOrder(req, res) {
         }
 
         await transaction.commit();
+        emitTablesChanged();
 
         res.status(201).json({
             message: 'Sipariş başarıyla oluşturuldu.',
@@ -204,7 +207,7 @@ async function getOrderById(req, res) {
 
         const detailsResult = await pool.request()
             .input('OrderId', sql.Int, id)
-            .query(`SELECT ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
+            .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
 
         return res.status(200).json({
             ...orderResult.recordset[0],
@@ -238,14 +241,16 @@ async function cancelOrder(req, res) {
 
         const orderResult = await new sql.Request(transaction)
             .input('OrderId', sql.Int, id)
-            .query(`SELECT Status FROM Orders WHERE OrderId = @OrderId`);
+            .query(`SELECT TableId, Status FROM Orders WHERE OrderId = @OrderId`);
 
         if (orderResult.recordset.length === 0) {
             await transaction.rollback();
             return res.status(404).json({ error: 'Sipariş bulunamadı' });
         }
 
-        if (orderResult.recordset[0].Status === 'Cancelled') {
+        const { TableId, Status } = orderResult.recordset[0];
+
+        if (Status === 'Cancelled') {
             await transaction.rollback();
             return res.status(400).json({ error: 'Bu sipariş zaten iptal edilmiş' });
         }
@@ -265,7 +270,20 @@ async function cancelOrder(req, res) {
             .input('OrderId', sql.Int, id)
             .query(`UPDATE Orders SET Status = 'Cancelled' WHERE OrderId = @OrderId`);
 
+        // İptal edilen bu siparişten başka aktif sipariş kalmadıysa masa boşalır
+        // (Orders trigger'ı sadece 'Paid' geçişinde boşaltıyor, 'Cancelled' için karşılığı yok).
+        const remainingActive = await new sql.Request(transaction)
+            .input('TableId', sql.Int, TableId)
+            .query(`SELECT OrderId FROM Orders WHERE TableId = @TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
+
+        if (remainingActive.recordset.length === 0) {
+            await new sql.Request(transaction)
+                .input('TableId', sql.Int, TableId)
+                .query(`UPDATE Tables SET Status = 'Empty' WHERE TableId = @TableId`);
+        }
+
         await transaction.commit();
+        emitTablesChanged();
 
         return res.status(200).json({ message: 'Sipariş iptal edildi, stok geri eklendi.' });
 
@@ -494,6 +512,7 @@ async function addOrderItems(req, res) {
             .query(`UPDATE Orders SET TotalAmount = @TotalAmount WHERE OrderId = @OrderId`);
 
         await transaction.commit();
+        emitTablesChanged();
 
         const updated = await pool.request()
             .input('OrderId', sql.Int, id)
@@ -517,4 +536,234 @@ async function addOrderItems(req, res) {
     }
 }
 
-module.exports = { createOrder, getAllOrders, getOrderById, cancelOrder, updateOrderStatus, addOrderItems };
+// ============================================================
+// SİPARİŞTEN ÜRÜN KALEMİNİ TAMAMEN ÇIKAR
+// Sadece Pending/Served durumundaki siparişlerde yapılabilir.
+// Düşülen stok geri eklenir, TotalAmount yeniden hesaplanır.
+// ============================================================
+async function removeOrderItem(req, res) {
+    const { id, itemId } = req.params;
+
+    let pool;
+    try {
+        pool = await connectDB();
+    } catch (err) {
+        console.error('Veritabanına bağlanılamadı', err);
+        return res.status(500).json({ error: 'Veritabanı bağlantı hatası' });
+    }
+
+    const transaction = new sql.Transaction(pool);
+
+    try {
+        await transaction.begin();
+
+        const orderResult = await new sql.Request(transaction)
+            .input('OrderId', sql.Int, id)
+            .query(`SELECT OrderId, Status, TotalAmount FROM Orders WHERE OrderId = @OrderId`);
+
+        if (orderResult.recordset.length === 0) {
+            await transaction.rollback();
+            return res.status(404).json({ error: 'Sipariş bulunamadı' });
+        }
+
+        const order = orderResult.recordset[0];
+        if (['Paid', 'Cancelled', 'Merged'].includes(order.Status)) {
+            await transaction.rollback();
+            return res.status(400).json({ error: `Bu sipariş '${order.Status}' durumunda, ürün çıkarılamaz.` });
+        }
+
+        const itemResult = await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .input('OrderId', sql.Int, id)
+            .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice FROM OrderDetails
+                    WHERE OrderDetailsId = @OrderDetailsId AND OrderId = @OrderId`);
+
+        if (itemResult.recordset.length === 0) {
+            await transaction.rollback();
+            return res.status(404).json({ error: 'Sipariş kalemi bulunamadı' });
+        }
+
+        const item = itemResult.recordset[0];
+
+        // Bu kalemden kalem-bazlı (ürün ürün) ödemeyle zaten para tahsil edilmişse
+        // silinemez — hem PaymentItems'daki FK buna zaten izin vermez, hem de
+        // tahsil edilmiş parayı sahipsiz bırakmamak için iş kuralı olarak engellenir.
+        const paidResult = await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .query(`
+                SELECT ISNULL(SUM(pi.Quantity), 0) AS PaidQuantity
+                FROM PaymentItems pi
+                JOIN Payments p ON p.PaymentsId = pi.PaymentsId
+                WHERE pi.OrderDetailsId = @OrderDetailsId AND p.IsDeleted = 0 AND p.RefundAmount < p.Amount
+            `);
+
+        if (paidResult.recordset[0].PaidQuantity > 0) {
+            await transaction.rollback();
+            return res.status(400).json({ error: `Bu üründen ${paidResult.recordset[0].PaidQuantity} adet zaten ödendi, silinemez. Önce iade edin.` });
+        }
+
+        await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .query(`DELETE FROM OrderDetails WHERE OrderDetailsId = @OrderDetailsId`);
+
+        await new sql.Request(transaction)
+            .input('ProductId', sql.Int, item.ProductId)
+            .input('Quantity', sql.Int, item.Quantity)
+            .query(`UPDATE Stock SET Quantity = Quantity + @Quantity WHERE ProductId = @ProductId AND IsTracked = 1`);
+
+        const newTotal = Math.max(Number(order.TotalAmount) - Number(item.UnitPrice) * item.Quantity, 0);
+
+        await new sql.Request(transaction)
+            .input('OrderId', sql.Int, id)
+            .input('TotalAmount', sql.Decimal(10, 2), newTotal)
+            .query(`UPDATE Orders SET TotalAmount = @TotalAmount WHERE OrderId = @OrderId`);
+
+        // Toplam düştüğü için daha önce yapılmış kısmi ödeme artık siparişi tam
+        // karşılıyor olabilir — bu durumda Status='Paid' + masa boşaltma tetiklenir.
+        await recalculateOrderStatus(transaction, id);
+
+        await transaction.commit();
+        emitTablesChanged();
+
+        const updated = await pool.request()
+            .input('OrderId', sql.Int, id)
+            .query(`SELECT * FROM Orders WHERE OrderId = @OrderId`);
+
+        return res.status(200).json({ message: 'Ürün siparişten çıkarıldı.', order: updated.recordset[0] });
+
+    } catch (err) {
+        try {
+            await transaction.rollback();
+        } catch (rollbackErr) {
+            console.error('Rollback sırasında ek hata:', rollbackErr.message);
+        }
+        console.error('Sipariş kalemi çıkarılırken hata:', err);
+        return res.status(500).json({ error: 'Ürün çıkarılamadı' });
+    }
+}
+
+// ============================================================
+// SİPARİŞTEKİ BİR ÜRÜN KALEMİNİN ADEDİNİ GÜNCELLE
+// Body: { Quantity } (>= 1 tam sayı olmalı; 0/negatif için DELETE kullanılır)
+// Stok farkı kadar düşülür/geri eklenir, TotalAmount yeniden hesaplanır.
+// ============================================================
+async function updateOrderItemQuantity(req, res) {
+    const { id, itemId } = req.params;
+    const { Quantity } = req.body;
+
+    if (!Number.isInteger(Quantity) || Quantity < 1) {
+        return res.status(400).json({ error: 'Quantity 1 veya daha büyük bir tam sayı olmalıdır. Kaldırmak için DELETE kullanın.' });
+    }
+
+    let pool;
+    try {
+        pool = await connectDB();
+    } catch (err) {
+        console.error('Veritabanına bağlanılamadı', err);
+        return res.status(500).json({ error: 'Veritabanı bağlantı hatası' });
+    }
+
+    const transaction = new sql.Transaction(pool);
+
+    try {
+        await transaction.begin();
+
+        const orderResult = await new sql.Request(transaction)
+            .input('OrderId', sql.Int, id)
+            .query(`SELECT OrderId, Status, TotalAmount FROM Orders WHERE OrderId = @OrderId`);
+
+        if (orderResult.recordset.length === 0) {
+            await transaction.rollback();
+            return res.status(404).json({ error: 'Sipariş bulunamadı' });
+        }
+
+        const order = orderResult.recordset[0];
+        if (['Paid', 'Cancelled', 'Merged'].includes(order.Status)) {
+            await transaction.rollback();
+            return res.status(400).json({ error: `Bu sipariş '${order.Status}' durumunda, adet güncellenemez.` });
+        }
+
+        const itemResult = await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .input('OrderId', sql.Int, id)
+            .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice FROM OrderDetails
+                    WHERE OrderDetailsId = @OrderDetailsId AND OrderId = @OrderId`);
+
+        if (itemResult.recordset.length === 0) {
+            await transaction.rollback();
+            return res.status(404).json({ error: 'Sipariş kalemi bulunamadı' });
+        }
+
+        const item = itemResult.recordset[0];
+        const diff = Quantity - item.Quantity;
+
+        // Yeni adet, kalem-bazlı ödemeyle zaten tahsil edilmiş adedin altına düşemez
+        // (aksi halde RemainingQuantity negatif olur, kalan adet backend'de tutarsızlaşır).
+        const paidResult = await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .query(`
+                SELECT ISNULL(SUM(pi.Quantity), 0) AS PaidQuantity
+                FROM PaymentItems pi
+                JOIN Payments p ON p.PaymentsId = pi.PaymentsId
+                WHERE pi.OrderDetailsId = @OrderDetailsId AND p.IsDeleted = 0 AND p.RefundAmount < p.Amount
+            `);
+
+        const paidQuantity = paidResult.recordset[0].PaidQuantity;
+        if (Quantity < paidQuantity) {
+            await transaction.rollback();
+            return res.status(400).json({ error: `Bu üründen ${paidQuantity} adet zaten ödendi, adet bunun altına düşürülemez.` });
+        }
+
+        if (diff !== 0) {
+            await new sql.Request(transaction)
+                .input('ProductId', sql.Int, item.ProductId)
+                .input('Diff', sql.Int, diff)
+                .query(`UPDATE Stock SET Quantity = Quantity - @Diff WHERE ProductId = @ProductId AND IsTracked = 1`);
+        }
+
+        await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .input('Quantity', sql.Int, Quantity)
+            .query(`UPDATE OrderDetails SET Quantity = @Quantity WHERE OrderDetailsId = @OrderDetailsId`);
+
+        const newTotal = Math.max(Number(order.TotalAmount) + Number(item.UnitPrice) * diff, 0);
+
+        await new sql.Request(transaction)
+            .input('OrderId', sql.Int, id)
+            .input('TotalAmount', sql.Decimal(10, 2), newTotal)
+            .query(`UPDATE Orders SET TotalAmount = @TotalAmount WHERE OrderId = @OrderId`);
+
+        // Adet azaltıldıysa (diff < 0) toplam düşer ve daha önceki kısmi ödeme
+        // artık siparişi tam karşılıyor olabilir — bu yüzden her durumda kontrol edilir.
+        await recalculateOrderStatus(transaction, id);
+
+        await transaction.commit();
+        emitTablesChanged();
+
+        const updated = await pool.request()
+            .input('OrderId', sql.Int, id)
+            .query(`SELECT * FROM Orders WHERE OrderId = @OrderId`);
+
+        return res.status(200).json({ message: 'Adet güncellendi.', order: updated.recordset[0] });
+
+    } catch (err) {
+        try {
+            await transaction.rollback();
+        } catch (rollbackErr) {
+            console.error('Rollback sırasında ek hata:', rollbackErr.message);
+        }
+        console.error('Sipariş kalemi adedi güncellenirken hata:', err);
+        return res.status(500).json({ error: 'Adet güncellenemedi' });
+    }
+}
+
+module.exports = {
+    createOrder,
+    getAllOrders,
+    getOrderById,
+    cancelOrder,
+    updateOrderStatus,
+    addOrderItems,
+    removeOrderItem,
+    updateOrderItemQuantity
+};
