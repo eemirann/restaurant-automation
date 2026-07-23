@@ -1,4 +1,5 @@
 const { sql, connectDB } = require('../config/db');
+const { emitTablesChanged } = require('../config/socket');
 
 // ============================================================
 // YARDIMCI FONKSİYON
@@ -21,13 +22,13 @@ const recalculateOrderStatus = async (transaction, orderId) => {
 
     const orderResult = await new sql.Request(transaction)
         .input('OrderId', sql.Int, orderId)
-        .query(`SELECT TotalAmount, Status FROM Orders WHERE OrderId = @OrderId`);
+        .query(`SELECT TableId, TotalAmount, Status FROM Orders WHERE OrderId = @OrderId`);
 
     if (orderResult.recordset.length === 0) {
         throw new Error('Sipariş bulunamadı.');
     }
 
-    const { TotalAmount, Status } = orderResult.recordset[0];
+    const { TableId, TotalAmount, Status } = orderResult.recordset[0];
 
     // İndirim düşüldükten sonra gerçekte ödenmesi gereken tutar
     const amountDue = TotalAmount - totalDiscount;
@@ -36,32 +37,92 @@ const recalculateOrderStatus = async (transaction, orderId) => {
         await new sql.Request(transaction)
             .input('OrderId', sql.Int, orderId)
             .query(`UPDATE Orders SET Status = 'Paid' WHERE OrderId = @OrderId`);
+
+        // Sipariş tamamen ödendi -> masa otomatik olarak boşalır
+        await new sql.Request(transaction)
+            .input('TableId', sql.Int, TableId)
+            .query(`UPDATE Tables SET Status = 'Empty' WHERE TableId = @TableId`);
     } else if (netPaid < amountDue && Status === 'Paid') {
         // Ödeme silindi veya iade edildi, toplam artık yetersiz -> geri çek
         await new sql.Request(transaction)
             .input('OrderId', sql.Int, orderId)
             .query(`UPDATE Orders SET Status = 'Served' WHERE OrderId = @OrderId`);
+
+        // Masa yanlışlıkla boş görünmesin diye tekrar dolu işaretlenir
+        await new sql.Request(transaction)
+            .input('TableId', sql.Int, TableId)
+            .query(`UPDATE Tables SET Status = 'Occupied' WHERE TableId = @TableId AND Status = 'Empty'`);
     }
 
     return { netPaid, totalDiscount, amountDue, TotalAmount };
 };
 
 // ============================================================
+// YARDIMCI FONKSİYON
+// Siparişteki her kalem için ödenmiş/kalan adedi döner.
+// "Ödenmiş adet" sadece PaymentItems'a kaydedilmiş (yani kalem seçilerek
+// yapılmış) ödemelerden hesaplanır — düz tutarla (lump-sum) yapılan bir
+// ödeme hangi ürüne ait olduğunu belirtmediği için kalem bazında adet
+// düşürmez (bkz. createPayment). Tamamen iade edilmiş (RefundAmount >=
+// Amount) veya silinmiş ödemeler sayılmaz; kısmi iadeler basitlik için
+// kalem tahsisini geri açmaz (iade akışı hangi ürünün iade edildiğini
+// belirtmiyor).
+// ============================================================
+const getItemRemaining = async (pool, transaction, orderId) => {
+    const request = transaction ? new sql.Request(transaction) : pool.request();
+    const result = await request
+        .input('OrderId', sql.Int, orderId)
+        .query(`
+            SELECT
+                od.OrderDetailsId, od.ProductId, od.Quantity, od.UnitPrice,
+                ISNULL(paid.PaidQuantity, 0) AS PaidQuantity,
+                od.Quantity - ISNULL(paid.PaidQuantity, 0) AS RemainingQuantity
+            FROM OrderDetails od
+            LEFT JOIN (
+                SELECT pi.OrderDetailsId, SUM(pi.Quantity) AS PaidQuantity
+                FROM PaymentItems pi
+                JOIN Payments p ON p.PaymentsId = pi.PaymentsId
+                WHERE p.IsDeleted = 0 AND p.RefundAmount < p.Amount
+                GROUP BY pi.OrderDetailsId
+            ) paid ON paid.OrderDetailsId = od.OrderDetailsId
+            WHERE od.OrderId = @OrderId
+        `);
+    return result.recordset;
+};
+
+// ============================================================
 // 1. YENİ ÖDEME EKLE (garson/kasiyer erişebilir)
 // GÜVENLİK: Amount/TipAmount/DiscountAmount negatif olamaz.
 // GÜVENLİK: DiscountAmount > 0 ise sadece Cashier/Admin uygulayabilir.
+// GÜVENLİK: Items gönderilirse Amount client'tan asla kabul edilmez;
+// gerçek tutar DB'deki UnitPrice ve kalan adetlerden yeniden hesaplanır
+// (createOrder'daki "fiyat sunucuda hesaplanır" ilkesiyle aynı).
+//
+// Body: { OrderId, PaymentMethod, TipAmount?, DiscountAmount?, InvoiceNumber?
+//         Amount }                                  -- düz tutar (Items yoksa zorunlu)
+//         Items?: [{ OrderDetailsId, Quantity }]     -- kalem bazlı kısmi ödeme
 // ============================================================
 const createPayment = async (req, res) => {
-    const { OrderId, Amount, TipAmount, DiscountAmount, PaymentMethod, InvoiceNumber } = req.body;
+    const { OrderId, Amount, Items, TipAmount, DiscountAmount, PaymentMethod, InvoiceNumber } = req.body;
     const CreatedBy = req.user?.userId || null; // auth token'dan geliyor
     const userRole = req.user?.role;
 
-    if (!OrderId || !Amount || !PaymentMethod) {
-        return res.status(400).json({ message: 'OrderId, Amount ve PaymentMethod zorunludur.' });
+    if (!OrderId || !PaymentMethod) {
+        return res.status(400).json({ message: 'OrderId ve PaymentMethod zorunludur.' });
     }
 
-    if (typeof Amount !== 'number' || Amount <= 0) {
-        return res.status(400).json({ message: 'Amount pozitif bir sayı olmalıdır.' });
+    const hasItems = Array.isArray(Items) && Items.length > 0;
+
+    if (!hasItems && (typeof Amount !== 'number' || Amount <= 0)) {
+        return res.status(400).json({ message: 'Amount pozitif bir sayı olmalıdır (veya Items ile kalem bazlı ödeme belirtin).' });
+    }
+
+    if (hasItems) {
+        for (const item of Items) {
+            if (typeof item.OrderDetailsId !== 'number' || !Number.isInteger(item.Quantity) || item.Quantity <= 0) {
+                return res.status(400).json({ message: 'Her Items girdisi için geçerli OrderDetailsId ve pozitif tam sayı Quantity gerekir.' });
+            }
+        }
     }
 
     const tip = TipAmount || 0;
@@ -90,11 +151,33 @@ const createPayment = async (req, res) => {
         await transaction.begin();
 
         try {
-            const request = new sql.Request(transaction);
+            let amountToCharge = Amount;
 
-            await request
+            if (hasItems) {
+                const remainingRows = await getItemRemaining(pool, transaction, OrderId);
+                const remainingByItem = new Map(remainingRows.map((r) => [r.OrderDetailsId, r]));
+
+                let computedAmount = 0;
+                for (const item of Items) {
+                    const row = remainingByItem.get(item.OrderDetailsId);
+                    if (!row) {
+                        throw new Error(`Sipariş kalemi bu siparişe ait değil veya bulunamadı (OrderDetailsId: ${item.OrderDetailsId})`);
+                    }
+                    if (item.Quantity > row.RemainingQuantity) {
+                        throw new Error(`İstenen adet (${item.Quantity}), kalan ödenmemiş adedi (${row.RemainingQuantity}) aşıyor (OrderDetailsId: ${item.OrderDetailsId}).`);
+                    }
+                    computedAmount += item.Quantity * Number(row.UnitPrice);
+                }
+                amountToCharge = computedAmount;
+            }
+
+            if (!(amountToCharge > 0)) {
+                throw new Error('Ödeme tutarı sıfırdan büyük olmalıdır.');
+            }
+
+            const insertResult = await new sql.Request(transaction)
                 .input('OrderId', sql.Int, OrderId)
-                .input('Amount', sql.Decimal(10, 2), Amount)
+                .input('Amount', sql.Decimal(10, 2), amountToCharge)
                 .input('TipAmount', sql.Decimal(10, 2), tip)
                 .input('DiscountAmount', sql.Decimal(10, 2), discount)
                 .input('PaymentMethod', sql.NVarChar(20), PaymentMethod)
@@ -102,12 +185,26 @@ const createPayment = async (req, res) => {
                 .input('CreatedBy', sql.Int, CreatedBy || null)
                 .query(`
                     INSERT INTO Payments (OrderId, Amount, TipAmount, DiscountAmount, PaymentMethod, InvoiceNumber, CreatedBy)
+                    OUTPUT INSERTED.PaymentsId
                     VALUES (@OrderId, @Amount, @TipAmount, @DiscountAmount, @PaymentMethod, @InvoiceNumber, @CreatedBy)
                 `);
+
+            const newPaymentId = insertResult.recordset[0].PaymentsId;
+
+            if (hasItems) {
+                for (const item of Items) {
+                    await new sql.Request(transaction)
+                        .input('PaymentsId', sql.Int, newPaymentId)
+                        .input('OrderDetailsId', sql.Int, item.OrderDetailsId)
+                        .input('Quantity', sql.Int, item.Quantity)
+                        .query(`INSERT INTO PaymentItems (PaymentsId, OrderDetailsId, Quantity) VALUES (@PaymentsId, @OrderDetailsId, @Quantity)`);
+                }
+            }
 
             const { netPaid, totalDiscount, amountDue, TotalAmount } = await recalculateOrderStatus(transaction, OrderId);
 
             await transaction.commit();
+            emitTablesChanged();
 
             return res.status(201).json({
                 message: 'Ödeme başarıyla kaydedildi.',
@@ -193,6 +290,8 @@ const getOrderBalance = async (req, res) => {
         const amountDue = TotalAmount - totalDiscount;
         const remaining = Math.max(amountDue - netPaid, 0);
 
+        const itemRows = await getItemRemaining(pool, null, orderId);
+
         return res.status(200).json({
             orderId: Number(orderId),
             totalAmount: TotalAmount,
@@ -202,7 +301,15 @@ const getOrderBalance = async (req, res) => {
             totalTip,
             remaining,
             isFullyPaid: remaining === 0,
-            orderStatus: Status
+            orderStatus: Status,
+            items: itemRows.map((r) => ({
+                OrderDetailsId: r.OrderDetailsId,
+                ProductId: r.ProductId,
+                Quantity: r.Quantity,
+                UnitPrice: r.UnitPrice,
+                PaidQuantity: r.PaidQuantity,
+                RemainingQuantity: r.RemainingQuantity
+            }))
         });
 
     } catch (err) {
@@ -249,6 +356,7 @@ const deletePayment = async (req, res) => {
             await recalculateOrderStatus(transaction, OrderId);
 
             await transaction.commit();
+            emitTablesChanged();
             return res.status(200).json({ message: 'Ödeme iptal edildi.' });
 
         } catch (err) {
@@ -297,6 +405,7 @@ const restorePayment = async (req, res) => {
             await recalculateOrderStatus(transaction, OrderId);
 
             await transaction.commit();
+            emitTablesChanged();
             return res.status(200).json({ message: 'Ödeme geri alındı.' });
 
         } catch (err) {
@@ -358,6 +467,7 @@ const refundPayment = async (req, res) => {
             await recalculateOrderStatus(transaction, payment.OrderId);
 
             await transaction.commit();
+            emitTablesChanged();
             return res.status(200).json({ message: 'İade işlendi.', totalRefunded: totalRefundAfter });
 
         } catch (err) {
@@ -376,5 +486,6 @@ module.exports = {
     getOrderBalance,
     deletePayment,
     restorePayment,
-    refundPayment
+    refundPayment,
+    recalculateOrderStatus
 };

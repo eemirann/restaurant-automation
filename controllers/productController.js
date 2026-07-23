@@ -1,9 +1,11 @@
 const { sql, connectDB } = require('../config/db');
 
+// Not: Hammadde (IsRawMaterial=1) ürünler bilerek listelenmez — bunlar Stok
+// modülünden eklenen envanter malzemeleridir, menüde/sipariş ekranında görünmemeli.
 async function getAllProducts(req, res) {
     try {
         const pool = await connectDB();
-        const result = await pool.request().query('SELECT * FROM Products');
+        const result = await pool.request().query('SELECT * FROM Products WHERE IsRawMaterial = 0');
         res.status(200).json(result.recordset);
     } catch (err) {
         console.error('Ürünler getirilirken hata:', err);

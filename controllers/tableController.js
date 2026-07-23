@@ -1,8 +1,11 @@
 const { sql, connectDB } = require('../config/db');
+const { emitTablesChanged } = require('../config/socket');
 
 // ============================================================
 // TÜM MASALARI LİSTELE
 // Opsiyonel query parametresi: ?status=Empty gibi filtre için
+// Aktif siparişin (varsa) toplam tutarı ve ürün adedi de dahil edilir
+// (masa kartında anlık tutar/adet göstermek için).
 // ============================================================
 async function getAllTables(req, res) {
     const { status } = req.query;
@@ -11,14 +14,47 @@ async function getAllTables(req, res) {
         const pool = await connectDB();
         const request = pool.request();
 
-        let query = `SELECT TableId, TableNumber, Capacity, Status FROM Tables`;
+        // OUTER APPLY + TOP 1 kullanılıyor: bir masada (normalde olmaması gereken ama
+        // eski/test verisinde rastlanabilen) birden fazla aktif sipariş bulunsa bile
+        // her masa için tam olarak tek satır döner (en güncel siparişi baz alır).
+        // CurrentTotal = siparişin toplamı - indirim - (varsa) o ana kadar yapılmış kısmi
+        // ödemeler; sadece brüt sipariş toplamını göstermek, kısmi/ürün bazlı ödeme
+        // yapıldığında kart üzerindeki tutarın hiç değişmemiş gibi görünmesine yol açıyordu.
+        let query = `
+            SELECT
+                t.TableId, t.TableNumber, t.Capacity, t.Status,
+                o.OrderId AS ActiveOrderId,
+                CASE
+                    WHEN (ISNULL(o.TotalAmount, 0) - ISNULL(p.TotalDiscount, 0) - ISNULL(p.NetPaid, 0)) < 0 THEN 0
+                    ELSE (ISNULL(o.TotalAmount, 0) - ISNULL(p.TotalDiscount, 0) - ISNULL(p.NetPaid, 0))
+                END AS CurrentTotal,
+                ISNULL(od.ItemCount, 0) AS ItemCount
+            FROM Tables t
+            OUTER APPLY (
+                SELECT TOP 1 OrderId, TotalAmount
+                FROM Orders
+                WHERE TableId = t.TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')
+                ORDER BY OrderId DESC
+            ) o
+            LEFT JOIN (
+                SELECT OrderId, SUM(Quantity) AS ItemCount
+                FROM OrderDetails
+                GROUP BY OrderId
+            ) od ON od.OrderId = o.OrderId
+            LEFT JOIN (
+                SELECT OrderId, SUM(Amount - RefundAmount) AS NetPaid, SUM(DiscountAmount) AS TotalDiscount
+                FROM Payments
+                WHERE IsDeleted = 0
+                GROUP BY OrderId
+            ) p ON p.OrderId = o.OrderId
+        `;
 
         if (status) {
             request.input('Status', sql.NVarChar(20), status);
-            query += ` WHERE Status = @Status`;
+            query += ` WHERE t.Status = @Status`;
         }
 
-        query += ` ORDER BY TableNumber ASC`;
+        query += ` ORDER BY t.TableNumber ASC`;
 
         const result = await request.query(query);
 
@@ -139,6 +175,7 @@ async function transferTable(req, res) {
                         VALUES (@OrderId, @FromTableId, @ToTableId, @TransferType, NULL, @TransferredByUserId, @Reason)`);
 
             await transaction.commit();
+            emitTablesChanged();
 
             return res.status(200).json({ message: 'Sipariş başarıyla taşındı.', orderId: OrderId, fromTableId, toTableId: ToTableId });
         }
@@ -180,6 +217,14 @@ async function transferTable(req, res) {
                     .input('OrderDetailsId', sql.Int, targetRow.OrderDetailsId)
                     .input('NewQuantity', sql.Int, targetRow.Quantity + item.Quantity)
                     .query(`UPDATE OrderDetails SET Quantity = @NewQuantity WHERE OrderDetailsId = @OrderDetailsId`);
+
+                // Kaynak kaleme kalem-bazlı ödeme yapılmışsa (PaymentItems), satır silinmeden
+                // önce bu kayıtlar hedef kaleme yeniden yönlendirilir — aksi halde hem FK
+                // silmeyi engeller hem de o kalemdeki ödenmiş adet bilgisi kaybolurdu.
+                await new sql.Request(transaction)
+                    .input('FromOrderDetailsId', sql.Int, item.OrderDetailsId)
+                    .input('ToOrderDetailsId', sql.Int, targetRow.OrderDetailsId)
+                    .query(`UPDATE PaymentItems SET OrderDetailsId = @ToOrderDetailsId WHERE OrderDetailsId = @FromOrderDetailsId`);
 
                 await new sql.Request(transaction)
                     .input('OrderDetailsId', sql.Int, item.OrderDetailsId)
@@ -234,6 +279,7 @@ async function transferTable(req, res) {
                     VALUES (@OrderId, @FromTableId, @ToTableId, @TransferType, @MergedIntoOrderId, @TransferredByUserId, @Reason)`);
 
         await transaction.commit();
+        emitTablesChanged();
 
         return res.status(200).json({
             message: 'Siparişler başarıyla birleştirildi.',
@@ -273,15 +319,16 @@ async function getTableById(req, res) {
 
         const orderResult = await pool.request()
             .input('TableId', sql.Int, id)
-            .query(`SELECT OrderId, UserId, Status, TotalAmount, Note, CreatedAt FROM Orders
-                    WHERE TableId = @TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
+            .query(`SELECT TOP 1 OrderId, UserId, Status, TotalAmount, Note, CreatedAt FROM Orders
+                    WHERE TableId = @TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')
+                    ORDER BY OrderId DESC`);
 
         let activeOrder = null;
         if (orderResult.recordset.length > 0) {
             const order = orderResult.recordset[0];
             const detailsResult = await pool.request()
                 .input('OrderId', sql.Int, order.OrderId)
-                .query(`SELECT ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
+                .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
 
             activeOrder = { ...order, items: detailsResult.recordset };
         }
@@ -341,6 +388,7 @@ async function updateTableStatus(req, res) {
             .input('TableId', sql.Int, id)
             .query(`SELECT * FROM Tables WHERE TableId = @TableId`);
 
+        emitTablesChanged();
         return res.status(200).json(updated.recordset[0]);
     } catch (err) {
         console.error('Masa durumu güncellenirken hata:', err);
@@ -354,8 +402,8 @@ async function updateTableStatus(req, res) {
 async function createTable(req, res) {
     const { TableNumber, Capacity } = req.body;
 
-    if (!TableNumber || !Capacity) {
-        return res.status(400).json({ error: 'TableNumber ve Capacity zorunludur' });
+    if (!TableNumber) {
+        return res.status(400).json({ error: 'TableNumber zorunludur' });
     }
 
     try {
@@ -371,10 +419,11 @@ async function createTable(req, res) {
 
         const result = await pool.request()
             .input('TableNumber', sql.Int, TableNumber)
-            .input('Capacity', sql.Int, Capacity)
+            .input('Capacity', sql.Int, Capacity || null)
             .query(`INSERT INTO Tables (TableNumber, Capacity, Status) OUTPUT INSERTED.*
                     VALUES (@TableNumber, @Capacity, 'Empty')`);
 
+        emitTablesChanged();
         return res.status(201).json(result.recordset[0]);
     } catch (err) {
         console.error('Masa oluşturulurken hata:', err);
@@ -389,8 +438,9 @@ async function createTable(req, res) {
 async function updateTable(req, res) {
     const { id } = req.params;
     const { TableNumber, Capacity } = req.body;
+    const capacityProvided = Object.prototype.hasOwnProperty.call(req.body, 'Capacity');
 
-    if (!TableNumber && !Capacity) {
+    if (!TableNumber && !capacityProvided) {
         return res.status(400).json({ error: 'Güncellemek için TableNumber veya Capacity gönderin' });
     }
 
@@ -417,7 +467,7 @@ async function updateTable(req, res) {
         }
 
         const finalTableNumber = TableNumber || tableResult.recordset[0].TableNumber;
-        const finalCapacity = Capacity || tableResult.recordset[0].Capacity;
+        const finalCapacity = capacityProvided ? (Capacity || null) : tableResult.recordset[0].Capacity;
 
         const result = await pool.request()
             .input('TableId', sql.Int, id)
@@ -429,6 +479,7 @@ async function updateTable(req, res) {
             .input('TableId', sql.Int, id)
             .query(`SELECT * FROM Tables WHERE TableId = @TableId`);
 
+        emitTablesChanged();
         return res.status(200).json(updated.recordset[0]);
     } catch (err) {
         console.error('Masa güncellenirken hata:', err);
@@ -467,6 +518,7 @@ async function deleteTable(req, res) {
             .input('TableId', sql.Int, id)
             .query(`DELETE FROM Tables WHERE TableId = @TableId`);
 
+        emitTablesChanged();
         return res.status(200).json({ message: 'Masa silindi.' });
     } catch (err) {
         if (err.number === 547) { // SQL Server foreign key constraint violation
