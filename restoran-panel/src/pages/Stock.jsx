@@ -121,20 +121,20 @@ export default function Stock() {
           <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
             Depo · Envanter
           </p>
-          <h1 className="font-display text-3xl font-semibold text-ink">Stok Yönetimi</h1>
+          <h1 className="font-display text-3xl font-semibold text-paper">Stok Yönetimi</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchStock}
             className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-sand rounded-sm px-3 py-2 transition-colors"
+                       border border-hairline rounded-sm px-3 py-2 transition-colors"
           >
             ↻ Yenile
           </button>
           <button
             onClick={() => navigate('/stock-movements')}
             className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-sand rounded-sm px-3 py-2 transition-colors"
+                       border border-hairline rounded-sm px-3 py-2 transition-colors"
           >
             🕘 Hareket Geçmişi
           </button>
@@ -152,7 +152,7 @@ export default function Stock() {
 
       {/* Durum özeti */}
       <div className="flex flex-wrap gap-6 mb-6 font-mono text-xs text-slate">
-        <span><span className="text-ink font-semibold">{stockItems.length}</span> toplam ürün</span>
+        <span><span className="text-paper font-semibold">{stockItems.length}</span> toplam ürün</span>
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full inline-block bg-ember" />
           {lowStockCount} düşük stokta
@@ -170,14 +170,14 @@ export default function Stock() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search product..."
-          className="flex-1 min-w-[16rem] max-w-sm border border-sand rounded-sm px-4 py-2.5 font-body text-ink
+          className="flex-1 min-w-[16rem] max-w-sm border border-hairline rounded-sm px-4 py-2.5 font-body text-paper
                      focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
         />
 
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="border border-sand rounded-sm px-3 py-2.5 font-mono text-xs uppercase tracking-wide text-ink bg-white
+          className="border border-hairline rounded-sm px-3 py-2.5 font-mono text-xs uppercase tracking-wide text-paper bg-panel
                      focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
         >
           <option value="name-asc">Ürün Adı (A-Z)</option>
@@ -190,7 +190,7 @@ export default function Stock() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="border border-sand rounded-sm px-3 py-2.5 font-mono text-xs uppercase tracking-wide text-ink bg-white
+          className="border border-hairline rounded-sm px-3 py-2.5 font-mono text-xs uppercase tracking-wide text-paper bg-panel
                      focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
         >
           <option value="all">Tümü</option>
@@ -209,14 +209,14 @@ export default function Stock() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : filteredItems.length === 0 ? (
-        <div className="border border-dashed border-sand rounded-sm p-10 text-center bg-white/50">
+        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek stok kaydı bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-sand rounded-sm overflow-hidden bg-white">
+        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-cream/60 border-b border-sand text-left font-mono text-[10px] uppercase tracking-widest text-slate">
+              <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
                 <th className="px-5 py-3">Ürün</th>
                 <th className="px-5 py-3">Adet</th>
                 <th className="px-5 py-3">Min. Stok</th>
@@ -236,9 +236,9 @@ export default function Stock() {
                   : 'border-moss/40 bg-moss/5';
                 const statusDotClass = isOut ? 'bg-slate' : isLow ? 'bg-ember' : 'bg-moss';
                 return (
-                  <tr key={item.StockId} className="border-b border-sand last:border-b-0 hover:bg-cream/30">
-                    <td className="px-5 py-3 text-ink font-medium">{item.ProductName}</td>
-                    <td className="px-5 py-3 font-mono text-ink">{item.Quantity}</td>
+                  <tr key={item.StockId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
+                    <td className="px-5 py-3 text-paper font-medium">{item.ProductName}</td>
+                    <td className="px-5 py-3 font-mono text-paper">{item.Quantity}</td>
                     <td className="px-5 py-3 font-mono text-slate">{item.MinStockLevel}</td>
                     <td className="px-5 py-3">
                       <span
@@ -254,7 +254,7 @@ export default function Stock() {
                           <button
                             onClick={() => handleDecrease(item)}
                             title="1 azalt"
-                            className="w-8 h-8 flex items-center justify-center font-mono text-ink border border-sand rounded-sm
+                            className="w-8 h-8 flex items-center justify-center font-mono text-paper border border-hairline rounded-sm
                                        hover:border-ember hover:text-ember transition-colors"
                           >
                             −
@@ -270,7 +270,7 @@ export default function Stock() {
                           <button
                             onClick={() => setPurchaseItem(item)}
                             title="Stok alımı ekle"
-                            className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-sand rounded-sm px-2.5 py-1.5 transition-colors"
+                            className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
                           >
                             Düzenle
                           </button>
@@ -398,7 +398,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
       <div className="absolute inset-0 bg-ink/50" onClick={() => !submitting && onClose()} />
 
       {/* Çekmece */}
-      <div className="relative w-full max-w-md h-full bg-white shadow-2xl flex flex-col animate-[slideIn_0.2s_ease-out]">
+      <div className="relative w-full max-w-md h-full bg-panel shadow-2xl flex flex-col animate-[slideIn_0.2s_ease-out]">
         <style>{`
           @keyframes slideIn {
             from { transform: translateX(100%); }
@@ -407,29 +407,29 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
         `}</style>
 
         {/* Başlık */}
-        <div className="px-6 py-4 border-b border-sand flex items-start justify-between shrink-0 bg-white">
+        <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
           <div>
             <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Stok</p>
-            <h2 className="font-display text-lg font-semibold text-ink leading-tight">
+            <h2 className="font-display text-lg font-semibold text-paper leading-tight">
               {existingStock ? 'Mevcut Stoğu Güncelle' : 'Yeni Stok Kalemi'}
             </h2>
           </div>
           <button
             onClick={() => !submitting && onClose()}
-            className="font-mono text-xs text-slate hover:text-ink w-9 h-9 flex items-center justify-center shrink-0 rounded-sm hover:bg-cream transition-colors"
+            className="font-mono text-xs text-slate hover:text-paper w-9 h-9 flex items-center justify-center shrink-0 rounded-sm hover:bg-charcoal transition-colors"
           >
             ✕
           </button>
         </div>
 
         {/* Gövde (kaydırılabilir) */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-auto px-6 py-5 bg-cream/10 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-auto px-6 py-5 bg-hairline/10 space-y-4">
           <div>
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün</label>
             <select
               value={productId}
               onChange={(e) => { setProductId(e.target.value); if (e.target.value) setNewProductName(''); }}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             >
               <option value="">Listeden seçin...</option>
@@ -445,17 +445,17 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
           </div>
 
           {existingStock && (
-            <p className="font-mono text-[11px] text-slate bg-cream/60 border border-sand rounded-sm px-3 py-2">
-              Bu üründe zaten stok kaydı var (şu an {existingStock.Quantity} adet). Aşağıda girdiğin adet, mevcut stoğa <span className="text-ink font-semibold">eklenecek</span>.
+            <p className="font-mono text-[11px] text-slate bg-hairline/60 border border-hairline rounded-sm px-3 py-2">
+              Bu üründe zaten stok kaydı var (şu an {existingStock.Quantity} adet). Aşağıda girdiğin adet, mevcut stoğa <span className="text-paper font-semibold">eklenecek</span>.
             </p>
           )}
 
           {!existingStock && (
             <>
               <div className="flex items-center gap-2">
-                <span className="flex-1 h-px bg-sand" />
+                <span className="flex-1 h-px bg-hairline" />
                 <span className="font-mono text-[10px] uppercase tracking-widest text-slate">veya</span>
-                <span className="flex-1 h-px bg-sand" />
+                <span className="flex-1 h-px bg-hairline" />
               </div>
 
               <div>
@@ -467,7 +467,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                   value={newProductName}
                   onChange={(e) => { setNewProductName(e.target.value); if (e.target.value) setProductId(''); }}
                   placeholder="ör. Süt, Kağıt Bardak..."
-                  className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink bg-white
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
                              focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                 />
               </div>
@@ -482,7 +482,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                 min="0"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
-                className="w-full border border-sand rounded-sm px-3 py-2.5 font-mono text-ink bg-white
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               />
             </div>
@@ -494,7 +494,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                 min="0"
                 value={minStockLevel}
                 onChange={(e) => setMinStockLevel(e.target.value)}
-                className="w-full border border-sand rounded-sm px-3 py-2.5 font-mono text-ink bg-white
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               />
             </div>
@@ -512,7 +512,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
               value={unitPrice}
               onChange={(e) => setUnitPrice(e.target.value)}
               placeholder="0.00"
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-mono text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -525,7 +525,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
               type="text"
               value={supplier}
               onChange={(e) => setSupplier(e.target.value)}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -538,7 +538,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
               type="text"
               value={invoiceNumber}
               onChange={(e) => setInvoiceNumber(e.target.value)}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -551,24 +551,24 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-sm text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
 
           {error && (
-            <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 bg-white py-2">{error}</p>
+            <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 bg-panel py-2">{error}</p>
           )}
         </form>
 
         {/* Alt aksiyon çubuğu */}
-        <div className="px-6 py-4 border-t border-sand shrink-0 bg-white flex gap-2">
+        <div className="px-6 py-4 border-t border-hairline shrink-0 bg-panel flex gap-2">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-ink
-                       border border-sand rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
           >
             Vazgeç
           </button>
@@ -635,7 +635,7 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
       <div className="absolute inset-0 bg-ink/50" onClick={() => !submitting && onClose()} />
 
       {/* Çekmece */}
-      <div className="relative w-full max-w-md h-full bg-white shadow-2xl flex flex-col animate-[slideIn_0.2s_ease-out]">
+      <div className="relative w-full max-w-md h-full bg-panel shadow-2xl flex flex-col animate-[slideIn_0.2s_ease-out]">
         <style>{`
           @keyframes slideIn {
             from { transform: translateX(100%); }
@@ -644,24 +644,24 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
         `}</style>
 
         {/* Başlık */}
-        <div className="px-6 py-4 border-b border-sand flex items-start justify-between shrink-0 bg-white">
+        <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
           <div>
             <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Stok Alımı</p>
-            <h2 className="font-display text-lg font-semibold text-ink leading-tight">{item.ProductName}</h2>
+            <h2 className="font-display text-lg font-semibold text-paper leading-tight">{item.ProductName}</h2>
           </div>
           <button
             onClick={() => !submitting && onClose()}
-            className="font-mono text-xs text-slate hover:text-ink w-9 h-9 flex items-center justify-center shrink-0 rounded-sm hover:bg-cream transition-colors"
+            className="font-mono text-xs text-slate hover:text-paper w-9 h-9 flex items-center justify-center shrink-0 rounded-sm hover:bg-charcoal transition-colors"
           >
             ✕
           </button>
         </div>
 
         {/* Gövde (kaydırılabilir) */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-auto px-6 py-5 bg-cream/10 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-auto px-6 py-5 bg-hairline/10 space-y-4">
           <div>
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün</label>
-            <p className="text-ink font-medium bg-white border border-sand rounded-sm px-3 py-2.5">{item.ProductName}</p>
+            <p className="text-paper font-medium bg-panel border border-hairline rounded-sm px-3 py-2.5">{item.ProductName}</p>
           </div>
 
           <div>
@@ -671,7 +671,7 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
               min="1"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-mono text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -687,7 +687,7 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
               value={unitPrice}
               onChange={(e) => setUnitPrice(e.target.value)}
               placeholder="0.00"
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-mono text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -700,7 +700,7 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
               type="text"
               value={supplier}
               onChange={(e) => setSupplier(e.target.value)}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -713,7 +713,7 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
               type="text"
               value={invoiceNumber}
               onChange={(e) => setInvoiceNumber(e.target.value)}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -726,24 +726,24 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-sm text-ink bg-white
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
 
           {error && (
-            <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 bg-white py-2">{error}</p>
+            <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 bg-panel py-2">{error}</p>
           )}
         </form>
 
         {/* Alt aksiyon çubuğu */}
-        <div className="px-6 py-4 border-t border-sand shrink-0 bg-white flex gap-2">
+        <div className="px-6 py-4 border-t border-hairline shrink-0 bg-panel flex gap-2">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-ink
-                       border border-sand rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
           >
             Vazgeç
           </button>

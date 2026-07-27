@@ -1,7 +1,23 @@
 require('dotenv').config();
+
+// ============================================================
+// FAIL-FAST: Kritik env değişkenleri yoksa sunucu HİÇ başlamasın.
+// JWT_SECRET olmadan token'lar 'undefined' secret ile imzalanır
+// (ciddi güvenlik açığı), bu yüzden erkenden ve gürültülü çökeriz.
+// ============================================================
+if (!process.env.JWT_SECRET) {
+    console.error('HATA: JWT_SECRET tanımlı değil. Sunucu başlatılamıyor. .env dosyanızı kontrol edin.');
+    process.exit(1);
+}
+
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const { corsOrigin } = require('./config/cors');
+const { apiLimiter } = require('./middleware/rateLimiters');
+const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const productRoutes = require('./routes/products');
 const categoriesRoutes = require('./routes/categories');
 const orderRoutes = require('./routes/orders');
@@ -14,14 +30,25 @@ const reservationRoutes = require('./routes/reservations');
 const userRoutes = require('./routes/users');
 const stockRoutes = require('./routes/stock');
 const dashboardRoutes = require('./routes/dashboard');
+const recipeRoutes = require('./routes/recipes');
+const kdsRoutes = require('./routes/kds');
+const reportRoutes = require('./routes/reports');
+const shiftRoutes = require('./routes/shifts');
+const auditRoutes = require('./routes/audit');
 
 const app = express();
 const httpServer = http.createServer(app);
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4091;
 
 // Middleware'ler
-app.use(cors());
+app.use(helmet({
+    // Ürün resimleri farklı origin'den (panel) yükleneceği için cross-origin resource izni.
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
+app.use('/api', apiLimiter); // tüm API trafiğine geniş kötüye-kullanım tavanı
 app.use('/uploads', express.static('uploads')); // ürün resimleri buradan servis edilir
 
 // Test endpoint'i
@@ -40,6 +67,15 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/recipes', recipeRoutes);
+app.use('/api/kds', kdsRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/shifts', shiftRoutes);
+app.use('/api/audit', auditRoutes);
+
+// Hata yönetimi (TÜM route'lardan SONRA olmalı)
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // Sunucuyu başlat
 async function startServer() {
@@ -54,4 +90,10 @@ async function startServer() {
     }
 }
 
-startServer();
+// Doğrudan çalıştırıldığında sunucuyu başlat; test (supertest) require ederse
+// yalnızca app export edilir, DB bağlanmaz / port dinlenmez.
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = app;

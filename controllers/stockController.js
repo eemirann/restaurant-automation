@@ -85,8 +85,8 @@ async function createStockItem(req, res) {
 
         const result = await pool.request()
             .input('ProductId', sql.Int, finalProductId)
-            .input('Quantity', sql.Int, qty)
-            .input('MinStockLevel', sql.Int, minLevel)
+            .input('Quantity', sql.Decimal(10, 3), qty)
+            .input('MinStockLevel', sql.Decimal(10, 3), minLevel)
             .query(`
                 INSERT INTO Stock (ProductId, Quantity, MinStockLevel, IsTracked)
                 OUTPUT INSERTED.*
@@ -99,7 +99,7 @@ async function createStockItem(req, res) {
         if (qty > 0) {
             await pool.request()
                 .input('StockId', sql.Int, newStock.StockId)
-                .input('Quantity', sql.Int, qty)
+                .input('Quantity', sql.Decimal(10, 3), qty)
                 .input('UnitPrice', sql.Decimal(10, 2), UnitPrice || null)
                 .input('Supplier', sql.NVarChar(150), Supplier || null)
                 .input('InvoiceNumber', sql.NVarChar(50), InvoiceNumber || null)
@@ -111,7 +111,7 @@ async function createStockItem(req, res) {
 
             await pool.request()
                 .input('StockId', sql.Int, newStock.StockId)
-                .input('Quantity', sql.Int, qty)
+                .input('Quantity', sql.Decimal(10, 3), qty)
                 .query(`INSERT INTO StockMovements (StockId, Quantity, MovementType) VALUES (@StockId, @Quantity, 'IN')`);
         }
 
@@ -146,8 +146,8 @@ async function updateStockItem(req, res) {
         const pool = await connectDB();
         const result = await pool.request()
             .input('Id', sql.Int, id)
-            .input('Quantity', sql.Int, Quantity)
-            .input('MinStockLevel', sql.Int, MinStockLevel)
+            .input('Quantity', sql.Decimal(10, 3), Quantity)
+            .input('MinStockLevel', sql.Decimal(10, 3), MinStockLevel)
             .query(`
                 UPDATE Stock
                 SET Quantity = @Quantity, MinStockLevel = @MinStockLevel, UpdatedAt = GETDATE()
@@ -207,7 +207,7 @@ async function increaseStock(req, res) {
         const pool = await connectDB();
         const result = await pool.request()
             .input('Id', sql.Int, id)
-            .input('Amount', sql.Int, amount)
+            .input('Amount', sql.Decimal(10, 3), amount)
             .query(`
                 UPDATE Stock
                 SET Quantity = Quantity + @Amount, UpdatedAt = GETDATE()
@@ -221,7 +221,7 @@ async function increaseStock(req, res) {
 
         await pool.request()
             .input('StockId', sql.Int, id)
-            .input('Quantity', sql.Int, amount)
+            .input('Quantity', sql.Decimal(10, 3), amount)
             .query(`
                 INSERT INTO StockMovements (StockId, Quantity, MovementType)
                 VALUES (@StockId, @Quantity, 'IN')
@@ -264,7 +264,7 @@ async function decreaseStock(req, res) {
 
         const result = await pool.request()
             .input('Id', sql.Int, id)
-            .input('Amount', sql.Int, amount)
+            .input('Amount', sql.Decimal(10, 3), amount)
             .query(`
                 UPDATE Stock
                 SET Quantity = Quantity - @Amount, UpdatedAt = GETDATE()
@@ -274,7 +274,7 @@ async function decreaseStock(req, res) {
 
         await pool.request()
             .input('StockId', sql.Int, id)
-            .input('Quantity', sql.Int, amount)
+            .input('Quantity', sql.Decimal(10, 3), amount)
             .query(`
                 INSERT INTO StockMovements (StockId, Quantity, MovementType)
                 VALUES (@StockId, @Quantity, 'OUT')
@@ -319,15 +319,15 @@ async function recordStockPurchase(req, res) {
         const { id } = req.params;
         const { Quantity, UnitPrice, Supplier, InvoiceNumber, Notes } = req.body;
 
-        if (!Number.isInteger(Quantity) || Quantity <= 0) {
-            return res.status(400).json({ error: 'Quantity pozitif bir tam sayı olmalıdır' });
+        if (typeof Quantity !== 'number' || Quantity <= 0) {
+            return res.status(400).json({ error: 'Quantity pozitif bir sayı olmalıdır' });
         }
 
         const pool = await connectDB();
 
         const stockResult = await pool.request()
             .input('Id', sql.Int, id)
-            .input('Amount', sql.Int, Quantity)
+            .input('Amount', sql.Decimal(10, 3), Quantity)
             .query(`
                 UPDATE Stock
                 SET Quantity = Quantity + @Amount, UpdatedAt = GETDATE()
@@ -341,7 +341,7 @@ async function recordStockPurchase(req, res) {
 
         await pool.request()
             .input('StockId', sql.Int, id)
-            .input('Quantity', sql.Int, Quantity)
+            .input('Quantity', sql.Decimal(10, 3), Quantity)
             .input('UnitPrice', sql.Decimal(10, 2), UnitPrice || null)
             .input('Supplier', sql.NVarChar(150), Supplier || null)
             .input('InvoiceNumber', sql.NVarChar(50), InvoiceNumber || null)
@@ -353,7 +353,7 @@ async function recordStockPurchase(req, res) {
 
         await pool.request()
             .input('StockId', sql.Int, id)
-            .input('Quantity', sql.Int, Quantity)
+            .input('Quantity', sql.Decimal(10, 3), Quantity)
             .query(`
                 INSERT INTO StockMovements (StockId, Quantity, MovementType)
                 VALUES (@StockId, @Quantity, 'IN')

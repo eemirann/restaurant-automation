@@ -1,5 +1,9 @@
 const { sql, connectDB } = require('../config/db');
 const { emitTablesChanged } = require('../config/socket');
+const { logAudit } = require('../utils/audit');
+
+// Geçerli masa bölgeleri (Tables.Area CHECK kısıtıyla aynı olmalı).
+const ALLOWED_AREAS = ['Salon', 'Terrace', 'Garden', 'VIP', 'Bar'];
 
 // ============================================================
 // TÜM MASALARI LİSTELE
@@ -22,8 +26,11 @@ async function getAllTables(req, res) {
         // yapıldığında kart üzerindeki tutarın hiç değişmemiş gibi görünmesine yol açıyordu.
         let query = `
             SELECT
-                t.TableId, t.TableNumber, t.Capacity, t.Status,
+                t.TableId, t.TableNumber, t.Capacity, t.Status, t.Area,
                 o.OrderId AS ActiveOrderId,
+                o.CreatedAt AS OrderCreatedAt,
+                o.Status AS OrderStatus,
+                u.FullName AS WaiterName,
                 CASE
                     WHEN (ISNULL(o.TotalAmount, 0) - ISNULL(p.TotalDiscount, 0) - ISNULL(p.NetPaid, 0)) < 0 THEN 0
                     ELSE (ISNULL(o.TotalAmount, 0) - ISNULL(p.TotalDiscount, 0) - ISNULL(p.NetPaid, 0))
@@ -31,11 +38,12 @@ async function getAllTables(req, res) {
                 ISNULL(od.ItemCount, 0) AS ItemCount
             FROM Tables t
             OUTER APPLY (
-                SELECT TOP 1 OrderId, TotalAmount
+                SELECT TOP 1 OrderId, TotalAmount, CreatedAt, UserId, Status
                 FROM Orders
                 WHERE TableId = t.TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')
                 ORDER BY OrderId DESC
             ) o
+            LEFT JOIN Users u ON u.UserId = o.UserId
             LEFT JOIN (
                 SELECT OrderId, SUM(Quantity) AS ItemCount
                 FROM OrderDetails
@@ -176,6 +184,7 @@ async function transferTable(req, res) {
 
             await transaction.commit();
             emitTablesChanged();
+            logAudit(pool, { userId: req.user?.userId, action: 'TABLE_TRANSFER', entityType: 'Order', entityId: OrderId, details: { type: 'Move', fromTableId, toTableId: ToTableId, reason: Reason || null } });
 
             return res.status(200).json({ message: 'Sipariş başarıyla taşındı.', orderId: OrderId, fromTableId, toTableId: ToTableId });
         }
@@ -280,6 +289,7 @@ async function transferTable(req, res) {
 
         await transaction.commit();
         emitTablesChanged();
+        logAudit(pool, { userId: req.user?.userId, action: 'TABLE_TRANSFER', entityType: 'Order', entityId: OrderId, details: { type: 'Merge', fromTableId, toTableId: ToTableId, mergedIntoOrderId: toOrderId, reason: Reason || null } });
 
         return res.status(200).json({
             message: 'Siparişler başarıyla birleştirildi.',
@@ -311,7 +321,7 @@ async function getTableById(req, res) {
 
         const tableResult = await pool.request()
             .input('TableId', sql.Int, id)
-            .query(`SELECT TableId, TableNumber, Capacity, Status FROM Tables WHERE TableId = @TableId`);
+            .query(`SELECT TableId, TableNumber, Capacity, Status, Area FROM Tables WHERE TableId = @TableId`);
 
         if (tableResult.recordset.length === 0) {
             return res.status(404).json({ error: 'Masa bulunamadı' });
@@ -400,10 +410,14 @@ async function updateTableStatus(req, res) {
 // YENİ MASA OLUŞTUR (SADECE ADMIN)
 // ============================================================
 async function createTable(req, res) {
-    const { TableNumber, Capacity } = req.body;
+    const { TableNumber, Capacity, Area } = req.body;
 
     if (!TableNumber) {
         return res.status(400).json({ error: 'TableNumber zorunludur' });
+    }
+
+    if (Area !== undefined && Area !== null && !ALLOWED_AREAS.includes(Area)) {
+        return res.status(400).json({ error: `Area şunlardan biri olmalı: ${ALLOWED_AREAS.join(', ')}` });
     }
 
     try {
@@ -420,8 +434,9 @@ async function createTable(req, res) {
         const result = await pool.request()
             .input('TableNumber', sql.Int, TableNumber)
             .input('Capacity', sql.Int, Capacity || null)
-            .query(`INSERT INTO Tables (TableNumber, Capacity, Status) OUTPUT INSERTED.*
-                    VALUES (@TableNumber, @Capacity, 'Empty')`);
+            .input('Area', sql.NVarChar(20), Area || 'Salon')
+            .query(`INSERT INTO Tables (TableNumber, Capacity, Status, Area) OUTPUT INSERTED.*
+                    VALUES (@TableNumber, @Capacity, 'Empty', @Area)`);
 
         emitTablesChanged();
         return res.status(201).json(result.recordset[0]);
@@ -437,11 +452,16 @@ async function createTable(req, res) {
 // ============================================================
 async function updateTable(req, res) {
     const { id } = req.params;
-    const { TableNumber, Capacity } = req.body;
+    const { TableNumber, Capacity, Area } = req.body;
     const capacityProvided = Object.prototype.hasOwnProperty.call(req.body, 'Capacity');
+    const areaProvided = Object.prototype.hasOwnProperty.call(req.body, 'Area');
 
-    if (!TableNumber && !capacityProvided) {
-        return res.status(400).json({ error: 'Güncellemek için TableNumber veya Capacity gönderin' });
+    if (!TableNumber && !capacityProvided && !areaProvided) {
+        return res.status(400).json({ error: 'Güncellemek için TableNumber, Capacity veya Area gönderin' });
+    }
+
+    if (areaProvided && !ALLOWED_AREAS.includes(Area)) {
+        return res.status(400).json({ error: `Area şunlardan biri olmalı: ${ALLOWED_AREAS.join(', ')}` });
     }
 
     try {
@@ -449,7 +469,7 @@ async function updateTable(req, res) {
 
         const tableResult = await pool.request()
             .input('TableId', sql.Int, id)
-            .query(`SELECT TableId, TableNumber, Capacity FROM Tables WHERE TableId = @TableId`);
+            .query(`SELECT TableId, TableNumber, Capacity, Area FROM Tables WHERE TableId = @TableId`);
 
         if (tableResult.recordset.length === 0) {
             return res.status(404).json({ error: 'Masa bulunamadı' });
@@ -468,12 +488,14 @@ async function updateTable(req, res) {
 
         const finalTableNumber = TableNumber || tableResult.recordset[0].TableNumber;
         const finalCapacity = capacityProvided ? (Capacity || null) : tableResult.recordset[0].Capacity;
+        const finalArea = areaProvided ? Area : tableResult.recordset[0].Area;
 
         const result = await pool.request()
             .input('TableId', sql.Int, id)
             .input('TableNumber', sql.Int, finalTableNumber)
             .input('Capacity', sql.Int, finalCapacity)
-            .query(`UPDATE Tables SET TableNumber = @TableNumber, Capacity = @Capacity WHERE TableId = @TableId`);
+            .input('Area', sql.NVarChar(20), finalArea)
+            .query(`UPDATE Tables SET TableNumber = @TableNumber, Capacity = @Capacity, Area = @Area WHERE TableId = @TableId`);
 
         const updated = await pool.request()
             .input('TableId', sql.Int, id)

@@ -1,0 +1,212 @@
+// ============================================================
+// Restoran Backend — Veritabanı Şeması (DBML)
+// Canlı MSSQL şemasından otomatik üretildi (scripts/gen-dbml.js).
+// Her tablo tek tanım, her ilişki tek Ref — dbdiagram.io uyumlu.
+// ============================================================
+
+Table Categories {
+  CategoryId int [pk, increment]
+  Name nvarchar(50) [unique, not null]
+  IsActive bit [not null]
+}
+
+Table OrderDetailSyrups {
+  OrderDetailSyrupsId int [pk, increment]
+  OrderDetailsId int [not null]
+  SyrupsId int [not null]
+  Price decimal(10,2) [not null]
+
+  indexes {
+    (OrderDetailsId, SyrupsId) [unique]
+  }
+}
+
+Table OrderDetails {
+  OrderDetailsId int [pk, increment]
+  OrderId int [not null]
+  ProductId int [not null]
+  Quantity int [not null]
+  UnitPrice decimal(10,2) [not null]
+  VariantId int
+  Note nvarchar(255)
+  PrepStatus nvarchar(20) [not null]
+  PreparedAt datetime
+
+  indexes {
+    (OrderId, ProductId) [unique]
+  }
+}
+
+Table Orders {
+  OrderId int [pk, increment]
+  TableId int [not null]
+  UserId int [not null]
+  Status nvarchar(20) [not null]
+  CreatedAt datetime2 [not null]
+  TotalAmount decimal(10,2) [not null]
+  Note nvarchar(255)
+}
+
+Table PaymentItems {
+  PaymentItemId int [pk, increment]
+  PaymentsId int [not null]
+  OrderDetailsId int [not null]
+  Quantity int [not null]
+}
+
+Table Payments {
+  PaymentsId int [pk, increment]
+  OrderId int [not null]
+  Amount decimal(10,2) [not null]
+  TipAmount decimal(10,2) [not null]
+  DiscountAmount decimal(10,2) [not null]
+  PaymentMethod nvarchar(20) [not null]
+  InvoiceNumber nvarchar(50)
+  PaymentDate datetime [not null]
+  IsDeleted bit [not null]
+  RefundAmount decimal(10,2) [not null]
+  RefundDate datetime
+  DeletedBy int
+  CreatedBy int
+  RefundedBy int
+}
+
+Table ProductVariants {
+  ProductVariantsId int [pk, increment]
+  ProductId int [not null]
+  VariantName nvarchar(20) [not null]
+  Price decimal(10,2) [not null]
+
+  indexes {
+    (ProductId, VariantName) [unique]
+  }
+}
+
+Table Products {
+  ProductId int [pk, increment]
+  Name nvarchar(50) [not null]
+  Description nvarchar(255)
+  Price decimal(10,2) [not null]
+  CategoryId int [not null]
+  IsActive bit [not null]
+  ImageUrl nvarchar(255)
+  IsRawMaterial bit [not null]
+  Cost decimal(10,2)
+}
+
+Table Recipes {
+  RecipeId int [pk, increment]
+  ProductId int [not null]
+  RawMaterialProductId int [not null]
+  Quantity decimal(10,3) [not null]
+  Unit nvarchar(20)
+
+  indexes {
+    (ProductId, RawMaterialProductId) [unique]
+  }
+}
+
+Table Reservations {
+  ReservationId int [pk, increment]
+  TableId int [not null]
+  CustomerName nvarchar(100) [not null]
+  CustomerPhone nvarchar(20)
+  PartySize int [not null]
+  ReservationTime datetime2 [not null]
+  Note nvarchar(255)
+  Status nvarchar(20) [not null]
+  CreatedByUserId int [not null]
+  CreatedAt datetime2 [not null]
+}
+
+Table Stock {
+  StockId int [pk, increment]
+  ProductId int [unique, not null]
+  Quantity decimal(10,3) [not null]
+  MinStockLevel decimal(10,3) [not null]
+  UpdatedAt datetime [not null]
+  IsTracked bit [not null]
+}
+
+Table StockMovements {
+  StockMovementId int [pk, increment]
+  StockId int [not null]
+  Quantity decimal(10,3) [not null]
+  MovementType nvarchar(10) [not null]
+  Reason nvarchar(255)
+  MovementDate datetime [not null]
+}
+
+Table StockPurchases {
+  StockPurchaseId int [pk, increment]
+  StockId int [not null]
+  Quantity decimal(10,3) [not null]
+  UnitPrice decimal(10,2)
+  Supplier nvarchar(150)
+  InvoiceNumber nvarchar(50)
+  Notes nvarchar(500)
+  PurchaseDate datetime [not null]
+}
+
+Table Syrups {
+  SyrupsId int [pk, increment]
+  Name nvarchar(50) [unique, not null]
+  Price decimal(10,2) [not null]
+  IsActive bit [not null]
+}
+
+Table TableTransferLog {
+  TransferLogId int [pk, increment]
+  OrderId int [not null]
+  FromTableId int [not null]
+  ToTableId int [not null]
+  TransferType nvarchar(10) [not null]
+  MergedIntoOrderId int
+  TransferredByUserId int [not null]
+  TransferredAt datetime2 [not null]
+  Reason nvarchar(255)
+}
+
+Table Tables {
+  TableId int [pk, increment]
+  TableNumber int [unique, not null]
+  Capacity int
+  Status nvarchar(20) [not null]
+}
+
+Table Users {
+  UserId int [pk, increment]
+  FullName nvarchar(100) [not null]
+  UserName nvarchar(50) [unique, not null]
+  PasswordHash nvarchar(255) [not null]
+  Role nvarchar(20) [not null]
+  IsActive bit [not null]
+  CreatedAt datetime2 [not null]
+  PinHash nvarchar(255)
+}
+
+// ---------- İlişkiler (Foreign Keys) ----------
+Ref: OrderDetailSyrups.OrderDetailsId > OrderDetails.OrderDetailsId
+Ref: OrderDetailSyrups.SyrupsId > Syrups.SyrupsId
+Ref: OrderDetails.OrderId > Orders.OrderId
+Ref: OrderDetails.ProductId > Products.ProductId
+Ref: OrderDetails.VariantId > ProductVariants.ProductVariantsId
+Ref: Orders.TableId > Tables.TableId
+Ref: Orders.UserId > Users.UserId
+Ref: PaymentItems.OrderDetailsId > OrderDetails.OrderDetailsId
+Ref: PaymentItems.PaymentsId > Payments.PaymentsId
+Ref: Payments.OrderId > Orders.OrderId
+Ref: ProductVariants.ProductId > Products.ProductId
+Ref: Products.CategoryId > Categories.CategoryId
+Ref: Recipes.ProductId > Products.ProductId
+Ref: Recipes.RawMaterialProductId > Products.ProductId
+Ref: Reservations.CreatedByUserId > Users.UserId
+Ref: Reservations.TableId > Tables.TableId
+Ref: Stock.ProductId > Products.ProductId
+Ref: StockMovements.StockId > Stock.StockId
+Ref: StockPurchases.StockId > Stock.StockId
+Ref: TableTransferLog.FromTableId > Tables.TableId
+Ref: TableTransferLog.MergedIntoOrderId > Orders.OrderId
+Ref: TableTransferLog.OrderId > Orders.OrderId
+Ref: TableTransferLog.ToTableId > Tables.TableId
+Ref: TableTransferLog.TransferredByUserId > Users.UserId

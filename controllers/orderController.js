@@ -1,6 +1,8 @@
 const { sql, connectDB } = require('../config/db');
-const { emitTablesChanged } = require('../config/socket');
+const { emitTablesChanged, emitKitchen } = require('../config/socket');
 const { recalculateOrderStatus } = require('./paymentController');
+const { deductStockForItem, restoreStockForItem } = require('../utils/stockDeduction');
+const { logAudit } = require('../utils/audit');
 
 // ============================================================
 // SİPARİŞ OLUŞTUR
@@ -47,7 +49,7 @@ async function createOrder(req, res) {
         for (const item of Items) {
             const productResult = await new sql.Request(transaction)
                 .input('ProductId', sql.Int, item.ProductId)
-                .query(`SELECT ProductId, Price, IsActive FROM Products WHERE ProductId = @ProductId`);
+                .query(`SELECT ProductId, Price, IsActive, IsAvailable FROM Products WHERE ProductId = @ProductId`);
 
             if (productResult.recordset.length === 0) {
                 await transaction.rollback();
@@ -59,6 +61,11 @@ async function createOrder(req, res) {
             if (!product.IsActive) {
                 await transaction.rollback();
                 return res.status(400).json({ error: `Ürün şu anda aktif değil (ProductId: ${item.ProductId})` });
+            }
+
+            if (!product.IsAvailable) {
+                await transaction.rollback();
+                return res.status(400).json({ error: `Ürün şu anda tükendi/satışta değil (ProductId: ${item.ProductId})` });
             }
 
             let unitPrice = Number(product.Price);
@@ -119,27 +126,14 @@ async function createOrder(req, res) {
                 .input('Note', sql.NVarChar, item.Note)
                 .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
 
-            const stockResult = await new sql.Request(transaction)
-                .input('ProductId', sql.Int, item.ProductId)
-                .input('Quantity', sql.Int, item.Quantity)
-                .query(`UPDATE Stock SET Quantity = Quantity - @Quantity OUTPUT INSERTED.Quantity, INSERTED.MinStockLevel WHERE ProductId = @ProductId AND IsTracked = 1`);
-
-            if (stockResult.recordset.length > 0) {
-                const newQuantity = stockResult.recordset[0].Quantity;
-                const minLevel = stockResult.recordset[0].MinStockLevel;
-
-                if (newQuantity <= minLevel) {
-                    lowStockWarnings.push({
-                        ProductId: item.ProductId,
-                        RemainingStock: newQuantity,
-                        IsNegative: newQuantity < 0
-                    });
-                }
-            }
+            // Reçetesi varsa hammaddeler, yoksa ürünün kendisi düşülür (BOM-farkında)
+            const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
+            lowStockWarnings.push(...warnings);
         }
 
         await transaction.commit();
         emitTablesChanged();
+        emitKitchen('kds:new', { orderId: newOrderId, tableId: TableId });
 
         res.status(201).json({
             message: 'Sipariş başarıyla oluşturuldu.',
@@ -260,10 +254,8 @@ async function cancelOrder(req, res) {
             .query(`SELECT ProductId, Quantity FROM OrderDetails WHERE OrderId = @OrderId`);
 
         for (const item of detailsResult.recordset) {
-            await new sql.Request(transaction)
-                .input('ProductId', sql.Int, item.ProductId)
-                .input('Quantity', sql.Int, item.Quantity)
-                .query(`UPDATE Stock SET Quantity = Quantity + @Quantity WHERE ProductId = @ProductId AND IsTracked = 1`);
+            // Reçetesi varsa hammaddeler, yoksa ürünün kendisi geri eklenir (BOM-farkında)
+            await restoreStockForItem(transaction, item.ProductId, item.Quantity);
         }
 
         await new sql.Request(transaction)
@@ -284,6 +276,7 @@ async function cancelOrder(req, res) {
 
         await transaction.commit();
         emitTablesChanged();
+        logAudit(pool, { userId: req.user?.userId, action: 'ORDER_CANCEL', entityType: 'Order', entityId: Number(id), details: { TableId } });
 
         return res.status(200).json({ message: 'Sipariş iptal edildi, stok geri eklendi.' });
 
@@ -409,7 +402,7 @@ async function addOrderItems(req, res) {
         for (const item of Items) {
             const productResult = await new sql.Request(transaction)
                 .input('ProductId', sql.Int, item.ProductId)
-                .query(`SELECT ProductId, Price, IsActive FROM Products WHERE ProductId = @ProductId`);
+                .query(`SELECT ProductId, Price, IsActive, IsAvailable FROM Products WHERE ProductId = @ProductId`);
 
             if (productResult.recordset.length === 0) {
                 await transaction.rollback();
@@ -420,6 +413,11 @@ async function addOrderItems(req, res) {
             if (!product.IsActive) {
                 await transaction.rollback();
                 return res.status(400).json({ error: `Ürün şu anda aktif değil (ProductId: ${item.ProductId})` });
+            }
+
+            if (!product.IsAvailable) {
+                await transaction.rollback();
+                return res.status(400).json({ error: `Ürün şu anda tükendi/satışta değil (ProductId: ${item.ProductId})` });
             }
 
             let unitPrice = Number(product.Price);
@@ -485,23 +483,9 @@ async function addOrderItems(req, res) {
                     .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
             }
 
-            const stockResult = await new sql.Request(transaction)
-                .input('ProductId', sql.Int, item.ProductId)
-                .input('Quantity', sql.Int, item.Quantity)
-                .query(`UPDATE Stock SET Quantity = Quantity - @Quantity OUTPUT INSERTED.Quantity, INSERTED.MinStockLevel WHERE ProductId = @ProductId AND IsTracked = 1`);
-
-            if (stockResult.recordset.length > 0) {
-                const newQuantity = stockResult.recordset[0].Quantity;
-                const minLevel = stockResult.recordset[0].MinStockLevel;
-
-                if (newQuantity <= minLevel) {
-                    lowStockWarnings.push({
-                        ProductId: item.ProductId,
-                        RemainingStock: newQuantity,
-                        IsNegative: newQuantity < 0
-                    });
-                }
-            }
+            // Reçetesi varsa hammaddeler, yoksa ürünün kendisi düşülür (BOM-farkında)
+            const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
+            lowStockWarnings.push(...warnings);
         }
 
         // Toplamı güncelle (OUTPUT kullanmıyoruz, Orders'ta trigger var)
@@ -513,6 +497,7 @@ async function addOrderItems(req, res) {
 
         await transaction.commit();
         emitTablesChanged();
+        emitKitchen('kds:new', { orderId: Number(id) });
 
         const updated = await pool.request()
             .input('OrderId', sql.Int, id)
@@ -606,10 +591,8 @@ async function removeOrderItem(req, res) {
             .input('OrderDetailsId', sql.Int, itemId)
             .query(`DELETE FROM OrderDetails WHERE OrderDetailsId = @OrderDetailsId`);
 
-        await new sql.Request(transaction)
-            .input('ProductId', sql.Int, item.ProductId)
-            .input('Quantity', sql.Int, item.Quantity)
-            .query(`UPDATE Stock SET Quantity = Quantity + @Quantity WHERE ProductId = @ProductId AND IsTracked = 1`);
+        // Reçetesi varsa hammaddeler, yoksa ürünün kendisi geri eklenir (BOM-farkında)
+        await restoreStockForItem(transaction, item.ProductId, item.Quantity);
 
         const newTotal = Math.max(Number(order.TotalAmount) - Number(item.UnitPrice) * item.Quantity, 0);
 
@@ -714,11 +697,11 @@ async function updateOrderItemQuantity(req, res) {
             return res.status(400).json({ error: `Bu üründen ${paidQuantity} adet zaten ödendi, adet bunun altına düşürülemez.` });
         }
 
-        if (diff !== 0) {
-            await new sql.Request(transaction)
-                .input('ProductId', sql.Int, item.ProductId)
-                .input('Diff', sql.Int, diff)
-                .query(`UPDATE Stock SET Quantity = Quantity - @Diff WHERE ProductId = @ProductId AND IsTracked = 1`);
+        // Adet arttıysa fark kadar düş, azaldıysa fark kadar geri ekle (BOM-farkında)
+        if (diff > 0) {
+            await deductStockForItem(transaction, item.ProductId, diff);
+        } else if (diff < 0) {
+            await restoreStockForItem(transaction, item.ProductId, -diff);
         }
 
         await new sql.Request(transaction)

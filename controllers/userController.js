@@ -191,11 +191,48 @@ async function reactivateUser(req, res) {
     }
 }
 
+// ============================================================
+// PIN BELİRLE/DEĞİŞTİR (SADECE ADMIN) - login ekranındaki PIN girişi içindir
+// ============================================================
+async function setPin(req, res) {
+    const { id } = req.params;
+    const { Pin } = req.body;
+
+    if (!Pin || !/^\d{4}$/.test(Pin)) {
+        return res.status(400).json({ error: 'PIN 4 haneli bir sayı olmalı' });
+    }
+
+    try {
+        const pool = await connectDB();
+
+        const existing = await pool.request()
+            .input('UserId', sql.Int, id)
+            .query(`SELECT UserId FROM Users WHERE UserId = @UserId`);
+
+        if (existing.recordset.length === 0) {
+            return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+        }
+
+        const pinHash = await bcrypt.hash(Pin, 10);
+
+        await pool.request()
+            .input('UserId', sql.Int, id)
+            .input('PinHash', sql.NVarChar(255), pinHash)
+            .query(`UPDATE Users SET PinHash = @PinHash WHERE UserId = @UserId`);
+
+        return res.status(200).json({ message: 'PIN güncellendi.' });
+    } catch (err) {
+        console.error('PIN güncellenirken hata:', err);
+        return res.status(500).json({ error: 'PIN güncellenemedi' });
+    }
+}
+
 module.exports = {
     getAllUsers,
     getUserById,
     updateUserRole,
     resetPassword,
     deactivateUser,
-    reactivateUser
+    reactivateUser,
+    setPin
 };

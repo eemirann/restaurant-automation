@@ -11,6 +11,16 @@ const FILTERS = [
 const money = (n) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(n) || 0);
 
+// Resmi olmayan ürünler için baş harf monogramı (ör. "Ice Latte" → "IL").
+const initials = (name) =>
+  (name || '')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toLocaleUpperCase('tr-TR');
+
 export default function Products() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
@@ -70,6 +80,18 @@ const reactivateProduct = async (productId) => {
     }
   };
 
+  // "86 / Tükendi": ürünü silmeden geçici satışa aç/kapat
+  const isAvailable = (p) => p.IsAvailable !== false && p.IsAvailable !== 0;
+  const toggleAvailability = async (p) => {
+    setActionError('');
+    try {
+      await client.patch(`/products/${p.ProductId}/availability`, { IsAvailable: !isAvailable(p) });
+      fetchProducts();
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Satış durumu güncellenemedi.');
+    }
+  };
+
   const visibleProducts = products.filter((p) => {
     if (filter === 'active') return p.IsActive !== false && p.IsActive !== 0;
     if (filter === 'inactive') return p.IsActive === false || p.IsActive === 0;
@@ -79,6 +101,19 @@ const reactivateProduct = async (productId) => {
   const activeCount = products.filter((p) => p.IsActive !== false && p.IsActive !== 0).length;
   const inactiveCount = products.length - activeCount;
 
+  // Ürünleri kategoriye göre grupla (kategori sırasını koru, kategorisi olmayanlar en sona).
+  const groupedByCategory = (() => {
+    const groups = new Map();
+    categories.forEach((c) => groups.set(c.CategoryId, { name: c.Name, items: [] }));
+    visibleProducts.forEach((p) => {
+      if (!groups.has(p.CategoryId)) {
+        groups.set(p.CategoryId, { name: categoryName(p.CategoryId), items: [] });
+      }
+      groups.get(p.CategoryId).items.push(p);
+    });
+    return [...groups.values()].filter((g) => g.items.length > 0);
+  })();
+
   return (
     <div className="p-10">
       {/* Başlık */}
@@ -87,13 +122,13 @@ const reactivateProduct = async (productId) => {
           <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
             Menü · Mutfak
           </p>
-          <h1 className="font-display text-3xl font-semibold text-ink">Ürünler</h1>
+          <h1 className="font-display text-3xl font-semibold text-paper">Ürünler</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchProducts}
             className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-sand rounded-sm px-3 py-2 transition-colors"
+                       border border-hairline rounded-sm px-3 py-2 transition-colors"
           >
             ↻ Yenile
           </button>
@@ -111,7 +146,7 @@ const reactivateProduct = async (productId) => {
 
       {/* Durum özeti */}
       <div className="flex flex-wrap gap-6 mb-6 font-mono text-xs text-slate">
-        <span><span className="text-ink font-semibold">{products.length}</span> toplam</span>
+        <span><span className="text-paper font-semibold">{products.length}</span> toplam</span>
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full inline-block bg-moss" />
           {activeCount} aktif
@@ -123,15 +158,15 @@ const reactivateProduct = async (productId) => {
       </div>
 
       {/* Filtre sekmeleri */}
-      <div className="flex gap-1 mb-6 border-b border-sand">
+      <div className="flex gap-1 mb-6 border-b border-hairline">
         {FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
             className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors ${
               filter === f.value
-                ? 'border-ember text-ink font-semibold'
-                : 'border-transparent text-slate hover:text-ink'
+                ? 'border-ember text-paper font-semibold'
+                : 'border-transparent text-slate hover:text-paper'
             }`}
           >
             {f.label}
@@ -148,90 +183,131 @@ const reactivateProduct = async (productId) => {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : visibleProducts.length === 0 ? (
-        <div className="border border-dashed border-sand rounded-sm p-10 text-center bg-white/50">
+        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek ürün bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-sand rounded-sm overflow-hidden bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-cream/60 border-b border-sand text-left font-mono text-[10px] uppercase tracking-widest text-slate">
-                <th className="px-5 py-3">Ürün</th>
-                <th className="px-5 py-3">Kategori</th>
-                <th className="px-5 py-3">Fiyat</th>
-                <th className="px-5 py-3">Durum</th>
-                {isAdmin && <th className="px-5 py-3 text-right">İşlemler</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleProducts.map((p) => {
-                const active = p.IsActive !== false && p.IsActive !== 0;
-                return (
-                  <tr key={p.ProductId} className="border-b border-sand last:border-b-0 hover:bg-cream/30">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
+        <div className="space-y-10">
+          {groupedByCategory.map((group) => (
+            <div key={group.name}>
+              {/* Kategori başlığı */}
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="font-display text-lg font-semibold text-paper">{group.name}</h2>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-slate">
+                  {group.items.length} ürün
+                </span>
+                <div className="flex-1 h-px bg-hairline" />
+              </div>
+
+              {/* 4'lü ürün kartı grid'i */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {group.items.map((p) => {
+                  const active = p.IsActive !== false && p.IsActive !== 0;
+                  return (
+                    <div
+                      key={p.ProductId}
+                      className={`group relative rounded-2xl border bg-panel overflow-hidden transition-all duration-200
+                                  hover:-translate-y-0.5 hover:shadow-md ${
+                                    active ? 'border-hairline' : 'border-hairline opacity-60'
+                                  }`}
+                    >
+                      {/* Görsel / monogram alanı */}
+                      <div className="relative h-32 bg-hairline/30 flex items-center justify-center overflow-hidden">
                         {p.ImageUrl ? (
                           <img
                             src={imageUrl(p.ImageUrl)}
                             alt={p.Name}
-                            className="w-10 h-10 object-cover rounded-sm border border-sand"
+                            className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-10 h-10 rounded-sm border border-dashed border-sand flex items-center justify-center text-slate text-[10px] font-mono">
-                            —
+                          <span className="font-display text-3xl font-semibold text-slate/70 select-none tracking-wide">
+                            {initials(p.Name)}
+                          </span>
+                        )}
+                        {/* Durum rozeti */}
+                        <span
+                          className={`absolute top-2.5 right-2.5 inline-flex items-center gap-1.5 border rounded-full px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide backdrop-blur-sm ${
+                            active ? 'border-moss/40 bg-moss/15 text-moss' : 'border-slate/40 bg-charcoal/70 text-slate'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-moss' : 'bg-slate'}`} />
+                          {active ? 'Aktif' : 'Pasif'}
+                        </span>
+                        {/* 86 / Tükendi rozeti (aktif ama satışa kapalı) */}
+                        {active && !isAvailable(p) && (
+                          <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 border border-red-500/50 bg-red-500/20 text-red-500 rounded-full px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide backdrop-blur-sm">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Tükendi
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Bilgi alanı */}
+                      <div className="p-4">
+                        <p className="text-paper font-medium leading-tight truncate">{p.Name}</p>
+                        {p.Description ? (
+                          <p className="text-xs text-slate mt-1 line-clamp-2 min-h-[2rem]">{p.Description}</p>
+                        ) : (
+                          <p className="text-xs text-slate/50 mt-1 min-h-[2rem]">—</p>
+                        )}
+
+                        <div className="flex items-end justify-between mt-2">
+                          <div>
+                            <p className="font-display text-xl font-semibold text-paper leading-none">
+                              {money(p.Price)}
+                            </p>
+                            {isAdmin && (
+                              <p className="font-mono text-[10px] text-slate mt-1">
+                                Maliyet: {p.Cost !== null && p.Cost !== undefined ? money(p.Cost) : '—'}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {isAdmin && active && (
+                          <button
+                            onClick={() => toggleAvailability(p)}
+                            className={`w-full font-mono text-[11px] uppercase tracking-wide rounded-sm py-2 mt-4 border transition-colors ${
+                              isAvailable(p)
+                                ? 'text-red-500 border-red-500/40 hover:bg-red-500/10'
+                                : 'text-moss border-moss/40 hover:bg-moss/10'
+                            }`}
+                          >
+                            {isAvailable(p) ? '🚫 86 — Tükendi İşaretle' : '✅ Satışa Aç'}
+                          </button>
+                        )}
+
+                        {isAdmin && (
+                          <div className="flex gap-2 mt-2 pt-3 border-t border-hairline">
+                            <button
+                              onClick={() => setEditingProduct(p)}
+                              className="flex-1 font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm py-2 transition-colors"
+                            >
+                              Düzenle
+                            </button>
+                            {active ? (
+                              <button
+                                onClick={() => deactivateProduct(p.ProductId)}
+                                className="flex-1 font-mono text-[11px] uppercase tracking-wide text-ember hover:text-cream hover:bg-ember border border-ember/40 rounded-sm py-2 transition-colors"
+                              >
+                                Pasife Al
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => reactivateProduct(p.ProductId)}
+                                className="flex-1 font-mono text-[11px] uppercase tracking-wide text-moss hover:text-charcoal hover:bg-moss border border-moss/40 rounded-sm py-2 transition-colors"
+                              >
+                                Aktif Et
+                              </button>
+                            )}
                           </div>
                         )}
-                        <div>
-                          <p className="text-ink font-medium">{p.Name}</p>
-                          {p.Description && <p className="text-xs text-slate mt-0.5">{p.Description}</p>}
-                        </div>
                       </div>
-                    </td>
-                    <td className="px-5 py-3 text-ink font-mono text-xs">{categoryName(p.CategoryId)}</td>
-                    <td className="px-5 py-3 font-mono text-ink">{money(p.Price)}</td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${
-                          active ? 'border-moss/40 bg-moss/5' : 'border-slate/30 bg-slate/5'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-moss' : 'bg-slate'}`} />
-                        {active ? 'Aktif' : 'Pasif'}
-                      </span>
-                    </td>
-                    {isAdmin && (
-                      <td className="px-5 py-3">
-                        <div className="flex justify-end gap-2 flex-wrap">
-                          <button
-                            onClick={() => setEditingProduct(p)}
-                            className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-sand rounded-sm px-2.5 py-1.5 transition-colors"
-                          >
-                            Düzenle
-                          </button>
-                          {active && (
-                            <button
-                              onClick={() => deactivateProduct(p.ProductId)}
-                              className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
-                            >
-                              Pasife Al
-                            </button>
-                          )}
-                          {!active && (
-                            <button
-                              onClick={() => reactivateProduct(p.ProductId)}
-                              className="font-mono text-[11px] uppercase tracking-wide text-moss hover:text-moss/80 border border-moss/40 rounded-sm px-2.5 py-1.5 transition-colors"
-                            >
-                              Aktif Et
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -278,6 +354,7 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
   const [name, setName] = useState(initial?.Name ?? '');
   const [description, setDescription] = useState(initial?.Description ?? '');
   const [price, setPrice] = useState(initial?.Price ?? '');
+  const [cost, setCost] = useState(initial?.Cost ?? '');
   const [categoryId, setCategoryId] = useState(initial?.CategoryId ?? '');
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -299,6 +376,10 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
       setError('Kategori seçmelisiniz.');
       return;
     }
+    if (cost !== '' && Number(cost) < 0) {
+      setError('Maliyet negatif olamaz.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -307,6 +388,7 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
         Description: description.trim() || undefined,
         Price: Number(price),
         CategoryId: Number(categoryId),
+        Cost: cost !== '' ? Number(cost) : null,
       });
 
       if (imageFile && saved?.ProductId) {
@@ -329,15 +411,15 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
-        className="bg-white rounded-sm border border-sand w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-sand flex items-start justify-between">
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
             <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Ürün</p>
-            <h2 className="font-display text-xl font-semibold text-ink">{title}</h2>
+            <h2 className="font-display text-xl font-semibold text-paper">{title}</h2>
           </div>
-          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-ink">
+          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
             Kapat ✕
           </button>
         </div>
@@ -349,7 +431,7 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -360,7 +442,7 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-sm text-ink
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -374,7 +456,7 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
                 step="0.01"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                className="w-full border border-sand rounded-sm px-3 py-2.5 font-mono text-ink
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               />
             </div>
@@ -383,7 +465,7 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               >
                 <option value="">Seçin</option>
@@ -394,6 +476,22 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
             </div>
           </div>
 
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+              Maliyet <span className="normal-case text-slate/70">(opsiyonel — Dashboard'daki kâr oranı için)</span>
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+              placeholder="ör. 12.50"
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+          </div>
+
           {error && (
             <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{error}</p>
           )}
@@ -402,11 +500,11 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün Fotoğrafı (opsiyonel)</label>
             <div className="flex items-center gap-3">
               {imageFile ? (
-                <img src={URL.createObjectURL(imageFile)} alt="" className="w-14 h-14 object-cover rounded-sm border border-sand" />
+                <img src={URL.createObjectURL(imageFile)} alt="" className="w-14 h-14 object-cover rounded-sm border border-hairline" />
               ) : initial?.ImageUrl ? (
-                <img src={imageUrl(initial.ImageUrl)} alt="" className="w-14 h-14 object-cover rounded-sm border border-sand" />
+                <img src={imageUrl(initial.ImageUrl)} alt="" className="w-14 h-14 object-cover rounded-sm border border-hairline" />
               ) : (
-                <div className="w-14 h-14 rounded-sm border border-dashed border-sand flex items-center justify-center text-slate text-[10px] font-mono">
+                <div className="w-14 h-14 rounded-sm border border-dashed border-hairline flex items-center justify-center text-slate text-[10px] font-mono">
                   Yok
                 </div>
               )}
@@ -414,20 +512,20 @@ function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSav
                 type="file"
                 accept="image/png, image/jpeg, image/webp"
                 onChange={(e) => setImageFile(e.target.files[0] || null)}
-                className="flex-1 font-body text-xs text-ink file:mr-3 file:font-mono file:text-[11px] file:uppercase
-                           file:border file:border-sand file:rounded-sm file:px-2.5 file:py-1.5 file:bg-white file:text-slate
+                className="flex-1 font-body text-xs text-paper file:mr-3 file:font-mono file:text-[11px] file:uppercase
+                           file:border file:border-hairline file:rounded-sm file:px-2.5 file:py-1.5 file:bg-panel file:text-slate
                            hover:file:text-ember hover:file:border-ember"
               />
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-sand flex justify-end gap-2">
+        <div className="px-6 py-4 border-t border-hairline flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ink
-                       border border-sand rounded-sm px-4 py-2.5 transition-colors"
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
           >
             Vazgeç
           </button>

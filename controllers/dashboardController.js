@@ -28,6 +28,22 @@ function buildWeeklyRevenue(rows) {
 }
 
 // ============================================================
+// Bugün için 08:00-23:00 arası saatlik ciro dizisi (henüz gelmemiş
+// saatler 0 görünür — gün ilerledikçe dolar).
+// ============================================================
+function buildHourlyRevenue(rows) {
+    const hours = [];
+    for (let h = 8; h <= 23; h++) {
+        hours.push({ hour: `${String(h).padStart(2, '0')}:00`, revenue: 0 });
+    }
+    rows.forEach((row) => {
+        const match = hours.find((h) => h.hour === `${String(row.Hour).padStart(2, '0')}:00`);
+        if (match) match.revenue = Number(row.Revenue) || 0;
+    });
+    return hours;
+}
+
+// ============================================================
 // DASHBOARD ÖZETİ
 // Sayfanın ihtiyaç duyduğu her şeyi tek istekte döner.
 // ============================================================
@@ -105,6 +121,56 @@ async function getDashboardStats(req, res) {
             ORDER BY SUM(od.Quantity) DESC
         `);
 
+        // Bugün satılan ürünlerin kategoriye göre ciro dağılımı.
+        const categoryRevenueResult = await pool.request().query(`
+            SELECT c.Name AS CategoryName, SUM(od.Quantity * od.UnitPrice) AS Revenue
+            FROM OrderDetails od
+            JOIN Orders o ON o.OrderId = od.OrderId
+            JOIN Products p ON p.ProductId = od.ProductId
+            JOIN Categories c ON c.CategoryId = p.CategoryId
+            WHERE CAST(o.CreatedAt AS DATE) = CAST(GETDATE() AS DATE) AND o.Status != 'Cancelled'
+            GROUP BY c.Name
+            HAVING SUM(od.Quantity * od.UnitPrice) > 0
+            ORDER BY Revenue DESC
+        `);
+        const categoryRevenueTotal = categoryRevenueResult.recordset.reduce((sum, r) => sum + Number(r.Revenue), 0);
+        const categoryDistribution = categoryRevenueResult.recordset.map((r) => ({
+            category: r.CategoryName,
+            revenue: Number(r.Revenue),
+            percent: categoryRevenueTotal > 0 ? Math.round((Number(r.Revenue) / categoryRevenueTotal) * 100) : 0,
+        }));
+
+        // Bugünkü kâr oranı — sadece Cost'u girilmiş ürünler üzerinden (girilmemişse
+        // yanıltıcı bir oran vermek yerine ayrı say, frontend uyarı gösterebilsin).
+        const profitResult = await pool.request().query(`
+            SELECT
+                ISNULL(SUM(CASE WHEN p.Cost IS NOT NULL THEN od.Quantity * od.UnitPrice ELSE 0 END), 0) AS PricedRevenue,
+                ISNULL(SUM(CASE WHEN p.Cost IS NOT NULL THEN od.Quantity * p.Cost ELSE 0 END), 0) AS PricedCost,
+                ISNULL(SUM(CASE WHEN p.Cost IS NULL THEN od.Quantity ELSE 0 END), 0) AS UnpricedQuantity
+            FROM OrderDetails od
+            JOIN Orders o ON o.OrderId = od.OrderId
+            JOIN Products p ON p.ProductId = od.ProductId
+            WHERE CAST(o.CreatedAt AS DATE) = CAST(GETDATE() AS DATE) AND o.Status != 'Cancelled'
+        `);
+        const profitRow = profitResult.recordset[0];
+        const pricedRevenue = Number(profitRow.PricedRevenue) || 0;
+        const pricedCost = Number(profitRow.PricedCost) || 0;
+        const profitRatio = {
+            revenue: pricedRevenue,
+            cost: pricedCost,
+            net: pricedRevenue - pricedCost,
+            percent: pricedRevenue > 0 ? Math.round(((pricedRevenue - pricedCost) / pricedRevenue) * 100) : null,
+            hasUnpricedItems: Number(profitRow.UnpricedQuantity) > 0,
+        };
+
+        // Bugünün 08:00-23:00 aralığındaki saatlik ciro dağılımı.
+        const hourlyRevenueResult = await pool.request().query(`
+            SELECT DATEPART(HOUR, PaymentDate) AS Hour, SUM(Amount - RefundAmount) AS Revenue
+            FROM Payments
+            WHERE IsDeleted = 0 AND CAST(PaymentDate AS DATE) = CAST(GETDATE() AS DATE)
+            GROUP BY DATEPART(HOUR, PaymentDate)
+        `);
+
         res.status(200).json({
             todayRevenue: Number(summary.TodayRevenue) || 0,
             todayOrders: summary.TodayOrders,
@@ -117,6 +183,9 @@ async function getDashboardStats(req, res) {
             lowStockProducts: lowStockResult.recordset,
             openTables: openTablesResult.recordset,
             bestSellingProducts: bestSellingResult.recordset,
+            categoryDistribution,
+            profitRatio,
+            hourlyRevenue: buildHourlyRevenue(hourlyRevenueResult.recordset),
         });
     } catch (err) {
         console.error('Dashboard verileri getirilirken hata:', err);

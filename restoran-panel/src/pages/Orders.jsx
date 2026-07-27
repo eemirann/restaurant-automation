@@ -4,9 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import PaymentDrawer from '../components/PaymentDrawer';
 
 const STATUS_CONFIG = {
-  Pending: { label: 'Bekliyor', dot: 'bg-amber-500', border: 'border-amber-300', bg: 'bg-amber-50' },
+  Pending: { label: 'Bekliyor', dot: 'bg-amber-500', border: 'border-amber-500/40', bg: 'bg-amber-500/15' },
   Served: { label: 'Servis Edildi', dot: 'bg-moss', border: 'border-moss/40', bg: 'bg-moss/5' },
-  Paid: { label: 'Ödendi', dot: 'bg-emerald-600', border: 'border-emerald-300', bg: 'bg-emerald-50' },
+  Paid: { label: 'Ödendi', dot: 'bg-emerald-600', border: 'border-emerald-500/40', bg: 'bg-emerald-500/15' },
   Cancelled: { label: 'İptal Edildi', dot: 'bg-slate', border: 'border-slate/30', bg: 'bg-slate/5' },
   Merged: { label: 'Birleştirildi', dot: 'bg-ink/50', border: 'border-ink/20', bg: 'bg-ink/5' },
 };
@@ -124,13 +124,13 @@ export default function Orders() {
           <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
             Mutfak · Servis
           </p>
-          <h1 className="font-display text-3xl font-semibold text-ink">Siparişler</h1>
+          <h1 className="font-display text-3xl font-semibold text-paper">Siparişler</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchOrders}
             className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-sand rounded-sm px-3 py-2 transition-colors"
+                       border border-hairline rounded-sm px-3 py-2 transition-colors"
           >
             ↻ Yenile
           </button>
@@ -146,7 +146,7 @@ export default function Orders() {
 
       {/* Durum özeti */}
       <div className="flex flex-wrap gap-6 mb-6 font-mono text-xs text-slate">
-        <span><span className="text-ink font-semibold">{orders.length}</span> toplam</span>
+        <span><span className="text-paper font-semibold">{orders.length}</span> toplam</span>
         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
           <span key={key} className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full inline-block ${cfg.dot}`} />
@@ -156,15 +156,15 @@ export default function Orders() {
       </div>
 
       {/* Filtre sekmeleri */}
-      <div className="flex gap-1 mb-6 border-b border-sand overflow-x-auto">
+      <div className="flex gap-1 mb-6 border-b border-hairline overflow-x-auto">
         {FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
             className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
               filter === f.value
-                ? 'border-ember text-ink font-semibold'
-                : 'border-transparent text-slate hover:text-ink'
+                ? 'border-ember text-paper font-semibold'
+                : 'border-transparent text-slate hover:text-paper'
             }`}
           >
             {f.label}
@@ -181,14 +181,14 @@ export default function Orders() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : orders.length === 0 ? (
-        <div className="border border-dashed border-sand rounded-sm p-10 text-center bg-white/50">
+        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek sipariş bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-sand rounded-sm overflow-hidden bg-white">
+        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-cream/60 border-b border-sand text-left font-mono text-[10px] uppercase tracking-widest text-slate">
+              <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
                 <th className="px-5 py-3">Sipariş</th>
                 <th className="px-5 py-3">Masa</th>
                 <th className="px-5 py-3">Durum</th>
@@ -202,22 +202,22 @@ export default function Orders() {
                 const cfg = STATUS_CONFIG[o.Status] || STATUS_CONFIG.Pending;
                 const canCancel = isAdmin && !['Paid', 'Cancelled', 'Merged'].includes(o.Status);
                 return (
-                  <tr key={o.OrderId} className="border-b border-sand last:border-b-0 hover:bg-cream/30">
-                    <td className="px-5 py-3 font-mono text-ink">#{o.OrderId}</td>
-                    <td className="px-5 py-3 text-ink">Masa {tableNumber(o.TableId)}</td>
+                  <tr key={o.OrderId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
+                    <td className="px-5 py-3 font-mono text-paper">#{o.OrderId}</td>
+                    <td className="px-5 py-3 text-paper">Masa {tableNumber(o.TableId)}</td>
                     <td className="px-5 py-3">
                       <span className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${cfg.border} ${cfg.bg}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
                         {cfg.label}
                       </span>
                     </td>
-                    <td className="px-5 py-3 font-mono text-ink">{money(o.TotalAmount)}</td>
+                    <td className="px-5 py-3 font-mono text-paper">{money(o.TotalAmount)}</td>
                     <td className="px-5 py-3 font-mono text-xs text-slate">{dateTime(o.CreatedAt)}</td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-2 flex-wrap">
                         <button
                           onClick={() => openDetail(o.OrderId)}
-                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-sand rounded-sm px-2.5 py-1.5 transition-colors"
+                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
                         >
                           Detay
                         </button>
@@ -283,15 +283,15 @@ function OrderDetailModal({ orderId, detail, loading, error, onClose, productNam
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-sm border border-sand w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-sand flex items-start justify-between">
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
             <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Sipariş Detayı</p>
-            <h2 className="font-display text-xl font-semibold text-ink">#{orderId}</h2>
+            <h2 className="font-display text-xl font-semibold text-paper">#{orderId}</h2>
           </div>
-          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-ink">
+          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
             Kapat ✕
           </button>
         </div>
@@ -305,30 +305,30 @@ function OrderDetailModal({ orderId, detail, loading, error, onClose, productNam
           {detail && !loading && (
             <>
               <div className="flex flex-wrap gap-x-8 gap-y-2 mb-5 font-mono text-xs text-slate">
-                <span>Masa <span className="text-ink font-semibold">{tableNumber(detail.TableId)}</span></span>
+                <span>Masa <span className="text-paper font-semibold">{tableNumber(detail.TableId)}</span></span>
                 <span>
                   Durum{' '}
-                  <span className="text-ink font-semibold">
+                  <span className="text-paper font-semibold">
                     {statusConfig[detail.Status]?.label || detail.Status}
                   </span>
                 </span>
-                <span>Oluşturuldu <span className="text-ink font-semibold">{dateTime(detail.CreatedAt)}</span></span>
+                <span>Oluşturuldu <span className="text-paper font-semibold">{dateTime(detail.CreatedAt)}</span></span>
               </div>
 
               {detail.Note && (
-                <p className="text-sm text-ink mb-5 border-l-2 border-sand pl-3">{detail.Note}</p>
+                <p className="text-sm text-paper mb-5 border-l-2 border-hairline pl-3">{detail.Note}</p>
               )}
 
               <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Ürünler</p>
-              <div className="border border-sand rounded-sm divide-y divide-sand mb-5">
+              <div className="border border-hairline rounded-sm divide-y divide-hairline mb-5">
                 {(detail.items || []).map((item, i) => (
                   <div key={i} className="flex items-center justify-between px-4 py-2.5 text-sm">
                     <div>
-                      <p className="text-ink">{productName(item.ProductId)}</p>
+                      <p className="text-paper">{productName(item.ProductId)}</p>
                       {item.Note && <p className="text-xs text-slate mt-0.5">{item.Note}</p>}
                     </div>
                     <div className="text-right font-mono text-xs text-slate">
-                      <span className="text-ink">{item.Quantity}×</span> {money(item.UnitPrice)}
+                      <span className="text-paper">{item.Quantity}×</span> {money(item.UnitPrice)}
                     </div>
                   </div>
                 ))}
@@ -339,11 +339,11 @@ function OrderDetailModal({ orderId, detail, loading, error, onClose, productNam
 
               <div className="flex justify-between items-center font-mono text-sm">
                 <span className="text-slate uppercase tracking-wide text-xs">Toplam</span>
-                <span className="text-ink font-semibold text-base">{money(detail.TotalAmount)}</span>
+                <span className="text-paper font-semibold text-base">{money(detail.TotalAmount)}</span>
               </div>
 
               {!['Paid', 'Cancelled', 'Merged'].includes(detail.Status) && (
-                <div className="mt-5 pt-5 border-t border-sand">
+                <div className="mt-5 pt-5 border-t border-hairline">
                   <PaymentDrawer
                     order={detail}
                     resolveProductName={productName}
@@ -421,15 +421,15 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
-        className="bg-white rounded-sm border border-sand w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-sand flex items-start justify-between">
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
             <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Yeni</p>
-            <h2 className="font-display text-xl font-semibold text-ink">Sipariş Oluştur</h2>
+            <h2 className="font-display text-xl font-semibold text-paper">Sipariş Oluştur</h2>
           </div>
-          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-ink">
+          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
             Kapat ✕
           </button>
         </div>
@@ -440,7 +440,7 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
             <select
               value={tableId}
               onChange={(e) => setTableId(e.target.value)}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             >
               <option value="">Masa seçin</option>
@@ -470,7 +470,7 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
                   <select
                     value={item.ProductId}
                     onChange={(e) => updateItem(idx, 'ProductId', e.target.value)}
-                    className="flex-1 border border-sand rounded-sm px-3 py-2 font-body text-sm text-ink
+                    className="flex-1 border border-hairline rounded-sm px-3 py-2 font-body text-sm text-paper
                                focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                   >
                     <option value="">Ürün seçin</option>
@@ -485,7 +485,7 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
                     min="1"
                     value={item.Quantity}
                     onChange={(e) => updateItem(idx, 'Quantity', e.target.value)}
-                    className="w-20 border border-sand rounded-sm px-2 py-2 font-mono text-sm text-ink text-center
+                    className="w-20 border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper text-center
                                focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                   />
                   {items.length > 1 && (
@@ -508,7 +508,7 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-sm text-ink
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               placeholder="ör. Az pişmiş, glutensiz vb."
             />
@@ -519,12 +519,12 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-sand flex justify-end gap-2">
+        <div className="px-6 py-4 border-t border-hairline flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ink
-                       border border-sand rounded-sm px-4 py-2.5 transition-colors"
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
           >
             Vazgeç
           </button>

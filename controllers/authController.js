@@ -129,4 +129,82 @@ const login = async (req, res) => {
     }
 };
 
-module.exports = { register, login };
+// ============================================================
+// PERSONEL LİSTESİ (HERKESE AÇIK)
+// PIN giriş ekranındaki personel seçim kartları için — hassas hiçbir alan dönmez.
+// ============================================================
+const getStaff = async (req, res) => {
+    try {
+        const pool = await connectDB();
+        const result = await pool.request().query(`
+            SELECT UserId, FullName, Role
+            FROM Users
+            WHERE IsActive = 1 AND PinHash IS NOT NULL
+            ORDER BY FullName ASC
+        `);
+        return res.status(200).json(result.recordset);
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ message: 'Personel listesi getirilemedi.' });
+    }
+};
+
+// ============================================================
+// PIN İLE GİRİŞ
+// ============================================================
+const loginWithPin = async (req, res) => {
+    const { UserId, Pin } = req.body;
+
+    if (!UserId || !Pin) {
+        return res.status(400).json({ message: 'UserId ve Pin zorunludur.' });
+    }
+
+    try {
+        const pool = await connectDB();
+
+        const result = await pool.request()
+            .input('UserId', sql.Int, UserId)
+            .query(`
+                SELECT UserId, FullName, UserName, PinHash, Role, IsActive
+                FROM Users
+                WHERE UserId = @UserId
+            `);
+
+        if (result.recordset.length === 0) {
+            return res.status(401).json({ message: 'Personel bulunamadı veya PIN hatalı.' });
+        }
+
+        const user = result.recordset[0];
+
+        if (!user.IsActive || !user.PinHash) {
+            return res.status(401).json({ message: 'Personel bulunamadı veya PIN hatalı.' });
+        }
+
+        const pinMatches = await bcrypt.compare(Pin, user.PinHash);
+        if (!pinMatches) {
+            return res.status(401).json({ message: 'Personel bulunamadı veya PIN hatalı.' });
+        }
+
+        const token = jwt.sign(
+            { userId: user.UserId, userName: user.UserName, role: user.Role },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
+
+        return res.status(200).json({
+            message: 'Giriş başarılı.',
+            token,
+            user: {
+                userId: user.UserId,
+                fullName: user.FullName,
+                userName: user.UserName,
+                role: user.Role,
+            },
+        });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ message: 'Giriş yapılırken hata oluştu.', error: err.message });
+    }
+};
+
+module.exports = { register, login, getStaff, loginWithPin };

@@ -98,13 +98,13 @@ export default function Users() {
           <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
             Yönetim · Personel
           </p>
-          <h1 className="font-display text-3xl font-semibold text-ink">Kullanıcılar</h1>
+          <h1 className="font-display text-3xl font-semibold text-paper">Kullanıcılar</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchUsers}
             className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-sand rounded-sm px-3 py-2 transition-colors"
+                       border border-hairline rounded-sm px-3 py-2 transition-colors"
           >
             ↻ Yenile
           </button>
@@ -120,7 +120,7 @@ export default function Users() {
 
       {/* Durum özeti */}
       <div className="flex flex-wrap gap-6 mb-6 font-mono text-xs text-slate">
-        <span><span className="text-ink font-semibold">{users.length}</span> toplam</span>
+        <span><span className="text-paper font-semibold">{users.length}</span> toplam</span>
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full inline-block bg-moss" />
           {activeCount} aktif
@@ -132,15 +132,15 @@ export default function Users() {
       </div>
 
       {/* Filtre sekmeleri */}
-      <div className="flex gap-1 mb-6 border-b border-sand">
+      <div className="flex gap-1 mb-6 border-b border-hairline">
         {FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
             className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors ${
               filter === f.value
-                ? 'border-ember text-ink font-semibold'
-                : 'border-transparent text-slate hover:text-ink'
+                ? 'border-ember text-paper font-semibold'
+                : 'border-transparent text-slate hover:text-paper'
             }`}
           >
             {f.label}
@@ -157,14 +157,14 @@ export default function Users() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : visibleUsers.length === 0 ? (
-        <div className="border border-dashed border-sand rounded-sm p-10 text-center bg-white/50">
+        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek kullanıcı bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-sand rounded-sm overflow-hidden bg-white">
+        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-cream/60 border-b border-sand text-left font-mono text-[10px] uppercase tracking-widest text-slate">
+              <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
                 <th className="px-5 py-3">Kullanıcı</th>
                 <th className="px-5 py-3">Kullanıcı Adı</th>
                 <th className="px-5 py-3">Rol</th>
@@ -178,9 +178,9 @@ export default function Users() {
                 const active = isActive(u);
                 const isSelf = user?.userId === u.UserId;
                 return (
-                  <tr key={u.UserId} className="border-b border-sand last:border-b-0 hover:bg-cream/30">
+                  <tr key={u.UserId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
                     <td className="px-5 py-3">
-                      <p className="text-ink font-medium">
+                      <p className="text-paper font-medium">
                         {u.FullName}
                         {isSelf && (
                           <span className="ml-2 font-mono text-[10px] uppercase tracking-wide text-ember">(sen)</span>
@@ -189,7 +189,7 @@ export default function Users() {
                     </td>
                     <td className="px-5 py-3 font-mono text-xs text-slate">{u.UserName}</td>
                     <td className="px-5 py-3">
-                      <span className="inline-flex items-center border border-sand rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide text-ink bg-cream/40">
+                      <span className="inline-flex items-center border border-hairline rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide text-paper bg-hairline/40">
                         {ROLE_LABELS[u.Role] || u.Role}
                       </span>
                     </td>
@@ -208,7 +208,7 @@ export default function Users() {
                       <div className="flex justify-end gap-2 flex-wrap">
                         <button
                           onClick={() => setManagingUser(u)}
-                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-sand rounded-sm px-2.5 py-1.5 transition-colors"
+                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
                         >
                           Yönet
                         </button>
@@ -311,15 +311,15 @@ function CreateUserModal({ onClose, onCreated }) {
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
-        className="bg-white rounded-sm border border-sand w-full max-w-md max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-sm border border-hairline w-full max-w-md max-h-[85vh] overflow-auto shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-sand flex items-start justify-between">
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
             <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Personel</p>
-            <h2 className="font-display text-xl font-semibold text-ink">Yeni Kullanıcı</h2>
+            <h2 className="font-display text-xl font-semibold text-paper">Yeni Kullanıcı</h2>
           </div>
-          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-ink">
+          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
             Kapat ✕
           </button>
         </div>
@@ -332,7 +332,7 @@ function CreateUserModal({ onClose, onCreated }) {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               autoFocus
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
@@ -344,7 +344,7 @@ function CreateUserModal({ onClose, onCreated }) {
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               autoComplete="off"
-              className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               placeholder="ör. garson1"
             />
@@ -358,7 +358,7 @@ function CreateUserModal({ onClose, onCreated }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
-                className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                 placeholder="En az 6 karakter"
               />
@@ -368,7 +368,7 @@ function CreateUserModal({ onClose, onCreated }) {
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               >
                 {ROLE_OPTIONS.map((r) => (
@@ -383,12 +383,12 @@ function CreateUserModal({ onClose, onCreated }) {
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-sand flex justify-end gap-2">
+        <div className="px-6 py-4 border-t border-hairline flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ink
-                       border border-sand rounded-sm px-4 py-2.5 transition-colors"
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
           >
             Vazgeç
           </button>
@@ -461,16 +461,16 @@ function ManageUserModal({ user, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-sm border border-sand w-full max-w-md max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-sm border border-hairline w-full max-w-md max-h-[85vh] overflow-auto shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-sand flex items-start justify-between">
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
             <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Yönet</p>
-            <h2 className="font-display text-xl font-semibold text-ink">{user.FullName}</h2>
+            <h2 className="font-display text-xl font-semibold text-paper">{user.FullName}</h2>
             <p className="font-mono text-xs text-slate mt-0.5">{user.UserName}</p>
           </div>
-          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-ink">
+          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
             Kapat ✕
           </button>
         </div>
@@ -483,7 +483,7 @@ function ManageUserModal({ user, onClose, onSaved }) {
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="flex-1 border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+                className="flex-1 border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               >
                 {ROLE_OPTIONS.map((r) => (
@@ -504,7 +504,7 @@ function ManageUserModal({ user, onClose, onSaved }) {
             {roleMsg && <p className="text-moss text-xs font-medium border-l-2 border-moss pl-3 mt-2">{roleMsg}</p>}
           </div>
 
-          <div className="border-t border-sand" />
+          <div className="border-t border-hairline" />
 
           {/* Şifre sıfırla */}
           <div>
@@ -516,7 +516,7 @@ function ManageUserModal({ user, onClose, onSaved }) {
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
                 placeholder="Yeni şifre (en az 6 karakter)"
-                className="flex-1 border border-sand rounded-sm px-3 py-2.5 font-body text-ink
+                className="flex-1 border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               />
               <button
@@ -534,12 +534,12 @@ function ManageUserModal({ user, onClose, onSaved }) {
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-sand flex justify-end">
+        <div className="px-6 py-4 border-t border-hairline flex justify-end">
           <button
             type="button"
             onClick={onSaved}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ink
-                       border border-sand rounded-sm px-4 py-2.5 transition-colors"
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
           >
             Kapat ve Yenile
           </button>

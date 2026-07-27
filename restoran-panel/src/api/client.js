@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-// Backend'in çalıştığı adres. Farklıysa burayı değiştir.
-const BASE_URL = 'http://localhost:3000/api';
+// Backend adresi. Öncelik: VITE_API_URL env (dağıtım için); yoksa yerel geliştirme.
+// Örn. .env: VITE_API_URL=https://api.restoranim.com/api
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4091/api';
 
 // Ürün resimleri /api olmadan, sunucu kökünden servis ediliyor (örn. /uploads/products/x.jpg)
 export const API_ORIGIN = BASE_URL.replace(/\/api$/, '');

@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { corsOrigin } = require('./cors');
 
 let ioInstance = null;
 
@@ -10,7 +11,7 @@ function initSocket(httpServer) {
     const { Server } = require('socket.io');
 
     ioInstance = new Server(httpServer, {
-        cors: { origin: '*' },
+        cors: { origin: corsOrigin },
     });
 
     ioInstance.use((socket, next) => {
@@ -37,4 +38,17 @@ function emitTablesChanged() {
     ioInstance?.emit('tables:changed');
 }
 
-module.exports = { initSocket, emitTablesChanged };
+// ============================================================
+// Mutfak Ekranı (KDS) bildirimleri.
+// Rol modelinde ayrı bir "Kitchen" rolü olmadığı için event'ler tüm
+// kimlik-doğrulanmış istemcilere yayınlanır; KDS ekranı ilgili event'i
+// dinleyip GET /api/kds/queue ile tazelenir. Payload sadece "hangi
+// sipariş/kalem" ipucu taşır, tek doğruluk kaynağı yine REST sorgusudur.
+//   event: 'kds:new'      -> mutfağa yeni kalem(ler) düştü
+//   event: 'kds:updated'  -> bir kalemin hazırlanma durumu değişti
+// ============================================================
+function emitKitchen(event, payload) {
+    ioInstance?.emit(event, payload || {});
+}
+
+module.exports = { initSocket, emitTablesChanged, emitKitchen };

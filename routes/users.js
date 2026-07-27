@@ -6,16 +6,18 @@ const {
     updateUserRole,
     resetPassword,
     deactivateUser,
-    reactivateUser
+    reactivateUser,
+    setPin
 } = require('../controllers/userController');
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 
 // TÜM ENDPOINT'LER SADECE ADMIN
-router.get('/', verifyToken, getAllUsers);
-router.get('/:id', verifyToken, getUserById);
-router.patch('/:id/role', verifyToken, updateUserRole);
-router.patch('/:id/reset-password', verifyToken, resetPassword);
-router.patch('/:id/deactivate', verifyToken, deactivateUser);
-router.patch('/:id/reactivate', verifyToken, reactivateUser);
+router.get('/', verifyToken, requireRole('Admin'), getAllUsers);
+router.get('/:id', verifyToken, requireRole('Admin'), getUserById);
+router.patch('/:id/role', verifyToken, requireRole('Admin'), updateUserRole);
+router.patch('/:id/reset-password', verifyToken, requireRole('Admin'), resetPassword);
+router.patch('/:id/pin', verifyToken, requireRole('Admin'), setPin);
+router.patch('/:id/deactivate', verifyToken, requireRole('Admin'), deactivateUser);
+router.patch('/:id/reactivate', verifyToken, requireRole('Admin'), reactivateUser);
 
 module.exports = router;

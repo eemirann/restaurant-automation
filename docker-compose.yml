@@ -1,0 +1,58 @@
+# ============================================================
+# Restoran POS — tam yığın (MSSQL + backend + panel)
+# Kullanım:
+#   1) Kök dizinde .env oluşturun (JWT_SECRET, DB_PASSWORD zorunlu)
+#   2) docker compose up -d --build
+#   3) Veritabanını ve şemayı hazırlayın (ilk kurulumda bir kez):
+#        docker compose exec db /opt/mssql-tools/bin/sqlcmd -S localhost -U sa \
+#          -P "$DB_PASSWORD" -Q "IF DB_ID('RestoranDB') IS NULL CREATE DATABASE RestoranDB"
+#        docker compose run --rm backend npm run migrate
+#   Panel:   http://localhost:8080
+#   Backend: http://localhost:4091
+# ============================================================
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD}"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    restart: unless-stopped
+
+  backend:
+    build: .
+    environment:
+      DB_SERVER: db
+      DB_DATABASE: "${DB_DATABASE:-RestoranDB}"
+      DB_USER: sa
+      DB_PASSWORD: "${DB_PASSWORD}"
+      DB_PORT: "1433"
+      JWT_SECRET: "${JWT_SECRET}"
+      PORT: "4091"
+      NODE_ENV: production
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:8080}"
+    ports:
+      - "4091:4091"
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  panel:
+    build:
+      context: ./restoran-panel
+      args:
+        VITE_API_URL: "${VITE_API_URL:-http://localhost:4091/api}"
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mssql-data:
+  uploads:

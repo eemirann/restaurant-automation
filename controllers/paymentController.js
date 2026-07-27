@@ -1,5 +1,6 @@
 const { sql, connectDB } = require('../config/db');
 const { emitTablesChanged } = require('../config/socket');
+const { logAudit } = require('../utils/audit');
 
 // ============================================================
 // YARDIMCI FONKSİYON
@@ -206,6 +207,10 @@ const createPayment = async (req, res) => {
             await transaction.commit();
             emitTablesChanged();
 
+            if (discount > 0) {
+                logAudit(pool, { userId: CreatedBy, action: 'DISCOUNT_APPLIED', entityType: 'Payment', entityId: newPaymentId, details: { OrderId, DiscountAmount: discount } });
+            }
+
             return res.status(201).json({
                 message: 'Ödeme başarıyla kaydedildi.',
                 totalPaid: netPaid,
@@ -357,6 +362,7 @@ const deletePayment = async (req, res) => {
 
             await transaction.commit();
             emitTablesChanged();
+            logAudit(pool, { userId: DeletedBy, action: 'PAYMENT_DELETE', entityType: 'Payment', entityId: Number(id), details: { OrderId } });
             return res.status(200).json({ message: 'Ödeme iptal edildi.' });
 
         } catch (err) {
@@ -468,6 +474,7 @@ const refundPayment = async (req, res) => {
 
             await transaction.commit();
             emitTablesChanged();
+            logAudit(pool, { userId: RefundedBy, action: 'PAYMENT_REFUND', entityType: 'Payment', entityId: Number(id), details: { OrderId: payment.OrderId, RefundAmount, totalRefunded: totalRefundAfter } });
             return res.status(200).json({ message: 'İade işlendi.', totalRefunded: totalRefundAfter });
 
         } catch (err) {

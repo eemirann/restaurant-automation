@@ -8,10 +8,27 @@
   box-sizing: border-box;
 }
 
+:root {
+  --color-charcoal: 247 244 238;   /* F7F4EE - sayfa arkaplanı (açık) */
+  --color-panel: 255 255 255;      /* FFFFFF - kart yüzeyi (açık) */
+  --color-hairline: 232 225 211;   /* E8E1D3 - kenarlık (açık) */
+  --color-paper: 28 27 25;         /* 1C1B19 - birincil metin (açık) */
+  --color-slate: 91 90 86;         /* 5B5A56 - ikincil metin (açık) */
+}
+
+.dark {
+  --color-charcoal: 10 8 6;        /* 0A0806 - sayfa arkaplanı (koyu, gerçek siyaha yakın) */
+  --color-panel: 26 21 15;         /* 1A150F - kart yüzeyi (koyu) */
+  --color-hairline: 44 37 27;      /* 2C251B - kenarlık (koyu) */
+  --color-paper: 243 236 224;      /* F3ECE0 - birincil metin (koyu) */
+  --color-slate: 167 156 140;      /* A79C8C - ikincil metin (koyu) */
+}
+
 body {
   margin: 0;
-  background-color: #F7F4EE;
-  color: #1C1B19;
+  background-color: rgb(var(--color-charcoal));
+  color: rgb(var(--color-paper));
+  transition: background-color .15s ease;
 }
 
 ::selection {

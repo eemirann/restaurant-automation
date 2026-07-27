@@ -11,13 +11,13 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const login = async (userName, password) => {
+  const loginWithPin = async (userId, pin) => {
     setError('');
     setLoading(true);
     try {
-      const res = await client.post('/auth/login', {
-        UserName: userName,
-        Password: password,
+      const res = await client.post('/auth/login-pin', {
+        UserId: userId,
+        Pin: pin,
       });
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
@@ -38,7 +38,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, error, loading }}>
+    <AuthContext.Provider value={{ user, loginWithPin, logout, error, loading }}>
       {children}
     </AuthContext.Provider>
   );

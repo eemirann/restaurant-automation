@@ -1,14 +1,20 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Panel', roles: null, num: '01' },
-  { to: '/orders', label: 'Siparişler', roles: null, num: '02' },
-  { to: '/tables', label: 'Masalar', roles: null, num: '03' },
-  { to: '/payments', label: 'Ödemeler', roles: null, num: '04' },
-  { to: '/products', label: 'Ürünler', roles: ['Admin'], num: '05' },
-  { to: '/users', label: 'Kullanıcılar', roles: ['Admin'], num: '06' },
-  { to: '/stock', label: 'Stok', roles: ['Admin'], num: '07' },
+  { to: '/', label: 'Panel', roles: null, icon: '📊' },
+  { to: '/orders', label: 'Siparişler', roles: null, icon: '🧾' },
+  { to: '/tables', label: 'Masalar', roles: null, icon: '🍽️' },
+  { to: '/kds', label: 'Mutfak', roles: null, icon: '👨‍🍳' },
+  { to: '/payments', label: 'Ödemeler', roles: null, icon: '💳' },
+  { to: '/reports', label: 'Raporlar', roles: ['Admin', 'Cashier'], icon: '📈' },
+  { to: '/shifts', label: 'Vardiya', roles: null, icon: '🗄️' },
+  { to: '/products', label: 'Ürünler', roles: ['Admin'], icon: '☕' },
+  { to: '/users', label: 'Kullanıcılar', roles: ['Admin'], icon: '👤' },
+  { to: '/stock', label: 'Stok', roles: ['Admin'], icon: '📦' },
+  { to: '/recipes', label: 'Reçeteler', roles: ['Admin'], icon: '🧪' },
+  { to: '/audit', label: 'Denetim', roles: ['Admin'], icon: '🛡️' },
 ];
 
 const ROLE_LABELS = {
@@ -19,6 +25,7 @@ const ROLE_LABELS = {
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -31,7 +38,7 @@ export default function Layout({ children }) {
   );
 
   return (
-    <div className="min-h-screen bg-cream font-body flex">
+    <div className="min-h-screen bg-charcoal font-body flex">
       {/* Sidebar */}
       <aside className="w-60 bg-ink text-cream flex flex-col shrink-0">
         <div className="px-6 py-6 border-b border-cream/10">
@@ -55,11 +62,32 @@ export default function Layout({ children }) {
                 }`
               }
             >
-              <span className="font-mono text-xs text-ember">{item.num}</span>
+              <span className="text-base leading-none w-5 text-center">{item.icon}</span>
               {item.label}
             </NavLink>
           ))}
         </nav>
+
+        <div className="px-6 py-4 border-t border-cream/10 flex items-center justify-between">
+          <span className="font-mono text-[10px] uppercase tracking-wide text-sand/50">
+            {theme === 'dark' ? 'Koyu' : 'Açık'} Mod
+          </span>
+          <button
+            onClick={toggleTheme}
+            role="switch"
+            aria-checked={theme === 'dark'}
+            title="Açık / Koyu tema"
+            className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${
+              theme === 'dark' ? 'bg-ember' : 'bg-cream/20'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-cream shadow-sm transition-transform ${
+                theme === 'dark' ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
 
         <div className="px-6 py-5 border-t border-cream/10">
           <p className="font-medium text-sm truncate">{user?.fullName}</p>

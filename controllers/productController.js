@@ -1,11 +1,20 @@
 const { sql, connectDB } = require('../config/db');
+const { logAudit } = require('../utils/audit');
 
-// Not: Hammadde (IsRawMaterial=1) ürünler bilerek listelenmez — bunlar Stok
-// modülünden eklenen envanter malzemeleridir, menüde/sipariş ekranında görünmemeli.
+// Not: Hammadde (IsRawMaterial=1) ürünler varsayılan olarak listelenmez — bunlar
+// Stok modülünden eklenen envanter malzemeleridir, menüde/sipariş ekranında görünmemeli.
+// Opsiyonel ?raw parametresi (reçete/BOM ekranı için):
+//   raw=1   -> yalnızca hammaddeler
+//   raw=all -> hepsi (menü + hammadde)
 async function getAllProducts(req, res) {
     try {
+        const { raw } = req.query;
+        let where = 'WHERE IsRawMaterial = 0';
+        if (raw === '1' || raw === 'true') where = 'WHERE IsRawMaterial = 1';
+        else if (raw === 'all') where = '';
+
         const pool = await connectDB();
-        const result = await pool.request().query('SELECT * FROM Products WHERE IsRawMaterial = 0');
+        const result = await pool.request().query(`SELECT * FROM Products ${where}`);
         res.status(200).json(result.recordset);
     } catch (err) {
         console.error('Ürünler getirilirken hata:', err);
@@ -33,7 +42,7 @@ async function getProductById(req, res) {
 
 async function createProduct(req, res) {
     try {
-        const { Name, Description, Price, CategoryId } = req.body;
+        const { Name, Description, Price, CategoryId, Cost } = req.body;
 
         if (!Name || Price === undefined || Price === null || !CategoryId) {
             return res.status(400).json({ error: 'Ürün adı, fiyat ve kategori zorunludur' });
@@ -43,13 +52,18 @@ async function createProduct(req, res) {
             return res.status(400).json({ error: 'Fiyat pozitif bir sayı olmalıdır' });
         }
 
+        if (Cost !== undefined && Cost !== null && (typeof Cost !== 'number' || Cost < 0)) {
+            return res.status(400).json({ error: 'Maliyet negatif olmayan bir sayı olmalıdır' });
+        }
+
         const pool = await connectDB();
         const result = await pool.request()
             .input('Name', sql.NVarChar, Name)
             .input('Description', sql.NVarChar, Description)
             .input('Price', sql.Decimal(10, 2), Price)
             .input('CategoryId', sql.Int, CategoryId)
-            .query('INSERT INTO Products (Name, Description, Price, CategoryId) OUTPUT INSERTED.* VALUES (@Name, @Description, @Price, @CategoryId)');
+            .input('Cost', sql.Decimal(10, 2), Cost ?? null)
+            .query('INSERT INTO Products (Name, Description, Price, CategoryId, Cost) OUTPUT INSERTED.* VALUES (@Name, @Description, @Price, @CategoryId, @Cost)');
 
         res.status(201).json(result.recordset[0]);
     } catch (err) {
@@ -61,7 +75,7 @@ async function createProduct(req, res) {
 async function updateProduct(req, res) {
     try {
         const { id } = req.params;
-        const { Name, Description, Price, CategoryId } = req.body;
+        const { Name, Description, Price, CategoryId, Cost } = req.body;
 
         if (!Name || Price === undefined || Price === null || !CategoryId) {
             return res.status(400).json({ error: 'Ürün adı, fiyat ve kategori zorunludur' });
@@ -71,6 +85,10 @@ async function updateProduct(req, res) {
             return res.status(400).json({ error: 'Fiyat pozitif bir sayı olmalıdır' });
         }
 
+        if (Cost !== undefined && Cost !== null && (typeof Cost !== 'number' || Cost < 0)) {
+            return res.status(400).json({ error: 'Maliyet negatif olmayan bir sayı olmalıdır' });
+        }
+
         const pool = await connectDB();
         const result = await pool.request()
             .input('Id', sql.Int, id)
@@ -78,7 +96,8 @@ async function updateProduct(req, res) {
             .input('Description', sql.NVarChar, Description)
             .input('Price', sql.Decimal(10, 2), Price)
             .input('CategoryId', sql.Int, CategoryId)
-            .query('UPDATE Products SET Name = @Name, Description = @Description, Price = @Price, CategoryId = @CategoryId OUTPUT INSERTED.* WHERE ProductId = @Id');
+            .input('Cost', sql.Decimal(10, 2), Cost ?? null)
+            .query('UPDATE Products SET Name = @Name, Description = @Description, Price = @Price, CategoryId = @CategoryId, Cost = @Cost OUTPUT INSERTED.* WHERE ProductId = @Id');
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Ürün bulunamadı' });
@@ -164,4 +183,34 @@ async function uploadProductImage(req, res) {
     }
 }
 
-module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, reactivateProduct, uploadProductImage };
+// ============================================================
+// "86 / TÜKENDI" — ürünü silmeden geçici satışa aç/kapat (SADECE ADMIN)
+// Body: { IsAvailable: boolean }
+// ============================================================
+async function setProductAvailability(req, res) {
+    const { id } = req.params;
+    const { IsAvailable } = req.body;
+
+    if (typeof IsAvailable !== 'boolean') {
+        return res.status(400).json({ error: 'IsAvailable true/false olmalıdır' });
+    }
+
+    try {
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('ProductId', sql.Int, id)
+            .input('IsAvailable', sql.Bit, IsAvailable ? 1 : 0)
+            .query(`UPDATE Products SET IsAvailable = @IsAvailable OUTPUT INSERTED.* WHERE ProductId = @ProductId`);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Ürün bulunamadı' });
+        }
+        logAudit(pool, { userId: req.user?.userId, action: 'PRODUCT_86', entityType: 'Product', entityId: Number(id), details: { IsAvailable } });
+        return res.status(200).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Ürün satış durumu güncellenirken hata:', err);
+        return res.status(500).json({ error: 'Ürün satış durumu güncellenemedi' });
+    }
+}
+
+module.exports = { getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, reactivateProduct, uploadProductImage, setProductAvailability };

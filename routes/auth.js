@@ -1,11 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { register, login } = require('../controllers/authController');
+const { register, login, getStaff, loginWithPin } = require('../controllers/authController');
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
+const { loginLimiter } = require('../middleware/rateLimiters');
 
 // SADECE ADMIN - yeni kullanıcı (garson/kasiyer/admin) oluşturabilir
 router.post('/register', verifyToken, requireRole('Admin'), register);
 
-router.post('/login', login);
+// Brute-force koruması: giriş uçlarına deneme sınırı uygulanır
+router.post('/login', loginLimiter, login);
+
+// PIN ile giriş akışı - login ekranındaki personel seçimi ve PIN doğrulama
+router.get('/staff', getStaff);
+router.post('/login-pin', loginLimiter, loginWithPin);
 
 module.exports = router;

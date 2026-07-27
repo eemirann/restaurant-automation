@@ -5,9 +5,9 @@ import PaymentDrawer from '../components/PaymentDrawer';
 
 // Sipariş durumu (DB/API kontratı) -> Türkçe etiket + renk
 const STATUS_CONFIG = {
-  Pending: { label: 'Bekliyor', dot: 'bg-amber-500', border: 'border-amber-300', bg: 'bg-amber-50' },
+  Pending: { label: 'Bekliyor', dot: 'bg-amber-500', border: 'border-amber-500/40', bg: 'bg-amber-500/15' },
   Served: { label: 'Servis Edildi', dot: 'bg-moss', border: 'border-moss/40', bg: 'bg-moss/5' },
-  Paid: { label: 'Ödendi', dot: 'bg-emerald-600', border: 'border-emerald-300', bg: 'bg-emerald-50' },
+  Paid: { label: 'Ödendi', dot: 'bg-emerald-600', border: 'border-emerald-500/40', bg: 'bg-emerald-500/15' },
   Cancelled: { label: 'İptal Edildi', dot: 'bg-slate', border: 'border-slate/30', bg: 'bg-slate/5' },
   Merged: { label: 'Birleştirildi', dot: 'bg-ink/50', border: 'border-ink/20', bg: 'bg-ink/5' },
 };
@@ -89,12 +89,12 @@ export default function Payments() {
           <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
             Kasa · Tahsilat
           </p>
-          <h1 className="font-display text-3xl font-semibold text-ink">Ödemeler</h1>
+          <h1 className="font-display text-3xl font-semibold text-paper">Ödemeler</h1>
         </div>
         <button
           onClick={fetchOrders}
           className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                     border border-sand rounded-sm px-3 py-2 transition-colors"
+                     border border-hairline rounded-sm px-3 py-2 transition-colors"
         >
           ↻ Yenile
         </button>
@@ -107,20 +107,20 @@ export default function Payments() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Sipariş no veya masa ara..."
-          className="border border-sand rounded-sm px-3 py-2 font-body text-sm text-ink w-64
+          className="border border-hairline rounded-sm px-3 py-2 font-body text-sm text-paper w-64
                      focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
         />
       </div>
 
-      <div className="flex gap-1 mb-6 border-b border-sand overflow-x-auto">
+      <div className="flex gap-1 mb-6 border-b border-hairline overflow-x-auto">
         {FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
             className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
               filter === f.value
-                ? 'border-ember text-ink font-semibold'
-                : 'border-transparent text-slate hover:text-ink'
+                ? 'border-ember text-paper font-semibold'
+                : 'border-transparent text-slate hover:text-paper'
             }`}
           >
             {f.label}
@@ -135,14 +135,14 @@ export default function Payments() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : visibleOrders.length === 0 ? (
-        <div className="border border-dashed border-sand rounded-sm p-10 text-center bg-white/50">
+        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek sipariş bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-sand rounded-sm overflow-hidden bg-white">
+        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-cream/60 border-b border-sand text-left font-mono text-[10px] uppercase tracking-widest text-slate">
+              <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
                 <th className="px-5 py-3">Sipariş</th>
                 <th className="px-5 py-3">Masa</th>
                 <th className="px-5 py-3">Durum</th>
@@ -155,22 +155,22 @@ export default function Payments() {
               {visibleOrders.map((o) => {
                 const cfg = STATUS_CONFIG[o.Status] || STATUS_CONFIG.Pending;
                 return (
-                  <tr key={o.OrderId} className="border-b border-sand last:border-b-0 hover:bg-cream/30">
-                    <td className="px-5 py-3 font-mono text-ink">#{o.OrderId}</td>
-                    <td className="px-5 py-3 text-ink">Masa {tableNumber(o.TableId)}</td>
+                  <tr key={o.OrderId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
+                    <td className="px-5 py-3 font-mono text-paper">#{o.OrderId}</td>
+                    <td className="px-5 py-3 text-paper">Masa {tableNumber(o.TableId)}</td>
                     <td className="px-5 py-3">
                       <span className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${cfg.border} ${cfg.bg}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
                         {cfg.label}
                       </span>
                     </td>
-                    <td className="px-5 py-3 font-mono text-ink">{money(o.TotalAmount)}</td>
+                    <td className="px-5 py-3 font-mono text-paper">{money(o.TotalAmount)}</td>
                     <td className="px-5 py-3 font-mono text-xs text-slate">{dateTime(o.CreatedAt)}</td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end">
                         <button
                           onClick={() => setSelectedOrderId(o.OrderId)}
-                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-sand rounded-sm px-2.5 py-1.5 transition-colors"
+                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
                         >
                           Ödeme Detayı
                         </button>
@@ -293,21 +293,21 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-sm border border-sand w-full max-w-2xl max-h-[88vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-sm border border-hairline w-full max-w-2xl max-h-[88vh] overflow-auto shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-sand flex items-start justify-between">
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
             <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Ödeme Detayı</p>
-            <h2 className="font-display text-xl font-semibold text-ink">Sipariş #{orderId}</h2>
+            <h2 className="font-display text-xl font-semibold text-paper">Sipariş #{orderId}</h2>
             {detail && (
               <p className="font-mono text-xs text-slate mt-0.5">
                 Masa {tableNumber(detail.TableId)} ·{' '}
-                <span className="text-ink">{cfg?.label || detail.Status}</span>
+                <span className="text-paper">{cfg?.label || detail.Status}</span>
               </p>
             )}
           </div>
-          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-ink">
+          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
             Kapat ✕
           </button>
         </div>
@@ -320,7 +320,7 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
           ) : (
             <>
               {/* Bakiye özeti */}
-              <div className="border border-sand rounded-sm p-4 mb-6 space-y-1.5 bg-cream/20">
+              <div className="border border-hairline rounded-sm p-4 mb-6 space-y-1.5 bg-hairline/20">
                 <div className="flex justify-between font-mono text-xs text-slate">
                   <span>Sipariş Toplamı</span>
                   <span>{money(balance?.totalAmount)}</span>
@@ -341,7 +341,7 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                     <span>{money(balance.totalTip)}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-center pt-2 mt-1 border-t border-sand">
+                <div className="flex justify-between items-center pt-2 mt-1 border-t border-hairline">
                   <span className="font-mono text-xs uppercase tracking-wide text-slate">Kalan Bakiye</span>
                   <span className={`font-mono text-lg font-semibold ${balance?.remaining > 0 ? 'text-ember' : 'text-moss'}`}>
                     {money(balance?.remaining)}
@@ -352,14 +352,14 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
               {/* Ödeme geçmişi */}
               <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Ödeme Geçmişi</p>
               {payments.length === 0 ? (
-                <div className="border border-dashed border-sand rounded-sm p-6 text-center bg-white/50 mb-6">
+                <div className="border border-dashed border-hairline rounded-sm p-6 text-center bg-panel/50 mb-6">
                   <p className="text-slate font-mono text-sm">Bu sipariş için henüz ödeme alınmamış.</p>
                 </div>
               ) : (
-                <div className="border border-sand rounded-sm overflow-hidden mb-6">
+                <div className="border border-hairline rounded-sm overflow-hidden mb-6">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-cream/60 border-b border-sand text-left font-mono text-[10px] uppercase tracking-wide text-slate">
+                      <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-wide text-slate">
                         <th className="px-3 py-2">Yöntem</th>
                         <th className="px-3 py-2 text-right">Tutar</th>
                         <th className="px-3 py-2 text-right">Bahşiş</th>
@@ -374,14 +374,14 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                         const fullyRefunded = refunded && Number(p.RefundAmount) >= Number(p.Amount);
                         const canRefund = isAdmin && !fullyRefunded;
                         return (
-                          <tr key={p.Id} className="border-b border-sand last:border-b-0 align-top">
-                            <td className="px-3 py-2.5 text-ink">
+                          <tr key={p.Id} className="border-b border-hairline last:border-b-0 align-top">
+                            <td className="px-3 py-2.5 text-paper">
                               {PAYMENT_METHOD_LABELS[p.PaymentMethod] || p.PaymentMethod}
                               {p.InvoiceNumber && (
                                 <span className="block font-mono text-[10px] text-slate mt-0.5">Fiş: {p.InvoiceNumber}</span>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-xs text-ink">
+                            <td className="px-3 py-2.5 text-right font-mono text-xs text-paper">
                               {money(p.Amount)}
                               {refunded && (
                                 <span className="block text-ember mt-0.5">
@@ -406,13 +406,13 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                                       step="0.01"
                                       value={refundAmount}
                                       onChange={(e) => setRefundAmount(e.target.value)}
-                                      className="w-24 border border-sand rounded-sm px-2 py-1 font-mono text-xs text-ink text-right
+                                      className="w-24 border border-hairline rounded-sm px-2 py-1 font-mono text-xs text-paper text-right
                                                  focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                                     />
                                     <div className="flex gap-1.5">
                                       <button
                                         onClick={() => setRefundingId(null)}
-                                        className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ink border border-sand rounded-sm px-2 py-1"
+                                        className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-sm px-2 py-1"
                                       >
                                         Vazgeç
                                       </button>
@@ -430,7 +430,7 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                                     {canRefund && (
                                       <button
                                         onClick={() => startRefund(p)}
-                                        className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember border border-sand rounded-sm px-2 py-1 transition-colors"
+                                        className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2 py-1 transition-colors"
                                       >
                                         İade
                                       </button>
