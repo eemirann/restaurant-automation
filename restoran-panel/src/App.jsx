@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ShiftProvider } from './context/ShiftContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 
@@ -16,6 +17,7 @@ import StockMovements from './pages/StockMovements';
 import Reports from './pages/Reports';
 import Recipes from './pages/Recipes';
 import Shifts from './pages/Shifts';
+import ActiveShifts from './pages/ActiveShifts';
 import Audit from './pages/Audit';
 
 function Page({ children }) {
@@ -29,6 +31,7 @@ function Page({ children }) {
 export default function App() {
   return (
     <AuthProvider>
+      <ShiftProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -38,6 +41,14 @@ export default function App() {
           <Route path="/tables" element={<Page><Tables /></Page>} />
           <Route path="/kds" element={<Page><Kds /></Page>} />
           <Route path="/shifts" element={<Page><Shifts /></Page>} />
+          <Route
+            path="/active-shifts"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><ActiveShifts /></Layout>
+              </ProtectedRoute>
+            }
+          />
           <Route path="/payments" element={<Page><Payments /></Page>} />
 
           <Route
@@ -98,6 +109,7 @@ export default function App() {
           />
         </Routes>
       </BrowserRouter>
+      </ShiftProvider>
     </AuthProvider>
   );
 }

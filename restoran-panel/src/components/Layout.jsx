@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useShift } from '../context/ShiftContext';
+import { OpenShiftModal, CloseShiftModal } from './ShiftWorkflow';
+import client from '../api/client';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Panel', roles: null, icon: '📊' },
@@ -10,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/payments', label: 'Ödemeler', roles: null, icon: '💳' },
   { to: '/reports', label: 'Raporlar', roles: ['Admin', 'Cashier'], icon: '📈' },
   { to: '/shifts', label: 'Vardiya', roles: null, icon: '🗄️' },
+  { to: '/active-shifts', label: 'Aktif Vardiya', roles: ['Admin'], icon: '🟢' },
   { to: '/products', label: 'Ürünler', roles: ['Admin'], icon: '☕' },
   { to: '/users', label: 'Kullanıcılar', roles: ['Admin'], icon: '👤' },
   { to: '/stock', label: 'Stok', roles: ['Admin'], icon: '📦' },
@@ -26,11 +31,24 @@ const ROLE_LABELS = {
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { shift, loading: shiftLoading } = useShift();
   const navigate = useNavigate();
+  const [showClose, setShowClose] = useState(false);
 
-  const handleLogout = () => {
+  // Giriş yapan HER kullanıcı vardiya açar (rol ayrımı yok).
+  const requiresShift = !!user;
+  const mustOpenShift = requiresShift && !shiftLoading && !shift;
+
+  const doLogout = async () => {
+    try { await client.post('/auth/logout'); } catch { /* best-effort audit */ }
     logout();
     navigate('/login');
+  };
+
+  const handleLogout = () => {
+    // Vardiyası açık kasiyer/garson kapatmadan çıkamaz.
+    if (requiresShift && shift) { setShowClose(true); return; }
+    doLogout();
   };
 
   const visibleItems = NAV_ITEMS.filter(
@@ -48,7 +66,7 @@ export default function Layout({ children }) {
           <h1 className="font-display text-xl font-semibold leading-tight">Panel</h1>
         </div>
 
-        <nav className="flex-1 py-4">
+        <nav className="flex-1 py-4 overflow-y-auto">
           {visibleItems.map((item) => (
             <NavLink
               key={item.to}
@@ -105,6 +123,10 @@ export default function Layout({ children }) {
 
       {/* İçerik */}
       <main className="flex-1 overflow-auto">{children}</main>
+
+      {/* Vardiya iş akışı katmanı (yüzen kart kaldırıldı — vardiya bilgisi Dashboard'da) */}
+      {mustOpenShift && <OpenShiftModal />}
+      {showClose && <CloseShiftModal onCancel={() => setShowClose(false)} onClosed={doLogout} />}
     </div>
   );
 }

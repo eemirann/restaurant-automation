@@ -1219,7 +1219,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                             </button>
                           </div>
                         ) : (
-                          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-red-500 border border-red-500/40 rounded-sm px-2 py-1">86</span>
+                          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-red-500 border border-red-500/40 rounded-sm px-2 py-1">Tükendi</span>
                         )}
                       </div>
                     );

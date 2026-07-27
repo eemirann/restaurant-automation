@@ -1,14 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
-const { getCurrentShift, openShift, closeShift, listShifts } = require('../controllers/shiftController');
+const {
+    getCurrentShift, openShift, closeShift, listShifts,
+    getActiveShifts, forceCloseShift, forceLogoutCashier, transferShift,
+} = require('../controllers/shiftController');
 
-// Kendi vardiyası — giriş yapan herkes (garson/kasiyer/admin)
+// Kendi vardiyası — giriş yapan herkes
 router.get('/current', verifyToken, getCurrentShift);
 router.post('/open', verifyToken, openShift);
 router.post('/close', verifyToken, closeShift);
 
-// Tüm vardiya geçmişi — Admin
+// Yönetici (Admin) — gözetim & override
+router.get('/active', verifyToken, requireRole('Admin'), getActiveShifts);
 router.get('/', verifyToken, requireRole('Admin'), listShifts);
+router.post('/:id/force-close', verifyToken, requireRole('Admin'), forceCloseShift);
+router.post('/:id/force-logout', verifyToken, requireRole('Admin'), forceLogoutCashier);
+router.post('/:id/transfer', verifyToken, requireRole('Admin'), transferShift);
 
 module.exports = router;

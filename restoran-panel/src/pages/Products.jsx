@@ -272,7 +272,7 @@ const reactivateProduct = async (productId) => {
                                 : 'text-moss border-moss/40 hover:bg-moss/10'
                             }`}
                           >
-                            {isAvailable(p) ? '🚫 86 — Tükendi İşaretle' : '✅ Satışa Aç'}
+                            {isAvailable(p) ? '🚫 Tükendi İşaretle' : '✅ Satışa Aç'}
                           </button>
                         )}
 

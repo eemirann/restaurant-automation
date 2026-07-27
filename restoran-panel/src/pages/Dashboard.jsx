@@ -2,6 +2,16 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import client from '../api/client';
+import { useShift } from '../context/ShiftContext';
+import { useAuth } from '../context/AuthContext';
+
+// Vardiya süresi (canlı, saniye saniye)
+const fmtDur = (from, now) => {
+  if (!from) return '00:00:00';
+  const s = Math.max(0, Math.floor((now - new Date(from).getTime()) / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+};
 
 const CATEGORY_COLORS = ['#FF4713', '#0090FF', '#00C853', '#FFB020', '#8B5CF6', 'rgb(var(--color-slate))'];
 
@@ -44,6 +54,17 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Canlı saat + vardiya (yüzen widget yerine dashboard'da)
+  const { shift } = useShift();
+  const { user } = useAuth();
+  const [clockNow, setClockNow] = useState(Date.now());
+  useEffect(() => {
+    const i = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(i);
+  }, []);
+  const liveTime = new Date(clockNow).toLocaleTimeString('tr-TR');
+  const liveDate = new Date(clockNow).toLocaleDateString('tr-TR', { weekday: 'long', day: '2-digit', month: 'long' });
 
   const fetchData = async () => {
     setLoading(true);
@@ -103,6 +124,31 @@ export default function Dashboard() {
 
   return (
     <div className="p-10">
+      {/* Canlı saat + vardiya durumu (yüzen widget yerine) */}
+      <div className="rounded-2xl bg-ink text-cream p-5 mb-6 flex items-center justify-between gap-5 flex-wrap">
+        <div>
+          <p className="font-mono text-[10px] tracking-[0.25em] text-cream/40 uppercase mb-1">Canlı</p>
+          <p className="font-display text-4xl font-bold tabular-nums leading-none">{liveTime}</p>
+          <p className="font-mono text-xs text-cream/50 mt-1 capitalize">{liveDate}</p>
+        </div>
+        {shift ? (
+          <div className="flex items-stretch gap-2.5 flex-wrap">
+            <div className="rounded-xl bg-moss/10 border border-moss/20 px-4 py-2.5 text-center min-w-[8.5rem]">
+              <p className="font-mono text-[9px] uppercase tracking-wider text-cream/50 flex items-center justify-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-moss animate-pulse" /> Vardiya Süresi
+              </p>
+              <p className="font-mono text-2xl font-bold tabular-nums text-moss mt-0.5">{fmtDur(shift.startedAtClient ?? shift.OpenedAt, clockNow)}</p>
+            </div>
+            <ShiftTile label="Kasiyer" value={user?.fullName || '—'} />
+            <ShiftTile label="Beklenen Nakit" value={money(shift.ExpectedCash)} />
+            <ShiftTile label="Satış" value={money(shift.CurrentSales)} />
+            <ShiftTile label="Sipariş" value={shift.CurrentOrders ?? 0} />
+          </div>
+        ) : (
+          <span className="font-mono text-xs text-cream/50">Vardiya kapalı</span>
+        )}
+      </div>
+
       <div className="flex items-center justify-between mb-6">
         {error ? (
           <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{error}</p>
@@ -548,6 +594,16 @@ function EmptyState({ text }) {
   return (
     <div className="border border-dashed border-hairline rounded-xl py-10 text-center">
       <p className="text-slate font-mono text-sm">{text}</p>
+    </div>
+  );
+}
+
+// Dashboard vardiya banner'ındaki metrik kutucuğu (koyu ink zemin üzerinde)
+function ShiftTile({ label, value }) {
+  return (
+    <div className="rounded-xl bg-white/5 px-4 py-2.5 text-center min-w-[7rem] flex flex-col justify-center">
+      <p className="font-mono text-[9px] uppercase tracking-wider text-cream/40">{label}</p>
+      <p className="font-mono text-sm font-semibold tabular-nums text-cream mt-0.5 truncate">{value}</p>
     </div>
   );
 }

@@ -9,7 +9,12 @@ const ACTIONS = {
   TABLE_TRANSFER: { label: 'Masa Transfer', cls: 'border-azure/40 bg-azure/10 text-azure' },
   SHIFT_OPEN: { label: 'Vardiya Açıldı', cls: 'border-moss/40 bg-moss/10 text-moss' },
   SHIFT_CLOSE: { label: 'Vardiya Kapandı', cls: 'border-slate/40 bg-slate/10 text-slate' },
-  PRODUCT_86: { label: '86 / Tükendi', cls: 'border-ember/40 bg-ember/10 text-ember' },
+  PRODUCT_86: { label: 'Tükendi', cls: 'border-ember/40 bg-ember/10 text-ember' },
+  LOGIN: { label: 'Giriş', cls: 'border-moss/40 bg-moss/10 text-moss' },
+  LOGOUT: { label: 'Çıkış', cls: 'border-slate/40 bg-slate/10 text-slate' },
+  FORCED_CLOSE: { label: 'Zorla Kapatma', cls: 'border-red-500/40 bg-red-500/10 text-red-500' },
+  FORCED_LOGOUT: { label: 'Zorla Çıkış', cls: 'border-red-500/40 bg-red-500/10 text-red-500' },
+  SHIFT_TRANSFER: { label: 'Vardiya Devri', cls: 'border-azure/40 bg-azure/10 text-azure' },
 };
 
 const dt = (v) => (v ? new Date(v).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -53,7 +58,7 @@ export default function Audit() {
         <div>
           <p className="font-mono text-[10px] tracking-[0.3em] text-ember uppercase mb-1.5">Güvenlik</p>
           <h1 className="font-display text-3xl font-bold text-paper leading-none">Denetim Günlüğü</h1>
-          <p className="font-mono text-xs text-slate mt-2">Hassas aksiyonlar: iptal, iade, indirim, transfer, 86, vardiya.</p>
+          <p className="font-mono text-xs text-slate mt-2">Hassas aksiyonlar: iptal, iade, indirim, transfer, tükendi, vardiya.</p>
         </div>
         <button onClick={load} className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2.5 transition-colors">↻ Yenile</button>
       </div>

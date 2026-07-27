@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { sql, connectDB } = require('../config/db');
+const { logAudit } = require('../utils/audit');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '8h'; // bir vardiya süresi mantıklı bir varsayılan, istersen değiştiririz
@@ -112,6 +113,8 @@ const login = async (req, res) => {
             { expiresIn: JWT_EXPIRES_IN }
         );
 
+        logAudit(pool, { userId: user.UserId, action: 'LOGIN', entityType: 'User', entityId: user.UserId, details: { method: 'password' } });
+
         return res.status(200).json({
             message: 'Giriş başarılı.',
             token,
@@ -191,6 +194,8 @@ const loginWithPin = async (req, res) => {
             { expiresIn: JWT_EXPIRES_IN }
         );
 
+        logAudit(pool, { userId: user.UserId, action: 'LOGIN', entityType: 'User', entityId: user.UserId, details: { method: 'pin' } });
+
         return res.status(200).json({
             message: 'Giriş başarılı.',
             token,
@@ -207,4 +212,18 @@ const loginWithPin = async (req, res) => {
     }
 };
 
-module.exports = { register, login, getStaff, loginWithPin };
+// ============================================================
+// ÇIKIŞ (LOGOUT) — token istemcide silinir; burada sadece denetim kaydı tutulur.
+// İstemci token'ı silmeden ÖNCE best-effort çağırır.
+// ============================================================
+const logout = async (req, res) => {
+    try {
+        const pool = await connectDB();
+        logAudit(pool, { userId: req.user?.userId, action: 'LOGOUT', entityType: 'User', entityId: req.user?.userId });
+    } catch (e) {
+        console.error('Logout audit yazılamadı:', e.message);
+    }
+    return res.status(200).json({ message: 'Çıkış kaydedildi.' });
+};
+
+module.exports = { register, login, getStaff, loginWithPin, logout };

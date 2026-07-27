@@ -21,7 +21,7 @@
   --color-panel: 26 21 15;         /* 1A150F - kart yüzeyi (koyu) */
   --color-hairline: 44 37 27;      /* 2C251B - kenarlık (koyu) */
   --color-paper: 243 236 224;      /* F3ECE0 - birincil metin (koyu) */
-  --color-slate: 167 156 140;      /* A79C8C - ikincil metin (koyu) */
+  --color-slate: 190 181 167;      /* BEB5A7 - ikincil metin (koyu, kontrast için açıldı) */
 }
 
 body {
@@ -34,4 +34,26 @@ body {
 ::selection {
   background-color: #B5482A;
   color: #F7F4EE;
+}
+
+/* Form alanları için tema-duyarlı varsayılan (koyu modda beyaz zemin + açık
+   yazı = görünmez sorununu çözer). Düşük özgüllük (:where) — açıkça bg/text
+   sınıfı verilmiş inputlar (bg-charcoal, bg-transparent vb.) yine kazanır. */
+textarea,
+select,
+input:where(:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"])) {
+  background-color: rgb(var(--color-panel));
+  color: rgb(var(--color-paper));
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgb(var(--color-slate));
+  opacity: 1;
+}
+
+/* Native select açılır seçenekleri (koyu modda okunur olsun) */
+option {
+  background-color: rgb(var(--color-panel));
+  color: rgb(var(--color-paper));
 }
