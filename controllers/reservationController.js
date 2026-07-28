@@ -1,4 +1,27 @@
 const { sql, connectDB } = require('../config/db');
+const { emitTablesChanged } = require('../config/socket');
+
+// Aynı masada iki rezervasyon arasında bırakılması gereken minimum süre.
+// Bu pencere içinde çakışan yeni bir rezervasyon reddedilir (çifte rezervasyon).
+const RESERVATION_BUFFER_MINUTES = 90;
+
+// ============================================================
+// Süresi geçmiş 'Active' rezervasyonları 'Expired' olarak işaretler.
+// Gerçek bir zamanlanmış görev (cron) yok — bu yüzden her listeleme/oluşturma
+// isteğinde "tembel" (lazy) olarak çağrılır; böylece rezervasyon saatinden
+// uzun süre sonra hâlâ 'Active' görünüp masa tahtasında yanlış rozet
+// gösterilmesi engellenir.
+// ============================================================
+async function expireStaleReservations(pool) {
+    await pool.request()
+        .input('BufferMinutes', sql.Int, RESERVATION_BUFFER_MINUTES)
+        .query(`
+            UPDATE Reservations
+            SET Status = 'Expired'
+            WHERE Status = 'Active'
+              AND DATEADD(MINUTE, @BufferMinutes, ReservationTime) < GETDATE()
+        `);
+}
 
 // ============================================================
 // REZERVASYON OLUŞTUR (SADECE CASHIER/ADMIN)
@@ -22,6 +45,7 @@ async function createReservation(req, res) {
 
     try {
         const pool = await connectDB();
+        await expireStaleReservations(pool);
 
         // Masa var mı kontrol et
         const tableResult = await pool.request()
@@ -30,6 +54,25 @@ async function createReservation(req, res) {
 
         if (tableResult.recordset.length === 0) {
             return res.status(404).json({ error: 'Masa bulunamadı' });
+        }
+
+        // Çifte rezervasyon kontrolü: aynı masada, istenen saatin ±buffer
+        // penceresinde başka bir Active rezervasyon varsa reddedilir.
+        const overlapResult = await pool.request()
+            .input('TableId', sql.Int, TableId)
+            .input('ReservationTime', sql.DateTime2, parsedDate)
+            .input('BufferMinutes', sql.Int, RESERVATION_BUFFER_MINUTES)
+            .query(`
+                SELECT ReservationId, CustomerName, ReservationTime FROM Reservations
+                WHERE TableId = @TableId AND Status = 'Active'
+                  AND ABS(DATEDIFF(MINUTE, ReservationTime, @ReservationTime)) < @BufferMinutes
+            `);
+
+        if (overlapResult.recordset.length > 0) {
+            const conflict = overlapResult.recordset[0];
+            return res.status(409).json({
+                error: `Bu masada aynı zaman aralığında başka bir aktif rezervasyon var (${conflict.CustomerName}, ${new Date(conflict.ReservationTime).toLocaleString('tr-TR')}).`
+            });
         }
 
         const result = await pool.request()
@@ -47,6 +90,7 @@ async function createReservation(req, res) {
                 VALUES (@TableId, @CustomerName, @CustomerPhone, @PartySize, @ReservationTime, @Note, 'Active', @CreatedByUserId, GETDATE())
             `);
 
+        emitTablesChanged();
         return res.status(201).json({
             message: 'Rezervasyon oluşturuldu. Masa durumunu ayrıca güncellemeniz gerekir.',
             reservation: result.recordset[0]
@@ -83,6 +127,7 @@ async function cancelReservation(req, res) {
             .input('ReservationId', sql.Int, id)
             .query(`UPDATE Reservations SET Status = 'Cancelled' WHERE ReservationId = @ReservationId`);
 
+        emitTablesChanged();
         return res.status(200).json({ message: 'Rezervasyon iptal edildi.' });
 
     } catch (err) {
@@ -100,6 +145,7 @@ async function getReservations(req, res) {
 
     try {
         const pool = await connectDB();
+        await expireStaleReservations(pool);
         const request = pool.request();
 
         let query = `SELECT ReservationId, TableId, CustomerName, CustomerPhone, PartySize, ReservationTime, Note, Status, CreatedByUserId, CreatedAt FROM Reservations WHERE 1=1`;

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import client, { imageUrl } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import ProductModal from '../components/ProductModal';
 
 const FILTERS = [
   { value: '', label: 'Tümü' },
@@ -312,7 +313,7 @@ const reactivateProduct = async (productId) => {
       )}
 
       {showCreateModal && (
-        <ProductFormModal
+        <ProductModal
           title="Yeni Ürün"
           categories={categories}
           onClose={() => setShowCreateModal(false)}
@@ -328,7 +329,7 @@ const reactivateProduct = async (productId) => {
       )}
 
       {editingProduct && (
-        <ProductFormModal
+        <ProductModal
           title={`${editingProduct.Name} — Düzenle`}
           initial={editingProduct}
           categories={categories}
@@ -343,202 +344,6 @@ const reactivateProduct = async (productId) => {
           }}
         />
       )}
-    </div>
-  );
-}
-
-// ============================================================
-// Ürün oluşturma / düzenleme formu (Admin)
-// ============================================================
-function ProductFormModal({ title, initial, categories, onClose, onSubmit, onSaved }) {
-  const [name, setName] = useState(initial?.Name ?? '');
-  const [description, setDescription] = useState(initial?.Description ?? '');
-  const [price, setPrice] = useState(initial?.Price ?? '');
-  const [cost, setCost] = useState(initial?.Cost ?? '');
-  const [categoryId, setCategoryId] = useState(initial?.CategoryId ?? '');
-  const [imageFile, setImageFile] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (!name.trim()) {
-      setError('Ürün adı zorunludur.');
-      return;
-    }
-    if (!price || Number(price) <= 0) {
-      setError('Fiyat pozitif bir sayı olmalıdır.');
-      return;
-    }
-    if (!categoryId) {
-      setError('Kategori seçmelisiniz.');
-      return;
-    }
-    if (cost !== '' && Number(cost) < 0) {
-      setError('Maliyet negatif olamaz.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const saved = await onSubmit({
-        Name: name.trim(),
-        Description: description.trim() || undefined,
-        Price: Number(price),
-        CategoryId: Number(categoryId),
-        Cost: cost !== '' ? Number(cost) : null,
-      });
-
-      if (imageFile && saved?.ProductId) {
-        const formData = new FormData();
-        formData.append('image', imageFile);
-        await client.post(`/products/${saved.ProductId}/image`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-      }
-
-      onSaved();
-    } catch (err) {
-      setError(err.response?.data?.error || 'İşlem başarısız oldu.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
-      <form
-        onSubmit={handleSubmit}
-        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
-          <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Ürün</p>
-            <h2 className="font-display text-xl font-semibold text-paper">{title}</h2>
-          </div>
-          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
-            Kapat ✕
-          </button>
-        </div>
-
-        <div className="px-6 py-5 space-y-4">
-          <div>
-            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün Adı</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
-                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-            />
-          </div>
-
-          <div>
-            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Açıklama (opsiyonel)</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper
-                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Fiyat</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
-                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Kategori</label>
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
-                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-              >
-                <option value="">Seçin</option>
-                {categories.filter((c) => c.IsActive !== false && c.IsActive !== 0).map((c) => (
-                  <option key={c.CategoryId} value={c.CategoryId}>{c.Name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
-              Maliyet <span className="normal-case text-slate/70">(opsiyonel — Dashboard'daki kâr oranı için)</span>
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              placeholder="ör. 12.50"
-              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
-                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-            />
-          </div>
-
-          {error && (
-            <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{error}</p>
-          )}
-
-          <div>
-            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün Fotoğrafı (opsiyonel)</label>
-            <div className="flex items-center gap-3">
-              {imageFile ? (
-                <img src={URL.createObjectURL(imageFile)} alt="" className="w-14 h-14 object-cover rounded-sm border border-hairline" />
-              ) : initial?.ImageUrl ? (
-                <img src={imageUrl(initial.ImageUrl)} alt="" className="w-14 h-14 object-cover rounded-sm border border-hairline" />
-              ) : (
-                <div className="w-14 h-14 rounded-sm border border-dashed border-hairline flex items-center justify-center text-slate text-[10px] font-mono">
-                  Yok
-                </div>
-              )}
-              <input
-                type="file"
-                accept="image/png, image/jpeg, image/webp"
-                onChange={(e) => setImageFile(e.target.files[0] || null)}
-                className="flex-1 font-body text-xs text-paper file:mr-3 file:font-mono file:text-[11px] file:uppercase
-                           file:border file:border-hairline file:rounded-sm file:px-2.5 file:py-1.5 file:bg-panel file:text-slate
-                           hover:file:text-ember hover:file:border-ember"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="px-6 py-4 border-t border-hairline flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
-          >
-            Vazgeç
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
-          >
-            {submitting ? 'Kaydediliyor...' : 'Kaydet'}
-          </button>
-        </div>
-      </form>
     </div>
   );
 }

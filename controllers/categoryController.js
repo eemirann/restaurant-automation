@@ -33,13 +33,16 @@ async function createCategory(req, res) {
     try{
         const{ Name } = req.body;
 
-        if (!Name) {
+        if (!Name || typeof Name !== 'string' || !Name.trim()) {
             return res.status(400).json({error: 'Kategori adı zorunludur'});
+        }
+        if (Name.length > 100) {
+            return res.status(400).json({error: 'Kategori adı en fazla 100 karakter olabilir'});
         }
 
         const pool = await connectDB();
         const result = await pool.request()
-            .input('Name', sql.NVarChar, Name)
+            .input('Name', sql.NVarChar(100), Name.trim())
             .query('INSERT INTO Categories (Name) OUTPUT INSERTED.* VALUES (@Name)');
 
             res.status(201).json(result.recordset[0]);
@@ -54,14 +57,17 @@ async function updateCategory(req, res) {
         const { id } = req.params;
         const { Name } = req.body;
 
-        if (!Name) {
+        if (!Name || typeof Name !== 'string' || !Name.trim()) {
             return res.status(400).json({ error: 'Kategori adı zorunludur'});
+        }
+        if (Name.length > 100) {
+            return res.status(400).json({ error: 'Kategori adı en fazla 100 karakter olabilir'});
         }
 
         const pool = await connectDB();
         const result = await pool.request()
             .input('CategoryId', sql.Int, id)
-            .input('Name', sql.NVarChar, Name)
+            .input('Name', sql.NVarChar(100), Name.trim())
             .query('UPDATE Categories SET Name = @Name OUTPUT INSERTED.* WHERE CategoryId = @CategoryId');
 
         if (result.recordset.length === 0) {

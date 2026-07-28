@@ -23,6 +23,26 @@ async function createOrder(req, res) {
         if (item.VariantId !== undefined && item.VariantId !== null && typeof item.VariantId !== 'number') {
             return res.status(400).json({ error: 'VariantId gönderiliyorsa sayısal olmalıdır' });
         }
+        if (item.Extras !== undefined && item.Extras !== null) {
+            if (!Array.isArray(item.Extras)) {
+                return res.status(400).json({ error: 'Extras gönderiliyorsa bir dizi olmalıdır' });
+            }
+            for (const extra of item.Extras) {
+                if (typeof extra.ExtraProductId !== 'number' || !Number.isInteger(extra.Quantity) || extra.Quantity <= 0) {
+                    return res.status(400).json({ error: 'Her ekstra için geçerli ExtraProductId ve pozitif tam sayı Quantity giriniz' });
+                }
+            }
+        }
+        if (item.Syrups !== undefined && item.Syrups !== null) {
+            if (!Array.isArray(item.Syrups)) {
+                return res.status(400).json({ error: 'Syrups gönderiliyorsa bir dizi olmalıdır' });
+            }
+            for (const syrup of item.Syrups) {
+                if (typeof syrup.SyrupProductId !== 'number' || !Number.isInteger(syrup.Quantity) || syrup.Quantity <= 0) {
+                    return res.status(400).json({ error: 'Her şurup için geçerli SyrupProductId ve pozitif tam sayı Quantity giriniz' });
+                }
+            }
+        }
         // NOT: Client UnitPrice gönderse bile burada hiç okunmuyor, tamamen yok sayılıyor.
     }
 
@@ -84,12 +104,78 @@ async function createOrder(req, res) {
                 unitPrice += Number(variantResult.recordset[0].Price);
             }
 
+            // Ekstralar (ekstra shot, ekstra çikolata vb.) — her biri kalemin
+            // kendi Quantity'siyle çarpılacağı için burada fiyatı TEK adet
+            // başına unitPrice'a eklenir (VariantId ile aynı mantık). Ayrıca
+            // bu ekstranın YÖNETİCİ TARAFINDAN bu ürüne bağlı ve etkin olması
+            // şart (ProductExtras) — global IsExtra=1 olması yetmez (bkz.
+            // migrations/2026_07_29_product_options.sql).
+            const resolvedExtras = [];
+            for (const extra of (item.Extras || [])) {
+                const extraResult = await new sql.Request(transaction)
+                    .input('ExtraProductId', sql.Int, extra.ExtraProductId)
+                    .input('ProductId', sql.Int, item.ProductId)
+                    .query(`
+                        SELECT p.ProductId, p.Price, p.IsActive
+                        FROM Products p
+                        JOIN ProductExtras pe ON pe.ExtraProductId = p.ProductId
+                        WHERE p.ProductId = @ExtraProductId AND pe.ProductId = @ProductId AND pe.IsEnabled = 1
+                    `);
+
+                if (extraResult.recordset.length === 0) {
+                    await transaction.rollback();
+                    return res.status(404).json({ error: `Ekstra bu ürüne bağlı değil veya bulunamadı (ExtraProductId: ${extra.ExtraProductId}, ProductId: ${item.ProductId})` });
+                }
+
+                const extraProduct = extraResult.recordset[0];
+                if (!extraProduct.IsActive) {
+                    await transaction.rollback();
+                    return res.status(400).json({ error: `Ekstra şu anda aktif değil (ExtraProductId: ${extra.ExtraProductId})` });
+                }
+
+                const extraUnitPrice = Number(extraProduct.Price);
+                unitPrice += extraUnitPrice * extra.Quantity;
+                resolvedExtras.push({ ExtraProductId: extra.ExtraProductId, Quantity: extra.Quantity, UnitPrice: extraUnitPrice });
+            }
+
+            // Şuruplar — Ekstralar ile birebir aynı mantık (ProductSyrups üzerinden
+            // bu ürüne bağlı+etkin olması şart).
+            const resolvedSyrups = [];
+            for (const syrup of (item.Syrups || [])) {
+                const syrupResult = await new sql.Request(transaction)
+                    .input('SyrupProductId', sql.Int, syrup.SyrupProductId)
+                    .input('ProductId', sql.Int, item.ProductId)
+                    .query(`
+                        SELECT p.ProductId, p.Price, p.IsActive
+                        FROM Products p
+                        JOIN ProductSyrups ps ON ps.SyrupProductId = p.ProductId
+                        WHERE p.ProductId = @SyrupProductId AND ps.ProductId = @ProductId AND ps.IsEnabled = 1
+                    `);
+
+                if (syrupResult.recordset.length === 0) {
+                    await transaction.rollback();
+                    return res.status(404).json({ error: `Şurup bu ürüne bağlı değil veya bulunamadı (SyrupProductId: ${syrup.SyrupProductId}, ProductId: ${item.ProductId})` });
+                }
+
+                const syrupProduct = syrupResult.recordset[0];
+                if (!syrupProduct.IsActive) {
+                    await transaction.rollback();
+                    return res.status(400).json({ error: `Şurup şu anda aktif değil (SyrupProductId: ${syrup.SyrupProductId})` });
+                }
+
+                const syrupUnitPrice = Number(syrupProduct.Price);
+                unitPrice += syrupUnitPrice * syrup.Quantity;
+                resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice });
+            }
+
             validatedItems.push({
                 ProductId: item.ProductId,
                 Quantity: item.Quantity,
                 UnitPrice: unitPrice,
                 VariantId: item.VariantId || null,
-                Note: item.Note || null
+                Note: item.Note || null,
+                Extras: resolvedExtras,
+                Syrups: resolvedSyrups
             });
 
             totalAmount += unitPrice * item.Quantity;
@@ -113,22 +199,64 @@ async function createOrder(req, res) {
 
         const newOrderId = orderResult.recordset[0].OrderId;
 
+        // Masa 'Empty' durumundaysa siparişle birlikte 'Occupied' olur.
+        // 'Reserved' durumunu ezmez (rezervasyonlu masada da sipariş açılabilir,
+        // ör. misafir gelip oturdu ama rezervasyon henüz elle kapatılmadı).
+        await new sql.Request(transaction)
+            .input('TableId', sql.Int, TableId)
+            .query(`UPDATE Tables SET Status = 'Occupied' WHERE TableId = @TableId AND Status = 'Empty'`);
+
+        // Bu masada bekleyen Active rezervasyon(lar) varsa "Seated" olarak
+        // kapatılır — misafir zaten oturup sipariş verdiği için rezervasyon
+        // artık "yaklaşan" gibi görünmemeli (bkz. controllers/reservationController.js).
+        await new sql.Request(transaction)
+            .input('TableId', sql.Int, TableId)
+            .query(`UPDATE Reservations SET Status = 'Seated' WHERE TableId = @TableId AND Status = 'Active'`);
+
         // ============================================================
         // 3. ADIM: Doğrulanmış fiyatlarla OrderDetails + stok düşümü
         // ============================================================
         for (const item of validatedItems) {
-            await new sql.Request(transaction)
+            const insertedDetail = await new sql.Request(transaction)
                 .input('OrderId', sql.Int, newOrderId)
                 .input('ProductId', sql.Int, item.ProductId)
                 .input('Quantity', sql.Int, item.Quantity)
                 .input('UnitPrice', sql.Decimal(10, 2), item.UnitPrice)
                 .input('VariantId', sql.Int, item.VariantId)
                 .input('Note', sql.NVarChar, item.Note)
-                .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
+                .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) OUTPUT INSERTED.OrderDetailsId VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
+
+            const orderDetailsId = insertedDetail.recordset[0].OrderDetailsId;
 
             // Reçetesi varsa hammaddeler, yoksa ürünün kendisi düşülür (BOM-farkında)
             const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
             lowStockWarnings.push(...warnings);
+
+            // Seçilen ekstraları kaydet + stoktan düş (adet x kalemin Quantity'si)
+            for (const extra of item.Extras) {
+                await new sql.Request(transaction)
+                    .input('OrderDetailsId', sql.Int, orderDetailsId)
+                    .input('ExtraProductId', sql.Int, extra.ExtraProductId)
+                    .input('Quantity', sql.Int, extra.Quantity)
+                    .input('UnitPrice', sql.Decimal(10, 2), extra.UnitPrice)
+                    .query('INSERT INTO OrderDetailExtras (OrderDetailsId, ExtraProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @ExtraProductId, @Quantity, @UnitPrice)');
+
+                const extraWarnings = await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+                lowStockWarnings.push(...extraWarnings);
+            }
+
+            // Seçilen şurupları kaydet + stoktan düş (Ekstralar ile aynı mantık)
+            for (const syrup of item.Syrups) {
+                await new sql.Request(transaction)
+                    .input('OrderDetailsId', sql.Int, orderDetailsId)
+                    .input('SyrupProductId', sql.Int, syrup.SyrupProductId)
+                    .input('Quantity', sql.Int, syrup.Quantity)
+                    .input('UnitPrice', sql.Decimal(10, 2), syrup.UnitPrice)
+                    .query('INSERT INTO OrderDetailSyrups (OrderDetailsId, SyrupProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @SyrupProductId, @Quantity, @UnitPrice)');
+
+                const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+                lowStockWarnings.push(...syrupWarnings);
+            }
         }
 
         await transaction.commit();
@@ -203,9 +331,45 @@ async function getOrderById(req, res) {
             .input('OrderId', sql.Int, id)
             .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
 
+        const extrasResult = await pool.request()
+            .input('OrderId', sql.Int, id)
+            .query(`
+                SELECT ode.OrderDetailsId, ode.ExtraProductId, p.Name AS ExtraName, ode.Quantity, ode.UnitPrice
+                FROM OrderDetailExtras ode
+                JOIN OrderDetails od ON od.OrderDetailsId = ode.OrderDetailsId
+                JOIN Products p ON p.ProductId = ode.ExtraProductId
+                WHERE od.OrderId = @OrderId
+            `);
+
+        const extrasByDetailId = new Map();
+        for (const extra of extrasResult.recordset) {
+            if (!extrasByDetailId.has(extra.OrderDetailsId)) extrasByDetailId.set(extra.OrderDetailsId, []);
+            extrasByDetailId.get(extra.OrderDetailsId).push(extra);
+        }
+
+        const syrupsResult = await pool.request()
+            .input('OrderId', sql.Int, id)
+            .query(`
+                SELECT ods.OrderDetailsId, ods.SyrupProductId, p.Name AS SyrupName, ods.Quantity, ods.UnitPrice
+                FROM OrderDetailSyrups ods
+                JOIN OrderDetails od ON od.OrderDetailsId = ods.OrderDetailsId
+                JOIN Products p ON p.ProductId = ods.SyrupProductId
+                WHERE od.OrderId = @OrderId
+            `);
+
+        const syrupsByDetailId = new Map();
+        for (const syrup of syrupsResult.recordset) {
+            if (!syrupsByDetailId.has(syrup.OrderDetailsId)) syrupsByDetailId.set(syrup.OrderDetailsId, []);
+            syrupsByDetailId.get(syrup.OrderDetailsId).push(syrup);
+        }
+
         return res.status(200).json({
             ...orderResult.recordset[0],
-            items: detailsResult.recordset
+            items: detailsResult.recordset.map((item) => ({
+                ...item,
+                Extras: extrasByDetailId.get(item.OrderDetailsId) || [],
+                Syrups: syrupsByDetailId.get(item.OrderDetailsId) || []
+            }))
         });
     } catch (err) {
         console.error('Sipariş getirilirken hata:', err);
@@ -249,13 +413,38 @@ async function cancelOrder(req, res) {
             return res.status(400).json({ error: 'Bu sipariş zaten iptal edilmiş' });
         }
 
+        // Ödenmiş bir sipariş doğrudan iptal edilemez — aksi halde stok geri
+        // eklenir ama Payments tablosuna hiç dokunulmadığı için o ödeme
+        // ciro/rapor/vardiya kasa hesaplarında "gerçek" gibi sayılmaya devam
+        // eder (bkz. POST /api/payments/:id/refund, controllers/paymentController.js).
+        if (Status === 'Paid') {
+            await transaction.rollback();
+            return res.status(400).json({ error: 'Ödenmiş bir sipariş doğrudan iptal edilemez. Önce ödemeyi iade edin (POST /api/payments/:id/refund).' });
+        }
+
         const detailsResult = await new sql.Request(transaction)
             .input('OrderId', sql.Int, id)
-            .query(`SELECT ProductId, Quantity FROM OrderDetails WHERE OrderId = @OrderId`);
+            .query(`SELECT OrderDetailsId, ProductId, Quantity FROM OrderDetails WHERE OrderId = @OrderId`);
 
         for (const item of detailsResult.recordset) {
             // Reçetesi varsa hammaddeler, yoksa ürünün kendisi geri eklenir (BOM-farkında)
             await restoreStockForItem(transaction, item.ProductId, item.Quantity);
+
+            const extrasResult = await new sql.Request(transaction)
+                .input('OrderDetailsId', sql.Int, item.OrderDetailsId)
+                .query(`SELECT ExtraProductId, Quantity FROM OrderDetailExtras WHERE OrderDetailsId = @OrderDetailsId`);
+
+            for (const extra of extrasResult.recordset) {
+                await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+            }
+
+            const syrupsResult = await new sql.Request(transaction)
+                .input('OrderDetailsId', sql.Int, item.OrderDetailsId)
+                .query(`SELECT SyrupProductId, Quantity FROM OrderDetailSyrups WHERE OrderDetailsId = @OrderDetailsId`);
+
+            for (const syrup of syrupsResult.recordset) {
+                await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+            }
         }
 
         await new sql.Request(transaction)
@@ -335,6 +524,7 @@ async function updateOrderStatus(req, res) {
             .input('OrderId', sql.Int, id)
             .query(`SELECT * FROM Orders WHERE OrderId = @OrderId`);
 
+        emitTablesChanged();
         return res.status(200).json(updated.recordset[0]);
     } catch (err) {
         console.error('Sipariş durumu güncellenirken hata:', err);
@@ -361,6 +551,26 @@ async function addOrderItems(req, res) {
         }
         if (item.VariantId !== undefined && item.VariantId !== null && typeof item.VariantId !== 'number') {
             return res.status(400).json({ error: 'VariantId gönderiliyorsa sayısal olmalıdır' });
+        }
+        if (item.Extras !== undefined && item.Extras !== null) {
+            if (!Array.isArray(item.Extras)) {
+                return res.status(400).json({ error: 'Extras gönderiliyorsa bir dizi olmalıdır' });
+            }
+            for (const extra of item.Extras) {
+                if (typeof extra.ExtraProductId !== 'number' || !Number.isInteger(extra.Quantity) || extra.Quantity <= 0) {
+                    return res.status(400).json({ error: 'Her ekstra için geçerli ExtraProductId ve pozitif tam sayı Quantity giriniz' });
+                }
+            }
+        }
+        if (item.Syrups !== undefined && item.Syrups !== null) {
+            if (!Array.isArray(item.Syrups)) {
+                return res.status(400).json({ error: 'Syrups gönderiliyorsa bir dizi olmalıdır' });
+            }
+            for (const syrup of item.Syrups) {
+                if (typeof syrup.SyrupProductId !== 'number' || !Number.isInteger(syrup.Quantity) || syrup.Quantity <= 0) {
+                    return res.status(400).json({ error: 'Her şurup için geçerli SyrupProductId ve pozitif tam sayı Quantity giriniz' });
+                }
+            }
         }
     }
 
@@ -436,12 +646,73 @@ async function addOrderItems(req, res) {
                 unitPrice += Number(variantResult.recordset[0].Price);
             }
 
+            // Ekstralar (createOrder ile aynı mantık — bkz. orada bırakılan not,
+            // ProductExtras üzerinden bu ürüne bağlı+etkin olması şart)
+            const resolvedExtras = [];
+            for (const extra of (item.Extras || [])) {
+                const extraResult = await new sql.Request(transaction)
+                    .input('ExtraProductId', sql.Int, extra.ExtraProductId)
+                    .input('ProductId', sql.Int, item.ProductId)
+                    .query(`
+                        SELECT p.ProductId, p.Price, p.IsActive
+                        FROM Products p
+                        JOIN ProductExtras pe ON pe.ExtraProductId = p.ProductId
+                        WHERE p.ProductId = @ExtraProductId AND pe.ProductId = @ProductId AND pe.IsEnabled = 1
+                    `);
+
+                if (extraResult.recordset.length === 0) {
+                    await transaction.rollback();
+                    return res.status(404).json({ error: `Ekstra bu ürüne bağlı değil veya bulunamadı (ExtraProductId: ${extra.ExtraProductId}, ProductId: ${item.ProductId})` });
+                }
+
+                const extraProduct = extraResult.recordset[0];
+                if (!extraProduct.IsActive) {
+                    await transaction.rollback();
+                    return res.status(400).json({ error: `Ekstra şu anda aktif değil (ExtraProductId: ${extra.ExtraProductId})` });
+                }
+
+                const extraUnitPrice = Number(extraProduct.Price);
+                unitPrice += extraUnitPrice * extra.Quantity;
+                resolvedExtras.push({ ExtraProductId: extra.ExtraProductId, Quantity: extra.Quantity, UnitPrice: extraUnitPrice });
+            }
+
+            // Şuruplar (Ekstralar ile birebir aynı mantık, ProductSyrups üzerinden)
+            const resolvedSyrups = [];
+            for (const syrup of (item.Syrups || [])) {
+                const syrupResult = await new sql.Request(transaction)
+                    .input('SyrupProductId', sql.Int, syrup.SyrupProductId)
+                    .input('ProductId', sql.Int, item.ProductId)
+                    .query(`
+                        SELECT p.ProductId, p.Price, p.IsActive
+                        FROM Products p
+                        JOIN ProductSyrups ps ON ps.SyrupProductId = p.ProductId
+                        WHERE p.ProductId = @SyrupProductId AND ps.ProductId = @ProductId AND ps.IsEnabled = 1
+                    `);
+
+                if (syrupResult.recordset.length === 0) {
+                    await transaction.rollback();
+                    return res.status(404).json({ error: `Şurup bu ürüne bağlı değil veya bulunamadı (SyrupProductId: ${syrup.SyrupProductId}, ProductId: ${item.ProductId})` });
+                }
+
+                const syrupProduct = syrupResult.recordset[0];
+                if (!syrupProduct.IsActive) {
+                    await transaction.rollback();
+                    return res.status(400).json({ error: `Şurup şu anda aktif değil (SyrupProductId: ${syrup.SyrupProductId})` });
+                }
+
+                const syrupUnitPrice = Number(syrupProduct.Price);
+                unitPrice += syrupUnitPrice * syrup.Quantity;
+                resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice });
+            }
+
             validatedItems.push({
                 ProductId: item.ProductId,
                 Quantity: item.Quantity,
                 UnitPrice: unitPrice,
                 VariantId: item.VariantId || null,
-                Note: item.Note || null
+                Note: item.Note || null,
+                Extras: resolvedExtras,
+                Syrups: resolvedSyrups
             });
 
             addedAmount += unitPrice * item.Quantity;
@@ -463,6 +734,9 @@ async function addOrderItems(req, res) {
                         WHERE OrderId = @OrderId AND ProductId = @ProductId`);
 
             if (existingResult.recordset.length > 0) {
+                // NOT: Mevcut satırla birleştirilirken UnitPrice (dolayısıyla Extras)
+                // güncellenmez — VariantId'de olduğu gibi zaten var olan davranış.
+                // Yani bu kalemde Extras gönderilmişse ve satır zaten varsa yok sayılır.
                 const existing = existingResult.recordset[0];
                 const mergedQuantity = existing.Quantity + item.Quantity;
                 const noteUpdate = item.Note ? item.Note : null;
@@ -472,20 +746,48 @@ async function addOrderItems(req, res) {
                     .input('Quantity', sql.Int, mergedQuantity)
                     .input('Note', sql.NVarChar, noteUpdate)
                     .query(`UPDATE OrderDetails SET Quantity = @Quantity${noteUpdate ? ', Note = @Note' : ''} WHERE OrderDetailsId = @OrderDetailsId`);
+
+                const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
+                lowStockWarnings.push(...warnings);
             } else {
-                await new sql.Request(transaction)
+                const insertedDetail = await new sql.Request(transaction)
                     .input('OrderId', sql.Int, id)
                     .input('ProductId', sql.Int, item.ProductId)
                     .input('Quantity', sql.Int, item.Quantity)
                     .input('UnitPrice', sql.Decimal(10, 2), item.UnitPrice)
                     .input('VariantId', sql.Int, item.VariantId)
                     .input('Note', sql.NVarChar, item.Note)
-                    .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
-            }
+                    .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) OUTPUT INSERTED.OrderDetailsId VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
 
-            // Reçetesi varsa hammaddeler, yoksa ürünün kendisi düşülür (BOM-farkında)
-            const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
-            lowStockWarnings.push(...warnings);
+                const orderDetailsId = insertedDetail.recordset[0].OrderDetailsId;
+
+                const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
+                lowStockWarnings.push(...warnings);
+
+                for (const extra of item.Extras) {
+                    await new sql.Request(transaction)
+                        .input('OrderDetailsId', sql.Int, orderDetailsId)
+                        .input('ExtraProductId', sql.Int, extra.ExtraProductId)
+                        .input('Quantity', sql.Int, extra.Quantity)
+                        .input('UnitPrice', sql.Decimal(10, 2), extra.UnitPrice)
+                        .query('INSERT INTO OrderDetailExtras (OrderDetailsId, ExtraProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @ExtraProductId, @Quantity, @UnitPrice)');
+
+                    const extraWarnings = await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+                    lowStockWarnings.push(...extraWarnings);
+                }
+
+                for (const syrup of item.Syrups) {
+                    await new sql.Request(transaction)
+                        .input('OrderDetailsId', sql.Int, orderDetailsId)
+                        .input('SyrupProductId', sql.Int, syrup.SyrupProductId)
+                        .input('Quantity', sql.Int, syrup.Quantity)
+                        .input('UnitPrice', sql.Decimal(10, 2), syrup.UnitPrice)
+                        .query('INSERT INTO OrderDetailSyrups (OrderDetailsId, SyrupProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @SyrupProductId, @Quantity, @UnitPrice)');
+
+                    const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+                    lowStockWarnings.push(...syrupWarnings);
+                }
+            }
         }
 
         // Toplamı güncelle (OUTPUT kullanmıyoruz, Orders'ta trigger var)
@@ -570,6 +872,14 @@ async function removeOrderItem(req, res) {
 
         const item = itemResult.recordset[0];
 
+        const extrasResult = await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .query(`SELECT ExtraProductId, Quantity FROM OrderDetailExtras WHERE OrderDetailsId = @OrderDetailsId`);
+
+        const syrupsResult = await new sql.Request(transaction)
+            .input('OrderDetailsId', sql.Int, itemId)
+            .query(`SELECT SyrupProductId, Quantity FROM OrderDetailSyrups WHERE OrderDetailsId = @OrderDetailsId`);
+
         // Bu kalemden kalem-bazlı (ürün ürün) ödemeyle zaten para tahsil edilmişse
         // silinemez — hem PaymentItems'daki FK buna zaten izin vermez, hem de
         // tahsil edilmiş parayı sahipsiz bırakmamak için iş kuralı olarak engellenir.
@@ -587,12 +897,21 @@ async function removeOrderItem(req, res) {
             return res.status(400).json({ error: `Bu üründen ${paidResult.recordset[0].PaidQuantity} adet zaten ödendi, silinemez. Önce iade edin.` });
         }
 
+        // OrderDetailExtras/OrderDetailSyrups satırları ON DELETE CASCADE ile birlikte silinir
         await new sql.Request(transaction)
             .input('OrderDetailsId', sql.Int, itemId)
             .query(`DELETE FROM OrderDetails WHERE OrderDetailsId = @OrderDetailsId`);
 
         // Reçetesi varsa hammaddeler, yoksa ürünün kendisi geri eklenir (BOM-farkında)
         await restoreStockForItem(transaction, item.ProductId, item.Quantity);
+
+        for (const extra of extrasResult.recordset) {
+            await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+        }
+
+        for (const syrup of syrupsResult.recordset) {
+            await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+        }
 
         const newTotal = Math.max(Number(order.TotalAmount) - Number(item.UnitPrice) * item.Quantity, 0);
 
@@ -702,6 +1021,33 @@ async function updateOrderItemQuantity(req, res) {
             await deductStockForItem(transaction, item.ProductId, diff);
         } else if (diff < 0) {
             await restoreStockForItem(transaction, item.ProductId, -diff);
+        }
+
+        // Kaleme bağlı ekstralar/şuruplar da adet başına düşürüldüğü için aynı farkla ölçeklenir
+        if (diff !== 0) {
+            const extrasResult = await new sql.Request(transaction)
+                .input('OrderDetailsId', sql.Int, itemId)
+                .query(`SELECT ExtraProductId, Quantity FROM OrderDetailExtras WHERE OrderDetailsId = @OrderDetailsId`);
+
+            for (const extra of extrasResult.recordset) {
+                if (diff > 0) {
+                    await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * diff);
+                } else {
+                    await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * -diff);
+                }
+            }
+
+            const syrupsResult = await new sql.Request(transaction)
+                .input('OrderDetailsId', sql.Int, itemId)
+                .query(`SELECT SyrupProductId, Quantity FROM OrderDetailSyrups WHERE OrderDetailsId = @OrderDetailsId`);
+
+            for (const syrup of syrupsResult.recordset) {
+                if (diff > 0) {
+                    await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * diff);
+                } else {
+                    await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * -diff);
+                }
+            }
         }
 
         await new sql.Request(transaction)

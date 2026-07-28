@@ -1,8 +1,17 @@
 import { useEffect, useState, useCallback } from 'react';
-import client, { imageUrl } from '../api/client';
+import { AnimatePresence } from 'framer-motion';
+import client from '../api/client';
 import { getSocket } from '../api/socket';
 import { useAuth } from '../context/AuthContext';
 import PaymentDrawer from '../components/PaymentDrawer';
+import OptionCard from '../components/OptionCard';
+import ProductCard from '../components/ProductCard';
+import ProductDetailModal from '../components/ProductDetailModal';
+import MenuFilterBar from '../components/MenuFilterBar';
+import ProductGridSkeleton from '../components/ProductGridSkeleton';
+import EmptyState from '../components/EmptyState';
+import { calculateLineTotal } from '../components/PriceCalculator';
+import { isProductAvailable } from '../utils/productAvailability';
 
 const STATUS_CONFIG = {
   Empty: { label: 'Boş', dot: 'bg-moss', border: 'border-hairline', bg: 'bg-panel' },
@@ -67,37 +76,6 @@ const fmtRel = (ts, now) => {
   if (m < 60) return `${m} dk önce`;
   const h = Math.floor(m / 60);
   return `${h} sa önce`;
-};
-
-// Ürün adına göre uygun bir emoji seç (resmi olmayan ürünler için placeholder).
-const PRODUCT_EMOJI_RULES = [
-  [/(latte|cappuccino|mocha|espresso|americano|kahve|coffee|filtre|flat white|cortado)/, '☕'],
-  [/(çay|tea|bitki|ıhlamur|nane)/, '🍵'],
-  [/(frappe|frappuccino|milkshake|shake|smoothie|buzlu|ice|soğuk)/, '🥤'],
-  [/(kola|cola|gazoz|soda|meşrubat|fanta|sprite)/, '🥤'],
-  [/(su|water|maden)/, '💧'],
-  [/(portakal|orange|meyve suyu|juice|limonata|nar)/, '🧃'],
-  [/(çikolata|chocolate|kakao)/, '🍫'],
-  [/(cheesecake|pasta|kek|cake|tatlı|dessert|sufle|brownie|tiramisu|magnolia)/, '🍰'],
-  [/(dondurma|ice cream|gelato)/, '🍦'],
-  [/(kurabiye|cookie|bisküvi)/, '🍪'],
-  [/(kruvasan|croissant|poğaça|açma|simit|börek|pizza|toast|tost|sandviç|sandwich|burger|hamburger)/, '🥪'],
-  [/(çorba|soup)/, '🍲'],
-  [/(salata|salad)/, '🥗'],
-  [/(makarna|pasta|spagetti|noodle)/, '🍝'],
-  [/(patates|fries|kızartma)/, '🍟'],
-  [/(tavuk|chicken|et |steak|köfte|kebap|kebab|döner)/, '🍖'],
-  [/(balık|fish|somon)/, '🐟'],
-  [/(kahvaltı|breakfast|yumurta|omlet|menemen)/, '🍳'],
-  [/(bira|beer|şarap|wine|kokteyl|cocktail)/, '🍸'],
-];
-
-const productEmoji = (name) => {
-  const n = (name || '').toLocaleLowerCase('tr-TR');
-  for (const [rx, emoji] of PRODUCT_EMOJI_RULES) {
-    if (rx.test(n)) return emoji;
-  }
-  return '🍴';
 };
 
 const RES_STATUS_ACTIVE = 'Active';
@@ -225,11 +203,12 @@ function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isA
         )}
       </div>
 
-      {/* Admin düzenle/sil — hover ile */}
+      {/* Admin düzenle/sil — her zaman görünür (opacity-0+hover dokunmatik ekranda
+          hover olmadığı için hiç görünmez/tıklanamaz hale geliyordu) */}
       {isAdmin && (
-        <div className="flex items-center justify-end gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-ember">Düzenle</button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-red-500">Sil</button>
+        <div className="flex items-center justify-end gap-3 mt-2">
+          <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-ember py-1 px-1">Düzenle</button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-red-500 py-1 px-1">Sil</button>
         </div>
       )}
     </div>
@@ -952,15 +931,47 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 // "Sipariş Ver" ile POST /api/orders çağır.
 // ============================================================
 function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, products, categories, onOrdered, onError }) {
-  const [cart, setCart] = useState({}); // { [ProductId]: quantity }
+  // { [ProductId]: { quantity, extras: { [ExtraProductId]: quantity }, syrups: { [SyrupProductId]: quantity } } }
+  const [cart, setCart] = useState({});
   const [activeCategoryId, setActiveCategoryId] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [cartFilter, setCartFilter] = useState('all'); // 'all' | 'inCart'
+  const [quickFilter, setQuickFilter] = useState('all'); // 'all' | 'popular' | 'new' | 'available' | 'outOfStock'
+  const [selectedProductId, setSelectedProductId] = useState(null); // ürün detay modalı açık mı
   const [showNoteField, setShowNoteField] = useState(false);
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState('');
   const [itemActionBusy, setItemActionBusy] = useState(null);
+  // { [ProductId]: { extras: [...], syrups: [...] } } — bu ÜRÜNE bağlı+etkin
+  // opsiyonlar, GET /products/:id/order-options'tan gelir (bkz. productController.js).
+  // Global bir ekstra kataloğu yerine, yönetici tarafından o ürüne bağlanmış
+  // olanlar dışında hiçbir şey sipariş ekranında gösterilmez.
+  const [optionsByProduct, setOptionsByProduct] = useState({});
+  const [extraPickerFor, setExtraPickerFor] = useState(null); // hangi kalem için opsiyon seçici açık
+
+  useEffect(() => {
+    if (!extraPickerFor || optionsByProduct[extraPickerFor]) return;
+    client
+      .get(`/products/${extraPickerFor}/order-options`)
+      .then((res) => setOptionsByProduct((prev) => ({ ...prev, [extraPickerFor]: res.data })))
+      .catch(() => setOptionsByProduct((prev) => ({ ...prev, [extraPickerFor]: { extras: [], syrups: [] } })));
+  }, [extraPickerFor, optionsByProduct]);
+
+  // Ürün detay modalı açıldığında o ürünün ekstra/şurup seçeneklerini getir
+  // (aynı önbellek, extraPickerFor akışıyla paylaşılır).
+  useEffect(() => {
+    if (!selectedProductId || optionsByProduct[selectedProductId]) return;
+    client
+      .get(`/products/${selectedProductId}/order-options`)
+      .then((res) => setOptionsByProduct((prev) => ({ ...prev, [selectedProductId]: res.data })))
+      .catch(() => setOptionsByProduct((prev) => ({ ...prev, [selectedProductId]: { extras: [], syrups: [] } })));
+  }, [selectedProductId, optionsByProduct]);
+
+  const optionsFor = (productId) => optionsByProduct[productId] || { extras: [], syrups: [] };
+  const catalogMapFor = (productId, type) => new Map(optionsFor(productId)[type].map((o) => [o.ProductId, o]));
+  const findOption = (productId, type, optionId) =>
+    optionsFor(productId)[type].find((o) => o.ProductId === Number(optionId));
 
   const changeExistingItemQuantity = async (item, delta) => {
     setLocalError('');
@@ -1010,20 +1021,46 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
       activeCategoryId === 'all' ? true : String(p.CategoryId) === String(activeCategoryId)
     )
     .filter((p) =>
-      normalizedSearch ? p.Name.toLocaleLowerCase('tr-TR').includes(normalizedSearch) : true
+      normalizedSearch
+        ? p.Name.toLocaleLowerCase('tr-TR').includes(normalizedSearch) ||
+          String(p.Barcode || '').toLocaleLowerCase('tr-TR').includes(normalizedSearch)
+        : true
     )
-    .filter((p) => (cartFilter === 'inCart' ? Boolean(cart[p.ProductId]) : true));
+    .filter((p) => (cartFilter === 'inCart' ? Boolean(cart[p.ProductId]) : true))
+    .filter((p) => {
+      const avail = isProductAvailable(p);
+      if (quickFilter === 'popular') return p.IsPopular === true || p.IsPopular === 1;
+      if (quickFilter === 'available') return avail;
+      if (quickFilter === 'outOfStock') return !avail;
+      return true;
+    });
 
   const addToCart = (productId) => {
-    setCart((prev) => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
+    setCart((prev) => ({
+      ...prev,
+      [productId]: {
+        quantity: (prev[productId]?.quantity || 0) + 1,
+        extras: prev[productId]?.extras || {},
+        syrups: prev[productId]?.syrups || {},
+      },
+    }));
+  };
+
+  // Ürün detay modalından tek seferde adet + ekstra/şurup yazar (replace semantiği).
+  const setLineForProduct = (productId, line) => {
+    setCart((prev) => ({ ...prev, [productId]: line }));
   };
 
   const removeFromCart = (productId) => {
     setCart((prev) => {
+      if (!prev[productId]) return prev;
+      const nextQuantity = prev[productId].quantity - 1;
       const next = { ...prev };
-      if (!next[productId]) return prev;
-      next[productId] -= 1;
-      if (next[productId] <= 0) delete next[productId];
+      if (nextQuantity <= 0) {
+        delete next[productId];
+      } else {
+        next[productId] = { ...prev[productId], quantity: nextQuantity };
+      }
       return next;
     });
   };
@@ -1036,11 +1073,43 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
     });
   };
 
+  // Bir sepet kalemine ekstra/şurup ekler/adedini artırır (ör. "2 pump vanilya").
+  // `type`: 'extras' | 'syrups'.
+  const addOptionToLine = (productId, type, optionId) => {
+    setCart((prev) => {
+      const line = prev[productId];
+      if (!line) return prev;
+      const currentQty = line[type][optionId] || 0;
+      return {
+        ...prev,
+        [productId]: { ...line, [type]: { ...line[type], [optionId]: currentQty + 1 } },
+      };
+    });
+  };
+
+  const removeOptionFromLine = (productId, type, optionId) => {
+    setCart((prev) => {
+      const line = prev[productId];
+      if (!line || !line[type][optionId]) return prev;
+      const nextQty = line[type][optionId] - 1;
+      const nextOptions = { ...line[type] };
+      if (nextQty <= 0) delete nextOptions[optionId];
+      else nextOptions[optionId] = nextQty;
+      return { ...prev, [productId]: { ...line, [type]: nextOptions } };
+    });
+  };
+
+  const lineTotal = (product, line) =>
+    calculateLineTotal(product?.Price, line.quantity, [
+      { selections: line.extras, catalogById: catalogMapFor(product?.ProductId, 'extras') },
+      { selections: line.syrups, catalogById: catalogMapFor(product?.ProductId, 'syrups') },
+    ]);
+
   const cartEntries = Object.entries(cart);
-  const itemCount = cartEntries.reduce((sum, [, qty]) => sum + qty, 0);
-  const total = cartEntries.reduce((sum, [productId, qty]) => {
+  const itemCount = cartEntries.reduce((sum, [, line]) => sum + line.quantity, 0);
+  const total = cartEntries.reduce((sum, [productId, line]) => {
     const product = products.find((p) => String(p.ProductId) === String(productId));
-    return sum + (product ? Number(product.Price) * qty : 0);
+    return sum + lineTotal(product, line);
   }, 0);
 
   const money = (n) =>
@@ -1058,10 +1127,20 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
     }
     setSubmitting(true);
     try {
-      const itemsPayload = cartEntries.map(([productId, quantity]) => ({
-        ProductId: Number(productId),
-        Quantity: quantity,
-      }));
+      const itemsPayload = cartEntries.map(([productId, line]) => {
+        const extrasPayload = Object.entries(line.extras)
+          .filter(([, qty]) => qty > 0)
+          .map(([extraId, qty]) => ({ ExtraProductId: Number(extraId), Quantity: qty }));
+        const syrupsPayload = Object.entries(line.syrups)
+          .filter(([, qty]) => qty > 0)
+          .map(([syrupId, qty]) => ({ SyrupProductId: Number(syrupId), Quantity: qty }));
+        return {
+          ProductId: Number(productId),
+          Quantity: line.quantity,
+          ...(extrasPayload.length > 0 ? { Extras: extrasPayload } : {}),
+          ...(syrupsPayload.length > 0 ? { Syrups: syrupsPayload } : {}),
+        };
+      });
 
       if (existingOrderId) {
         await client.post(`/orders/${existingOrderId}/items`, { Items: itemsPayload });
@@ -1075,6 +1154,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
       }
 
       setCart({});
+      setExtraPickerFor(null);
       setNote('');
       setShowNoteField(false);
       // meta.created = yeni sipariş mi? Ebeveyn buna göre modalı otomatik kapatır.
@@ -1093,42 +1173,17 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
       <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Sipariş Oluştur</p>
 
       <div className="flex gap-4 items-start">
-        {/* SOL: kategori + arama + ürün listesi (~%70) */}
+        {/* SOL: kategori + arama + ürün ızgarası (~%70) */}
         <div className="flex-[7] min-w-0">
-          <div className="flex gap-2 mb-3">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Ürün ara..."
-              className="flex-1 border border-hairline rounded-sm px-4 py-3 min-h-[2.75rem] font-body text-base text-paper
-                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-            />
-            <div className="flex gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setCartFilter('all')}
-                className={`font-mono text-xs uppercase tracking-wide px-4 min-h-[2.75rem] rounded-sm border transition-colors ${
-                  cartFilter === 'all'
-                    ? 'border-ember bg-ember/10 text-ember font-semibold'
-                    : 'border-hairline text-slate hover:text-paper'
-                }`}
-              >
-                Tümü
-              </button>
-              <button
-                type="button"
-                onClick={() => setCartFilter('inCart')}
-                className={`font-mono text-xs uppercase tracking-wide px-4 min-h-[2.75rem] rounded-sm border transition-colors whitespace-nowrap ${
-                  cartFilter === 'inCart'
-                    ? 'border-ember bg-ember/10 text-ember font-semibold'
-                    : 'border-hairline text-slate hover:text-paper'
-                }`}
-              >
-                Sepettekiler{itemCount > 0 ? ` (${itemCount})` : ''}
-              </button>
-            </div>
-          </div>
+          <MenuFilterBar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            quickFilter={quickFilter}
+            onQuickFilterChange={setQuickFilter}
+            cartFilter={cartFilter}
+            onCartFilterChange={setCartFilter}
+            itemCount={itemCount}
+          />
 
           <div className="flex gap-4">
             {categoriesWithProducts.length > 0 && (
@@ -1162,68 +1217,31 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
             )}
 
             <div className="flex-1 min-w-0">
-              {visibleProducts.length === 0 ? (
-                <p className="text-sm text-slate mb-4">
-                  {cartFilter === 'inCart'
-                    ? 'Sepette ürün yok.'
-                    : normalizedSearch
-                    ? 'Aramanızla eşleşen ürün bulunamadı.'
-                    : 'Bu kategoride ürün yok.'}
-                </p>
+              {products.length === 0 ? (
+                <ProductGridSkeleton />
+              ) : visibleProducts.length === 0 ? (
+                <EmptyState
+                  title="Ürün bulunamadı"
+                  message={
+                    cartFilter === 'inCart'
+                      ? 'Sepette ürün yok.'
+                      : normalizedSearch
+                      ? 'Aramanızla eşleşen bir ürün yok. Farklı bir anahtar kelime deneyin.'
+                      : 'Bu filtrede/kategoride ürün yok.'
+                  }
+                />
               ) : (
-                <div className="grid grid-cols-2 gap-3 max-h-[28rem] overflow-auto pr-1">
-                  {visibleProducts.map((p) => {
-                    const qty = cart[p.ProductId] || 0;
-                    const avail = p.IsAvailable !== false && p.IsAvailable !== 0;
-                    return (
-                      <div
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[30rem] overflow-auto pr-1">
+                  <AnimatePresence initial={false}>
+                    {visibleProducts.map((p) => (
+                      <ProductCard
                         key={p.ProductId}
-                        className={`border rounded-sm p-4 flex items-center gap-3 bg-panel ${avail ? 'border-hairline' : 'border-red-500/30 opacity-60'}`}
-                      >
-                        {p.ImageUrl ? (
-                          <img
-                            src={imageUrl(p.ImageUrl)}
-                            alt={p.Name}
-                            className="w-16 h-16 object-cover rounded-sm border border-hairline shrink-0"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-sm border border-hairline bg-hairline/40 shrink-0 flex items-center justify-center text-3xl select-none">
-                            {productEmoji(p.Name)}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-paper font-medium truncate">{p.Name}</p>
-                          <p className="font-mono text-xs text-slate">{money(p.Price)}</p>
-                          {!avail && <p className="font-mono text-[10px] text-red-500 uppercase tracking-wide mt-0.5">Tükendi</p>}
-                        </div>
-                        {avail ? (
-                          <div className="flex items-center gap-2 shrink-0">
-                            {qty > 0 && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => removeFromCart(p.ProductId)}
-                                  className="w-11 h-11 flex items-center justify-center font-mono text-lg text-slate hover:text-ember active:bg-charcoal border border-hairline rounded-sm select-none"
-                                >
-                                  −
-                                </button>
-                                <span className="font-mono text-sm text-paper w-5 text-center">{qty}</span>
-                              </>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => addToCart(p.ProductId)}
-                              className="w-11 h-11 flex items-center justify-center font-mono text-lg text-cream bg-ember hover:bg-ember/90 active:bg-ember/80 rounded-sm select-none"
-                            >
-                              +
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-red-500 border border-red-500/40 rounded-sm px-2 py-1">Tükendi</span>
-                        )}
-                      </div>
-                    );
-                  })}
+                        product={p}
+                        quantity={cart[p.ProductId]?.quantity || 0}
+                        onOpen={(product) => setSelectedProductId(product.ProductId)}
+                      />
+                    ))}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
@@ -1259,7 +1277,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                             type="button"
                             disabled={busy}
                             onClick={() => changeExistingItemQuantity(item, -1)}
-                            className="w-7 h-7 flex items-center justify-center font-mono text-sm text-slate hover:text-ember
+                            className="w-11 h-11 flex items-center justify-center font-mono text-sm text-slate hover:text-ember
                                        border border-hairline rounded-sm select-none disabled:opacity-30"
                           >
                             −
@@ -1269,7 +1287,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                             type="button"
                             disabled={busy}
                             onClick={() => changeExistingItemQuantity(item, 1)}
-                            className="w-7 h-7 flex items-center justify-center font-mono text-sm text-cream bg-ember hover:bg-ember/90
+                            className="w-11 h-11 flex items-center justify-center font-mono text-sm text-cream bg-ember hover:bg-ember/90
                                        rounded-sm select-none disabled:opacity-40"
                           >
                             +
@@ -1282,7 +1300,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                             disabled={busy}
                             onClick={() => removeExistingItem(item)}
                             title="Siparişten çıkar"
-                            className="w-7 h-7 flex items-center justify-center font-mono text-xs text-slate hover:text-ember disabled:opacity-30"
+                            className="w-11 h-11 flex items-center justify-center font-mono text-xs text-slate hover:text-ember disabled:opacity-30"
                           >
                             ✕
                           </button>
@@ -1303,8 +1321,14 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 {existingOrder ? 'Eklenecek ürün seçilmedi' : 'Sepet boş'}
               </p>
             ) : (
-              cartEntries.map(([productId, qty]) => {
+              cartEntries.map(([productId, line]) => {
                 const product = products.find((p) => String(p.ProductId) === String(productId));
+                const qty = line.quantity;
+                const selectedExtraIds = Object.keys(line.extras).filter((id) => line.extras[id] > 0);
+                const selectedSyrupIds = Object.keys(line.syrups).filter((id) => line.syrups[id] > 0);
+                const pickerOpen = extraPickerFor === productId;
+                const productOptionsLoaded = Boolean(optionsByProduct[productId]);
+                const productOptions = optionsFor(productId);
                 return (
                   <div key={productId} className="border border-hairline rounded-sm bg-panel p-3">
                     <div className="flex items-start justify-between gap-2 mb-2">
@@ -1314,7 +1338,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                       <button
                         type="button"
                         onClick={() => removeLineFromCart(productId)}
-                        className="font-mono text-xs text-slate hover:text-ember shrink-0 w-8 h-8 flex items-center justify-center"
+                        className="font-mono text-xs text-slate hover:text-ember shrink-0 w-11 h-11 flex items-center justify-center"
                         title="Sepetten çıkar"
                       >
                         ✕
@@ -1325,7 +1349,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                         <button
                           type="button"
                           onClick={() => removeFromCart(productId)}
-                          className="w-9 h-9 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal border border-hairline rounded-sm select-none"
+                          className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal border border-hairline rounded-sm select-none"
                         >
                           −
                         </button>
@@ -1333,14 +1357,94 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                         <button
                           type="button"
                           onClick={() => addToCart(productId)}
-                          className="w-9 h-9 flex items-center justify-center font-mono text-base text-cream bg-ember hover:bg-ember/90 active:bg-ember/80 rounded-sm select-none"
+                          className="w-11 h-11 flex items-center justify-center font-mono text-base text-cream bg-ember hover:bg-ember/90 active:bg-ember/80 rounded-sm select-none"
                         >
                           +
                         </button>
                       </div>
                       <span className="font-mono text-xs text-slate">
-                        {money((Number(product?.Price) || 0) * qty)}
+                        {money(lineTotal(product, line))}
                       </span>
+                    </div>
+
+                    {/* Seçili ekstra/şuruplar (ör. "2x Ekstra Shot") */}
+                    {(selectedExtraIds.length > 0 || selectedSyrupIds.length > 0) && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {selectedExtraIds.map((extraId) => {
+                          const extra = findOption(productId, 'extras', extraId);
+                          if (!extra) return null;
+                          return (
+                            <button
+                              key={`extra-${extraId}`}
+                              type="button"
+                              onClick={() => removeOptionFromLine(productId, 'extras', extraId)}
+                              title="Kaldırmak için tıkla"
+                              className="font-mono text-[10px] uppercase tracking-wide text-ember border border-ember/40 bg-ember/5 rounded-full px-2.5 py-1 hover:bg-ember/10"
+                            >
+                              {line.extras[extraId]}x {extra.Name} ✕
+                            </button>
+                          );
+                        })}
+                        {selectedSyrupIds.map((syrupId) => {
+                          const syrup = findOption(productId, 'syrups', syrupId);
+                          if (!syrup) return null;
+                          return (
+                            <button
+                              key={`syrup-${syrupId}`}
+                              type="button"
+                              onClick={() => removeOptionFromLine(productId, 'syrups', syrupId)}
+                              title="Kaldırmak için tıkla"
+                              className="font-mono text-[10px] uppercase tracking-wide text-ember border border-ember/40 bg-ember/5 rounded-full px-2.5 py-1 hover:bg-ember/10"
+                            >
+                              {line.syrups[syrupId]}x {syrup.Name} ✕
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Ekstra/şurup ekle — sadece bu ürüne yönetici tarafından bağlanmış
+                        opsiyonlar gösterilir (bkz. GET /products/:id/order-options) */}
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setExtraPickerFor(pickerOpen ? null : productId)}
+                        className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember"
+                      >
+                        {pickerOpen ? '− Ekstra/Şurup seçiciyi kapat' : '+ Ekstra/Şurup ekle'}
+                      </button>
+                      {pickerOpen && (
+                        <div className="mt-2 border border-hairline rounded-sm divide-y divide-hairline">
+                          {!productOptionsLoaded ? (
+                            <p className="font-mono text-xs text-slate p-3">Yükleniyor...</p>
+                          ) : productOptions.extras.length === 0 && productOptions.syrups.length === 0 ? (
+                            <p className="font-mono text-xs text-slate p-3">Bu ürün için tanımlı ekstra/şurup yok.</p>
+                          ) : (
+                            <>
+                              {productOptions.extras.map((extra) => (
+                                <OptionCard
+                                  key={`extra-${extra.ProductId}`}
+                                  mode="order"
+                                  option={extra}
+                                  quantity={line.extras[extra.ProductId] || 0}
+                                  onIncrement={() => addOptionToLine(productId, 'extras', extra.ProductId)}
+                                  onDecrement={() => removeOptionFromLine(productId, 'extras', extra.ProductId)}
+                                />
+                              ))}
+                              {productOptions.syrups.map((syrup) => (
+                                <OptionCard
+                                  key={`syrup-${syrup.ProductId}`}
+                                  mode="order"
+                                  option={syrup}
+                                  quantity={line.syrups[syrup.ProductId] || 0}
+                                  onIncrement={() => addOptionToLine(productId, 'syrups', syrup.ProductId)}
+                                  onDecrement={() => removeOptionFromLine(productId, 'syrups', syrup.ProductId)}
+                                />
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1425,6 +1529,29 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
           </div>
         </div>
       </div>
+
+      {selectedProductId != null && (() => {
+        const selectedProduct = products.find((p) => p.ProductId === selectedProductId);
+        if (!selectedProduct) return null;
+        const existingLine = cart[selectedProductId] || null;
+        return (
+          <ProductDetailModal
+            product={selectedProduct}
+            initialLine={existingLine}
+            options={optionsFor(selectedProductId)}
+            optionsLoading={!optionsByProduct[selectedProductId]}
+            onClose={() => setSelectedProductId(null)}
+            onConfirm={({ quantity, extras, syrups }) => {
+              setLineForProduct(selectedProductId, { quantity, extras, syrups });
+              setSelectedProductId(null);
+            }}
+            onRemove={() => {
+              removeLineFromCart(selectedProductId);
+              setSelectedProductId(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -2,18 +2,32 @@ const { sql, connectDB } = require('../config/db');
 const { logAudit } = require('../utils/audit');
 
 // ============================================================
-// Beklenen nakit = açılış kasası + vardiya boyunca bu kasiyerin aldığı
-// net nakit ödemeler (Amount - RefundAmount, silinmemiş, PaymentMethod='Cash').
+// Beklenen nakit = açılış kasası + vardiya boyunca alınan net nakit ödemeler
+// (Amount - RefundAmount, silinmemiş, PaymentMethod='Cash').
+//
+// Ödemeler ShiftId ile o ANKİ açık vardiyaya sabitlenir (bkz.
+// migrations/2026_07_29_payments_shift_id.sql) — bu sayede vardiya bir
+// kasiyerden diğerine devredilse (transferShift, Shifts.UserId değişir)
+// bile, devir ÖNCESİ kasiyerin topladığı nakit hâlâ bu vardiyaya ait
+// sayılır. ShiftId=NULL olan eski (migration öncesi) satırlar için geriye
+// dönük uyumluluk amacıyla eski CreatedBy+PaymentDate mantığı da ayrıca
+// toplanır (yalnızca ŞU ANKİ sahibi kapsar — devirden önceki eski veri
+// için bilinen bir sınırlama, ama migration sonrası tüm ödemeler doğru
+// hesaplanır).
 // ============================================================
-async function computeExpectedCash(pool, userId, openedAt, openingFloat) {
+async function computeExpectedCash(pool, shiftId, userId, openedAt, openingFloat) {
     const res = await pool.request()
+        .input('ShiftId', sql.Int, shiftId)
         .input('UserId', sql.Int, userId)
         .input('OpenedAt', sql.DateTime, openedAt)
         .query(`
             SELECT ISNULL(SUM(Amount - RefundAmount), 0) AS NetCash
             FROM Payments
             WHERE IsDeleted = 0 AND PaymentMethod = 'Cash'
-              AND CreatedBy = @UserId AND PaymentDate >= @OpenedAt
+              AND (
+                    ShiftId = @ShiftId
+                    OR (ShiftId IS NULL AND CreatedBy = @UserId AND PaymentDate >= @OpenedAt)
+                  )
         `);
     const netCash = Number(res.recordset[0].NetCash) || 0;
     return Number(openingFloat) + netCash;
@@ -56,7 +70,7 @@ async function getCurrentShift(req, res) {
         if (result.recordset.length === 0) return res.status(200).json({ shift: null });
 
         const shift = result.recordset[0];
-        const expectedCash = await computeExpectedCash(pool, shift.UserId, shift.OpenedAt, shift.OpeningFloat);
+        const expectedCash = await computeExpectedCash(pool, shift.ShiftId, shift.UserId, shift.OpenedAt, shift.OpeningFloat);
         const metrics = await computeShiftMetrics(pool, shift.UserId, shift.OpenedAt);
         return res.status(200).json({
             shift: { ...shift, ExpectedCash: expectedCash, CurrentSales: metrics.sales, CurrentOrders: metrics.orders, LastActivity: metrics.lastActivity },
@@ -103,7 +117,7 @@ async function openShift(req, res) {
 
 // Ortak kapatma yardımcı: bir vardiyayı kapatır, beklenen/fark hesaplar.
 async function closeShiftRecord(pool, shift, countedCash, note) {
-    const expectedCash = await computeExpectedCash(pool, shift.UserId, shift.OpenedAt, shift.OpeningFloat);
+    const expectedCash = await computeExpectedCash(pool, shift.ShiftId, shift.UserId, shift.OpenedAt, shift.OpeningFloat);
     const counted = typeof countedCash === 'number' ? countedCash : null;
     const difference = counted != null ? counted - expectedCash : null;
 
@@ -164,7 +178,7 @@ async function getActiveShifts(req, res) {
 
         const out = [];
         for (const s of open) {
-            const expectedCash = await computeExpectedCash(pool, s.UserId, s.OpenedAt, s.OpeningFloat);
+            const expectedCash = await computeExpectedCash(pool, s.ShiftId, s.UserId, s.OpenedAt, s.OpeningFloat);
             const m = await computeShiftMetrics(pool, s.UserId, s.OpenedAt);
             out.push({ ...s, ExpectedCash: expectedCash, CurrentSales: m.sales, CurrentOrders: m.orders, LastActivity: m.lastActivity, CurrentTables: occupied });
         }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useSettings } from '../context/SettingsContext';
 import { useShift } from '../context/ShiftContext';
 import { OpenShiftModal, CloseShiftModal } from './ShiftWorkflow';
 import client from '../api/client';
@@ -19,7 +20,10 @@ const NAV_ITEMS = [
   { to: '/users', label: 'Kullanıcılar', roles: ['Admin'], icon: '👤' },
   { to: '/stock', label: 'Stok', roles: ['Admin'], icon: '📦' },
   { to: '/recipes', label: 'Reçeteler', roles: ['Admin'], icon: '🧪' },
+  { to: '/extras', label: 'Ekstralar', roles: ['Admin'], icon: '🍯' },
+  { to: '/syrups', label: 'Şuruplar', roles: ['Admin'], icon: '🍮' },
   { to: '/audit', label: 'Denetim', roles: ['Admin'], icon: '🛡️' },
+  { to: '/settings', label: 'Ayarlar', roles: ['Admin'], icon: '⚙️' },
 ];
 
 const ROLE_LABELS = {
@@ -31,6 +35,7 @@ const ROLE_LABELS = {
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { RestaurantName } = useSettings();
   const { shift, loading: shiftLoading } = useShift();
   const navigate = useNavigate();
   const [showClose, setShowClose] = useState(false);
@@ -63,7 +68,7 @@ export default function Layout({ children }) {
           <p className="font-mono text-[10px] tracking-[0.3em] text-sand/50 uppercase mb-1">
             Restoran
           </p>
-          <h1 className="font-display text-xl font-semibold leading-tight">Panel</h1>
+          <h1 className="font-display text-xl font-semibold leading-tight">{RestaurantName || 'Panel'}</h1>
         </div>
 
         <nav className="flex-1 py-4 overflow-y-auto">

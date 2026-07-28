@@ -10,8 +10,8 @@ const VALID_ROLES = ['Waiter', 'Cashier', 'Admin'];
 
 // ============================================================
 // KAYIT (REGISTER)
-// ŞİMDİLİK HERKESE AÇIK - ileride sadece Manager erişebilecek
-// TODO: Auth tam oturunca bu endpoint'i requireRole('Manager') ile kısıtla
+// SADECE ADMIN erişebilir — routes/auth.js'te verifyToken + requireRole('Admin')
+// ile korunur, bu endpoint herkese açık DEĞİLDİR.
 // ============================================================
 const register = async (req, res) => {
     const { FullName, UserName, Password, Role } = req.body;

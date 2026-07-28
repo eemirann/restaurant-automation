@@ -112,9 +112,12 @@ async function transferTable(req, res) {
         await transaction.begin();
 
         // --- Kaynak siparişi doğrula ---
+        // UPDLOCK+ROWLOCK: aynı sipariş için eşzamanlı iki transfer isteği
+        // (ör. iki kasiyer aynı anda) birbirini bekler, ikisi de aynı Status
+        // anlık görüntüsünü geçerli sanıp çakışan şekilde işlem yapamaz.
         const orderResult = await new sql.Request(transaction)
             .input('OrderId', sql.Int, OrderId)
-            .query(`SELECT OrderId, TableId, Status, TotalAmount FROM Orders WHERE OrderId = @OrderId`);
+            .query(`SELECT OrderId, TableId, Status, TotalAmount FROM Orders WITH (UPDLOCK, ROWLOCK) WHERE OrderId = @OrderId`);
 
         if (orderResult.recordset.length === 0) {
             await transaction.rollback();
@@ -143,10 +146,11 @@ async function transferTable(req, res) {
             return res.status(404).json({ error: 'Hedef masa bulunamadı' });
         }
 
-        // Hedef masadaki aktif siparişi bul (varsa)
+        // Hedef masadaki aktif siparişi bul (varsa) — burada da UPDLOCK: aynı
+        // hedef masaya eşzamanlı iki merge/move çakışmasın.
         const activeToOrderResult = await new sql.Request(transaction)
             .input('ToTableId', sql.Int, ToTableId)
-            .query(`SELECT OrderId, TotalAmount FROM Orders WHERE TableId = @ToTableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
+            .query(`SELECT OrderId, TotalAmount FROM Orders WITH (UPDLOCK, ROWLOCK) WHERE TableId = @ToTableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
 
         const activeToOrder = activeToOrderResult.recordset[0] || null;
 
@@ -205,23 +209,33 @@ async function transferTable(req, res) {
             .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
 
         for (const item of fromDetailsResult.recordset) {
+            // Aynı ürün + aynı varyant hedefte zaten var mı? (VariantId NULL-safe
+            // karşılaştırılır — farklı varyantlar, örn. Büyük/Küçük boy, asla
+            // birbirine karışıp aynı satırda toplanmamalı.)
             const targetRowResult = await new sql.Request(transaction)
                 .input('ToOrderId', sql.Int, toOrderId)
                 .input('ProductId', sql.Int, item.ProductId)
-                .query(`SELECT OrderDetailsId, Quantity, UnitPrice FROM OrderDetails WHERE OrderId = @ToOrderId AND ProductId = @ProductId`);
+                .input('VariantId', sql.Int, item.VariantId)
+                .query(`SELECT OrderDetailsId, Quantity, UnitPrice, Note FROM OrderDetails
+                        WHERE OrderId = @ToOrderId AND ProductId = @ProductId
+                          AND ISNULL(VariantId, -1) = ISNULL(@VariantId, -1)`);
 
-            if (targetRowResult.recordset.length > 0) {
-                const targetRow = targetRowResult.recordset[0];
+            const targetRow = targetRowResult.recordset[0];
+            const notesMatch = targetRow && (targetRow.Note || null) === (item.Note || null);
 
-                // Fiyat farklıysa merge tamamen durdurulur
+            if (targetRow) {
+                // Fiyat farklıysa merge tamamen durdurulur (aynı ürün/varyant iki
+                // farklı fiyatta olamaz — veri bütünlüğü ihlali sinyali)
                 if (Number(targetRow.UnitPrice) !== Number(item.UnitPrice)) {
                     await transaction.rollback();
                     return res.status(409).json({
                         error: `Ürün (ProductId: ${item.ProductId}) için fiyat uyuşmazlığı var. Kaynak: ${item.UnitPrice}, Hedef: ${targetRow.UnitPrice}. Merge iptal edildi.`
                     });
                 }
+            }
 
-                // Aynı ürün, aynı fiyat -> miktarları topla, kaynak satırı sil
+            if (targetRow && notesMatch) {
+                // Aynı ürün/varyant/not -> miktarları topla, kaynak satırı sil
                 await new sql.Request(transaction)
                     .input('OrderDetailsId', sql.Int, targetRow.OrderDetailsId)
                     .input('NewQuantity', sql.Int, targetRow.Quantity + item.Quantity)
@@ -240,13 +254,25 @@ async function transferTable(req, res) {
                     .query(`DELETE FROM OrderDetails WHERE OrderDetailsId = @OrderDetailsId`);
 
             } else {
-                // Ürün hedefte yok -> satırı doğrudan hedefe taşı
+                // Ürün/varyant hedefte yok, VEYA aynı üründe farklı bir not var
+                // (ör. "az şekerli" vs "normal") -> ayrı satır olarak taşınır,
+                // notu kaybolmaz. OrderDetailsId değişmediği için PaymentItems
+                // zaten doğru satırı işaret etmeye devam eder.
                 await new sql.Request(transaction)
                     .input('OrderDetailsId', sql.Int, item.OrderDetailsId)
                     .input('ToOrderId', sql.Int, toOrderId)
                     .query(`UPDATE OrderDetails SET OrderId = @ToOrderId WHERE OrderDetailsId = @OrderDetailsId`);
             }
         }
+
+        // Kaynak siparişe ait ödemeler de hedefe taşınır — aksi halde kaynak
+        // sipariş 'Merged' olduktan sonra bu ödemeler hiçbir aktif siparişin
+        // bakiyesinden düşülmez ve misafirden zaten ödediği tutar tekrar
+        // istenebilir (bkz. paymentController.js recalculateOrderStatus/getBalance).
+        await new sql.Request(transaction)
+            .input('OrderId', sql.Int, OrderId)
+            .input('ToOrderId', sql.Int, toOrderId)
+            .query(`UPDATE Payments SET OrderId = @ToOrderId WHERE OrderId = @OrderId`);
 
         // Hedef siparişin toplamını yeniden hesapla
         const recalcResult = await new sql.Request(transaction)

@@ -35,6 +35,9 @@ const kdsRoutes = require('./routes/kds');
 const reportRoutes = require('./routes/reports');
 const shiftRoutes = require('./routes/shifts');
 const auditRoutes = require('./routes/audit');
+const extraRoutes = require('./routes/extras');
+const syrupRoutes = require('./routes/syrups');
+const settingsRoutes = require('./routes/settings');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -72,6 +75,9 @@ app.use('/api/kds', kdsRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/extras', extraRoutes);
+app.use('/api/syrups', syrupRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Hata yönetimi (TÜM route'lardan SONRA olmalı)
 app.use(notFoundHandler);

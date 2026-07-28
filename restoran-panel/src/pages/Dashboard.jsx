@@ -99,7 +99,7 @@ export default function Dashboard() {
           icon: <IconCoin />,
           title: 'Günlük Ciro',
           value: money(data.todayRevenue),
-          subtitle: 'bugün',
+          subtitle: 'bugün · tahsil edilen',
           accent: 'ember',
           trend: revenueTrend !== null ? revenueTrend >= 0 : null,
         },
@@ -232,7 +232,7 @@ export default function Dashboard() {
           )}
         </Panel>
 
-        <Panel title="Kategori Dağılımı · Bugün">
+        <Panel title="Kategori Dağılımı · Bugün (sipariş bazlı)">
           {!data ? (
             <p className="text-slate font-mono text-sm">Yükleniyor...</p>
           ) : data.categoryDistribution.length === 0 ? (
@@ -288,7 +288,7 @@ export default function Dashboard() {
       </div>
 
       {/* Kâr Oranı */}
-      <Panel title="Kâr Oranı · Bugün" className="mb-8">
+      <Panel title="Kâr Oranı · Bugün (sipariş bazlı)" className="mb-8">
         {!data ? (
           <p className="text-slate font-mono text-sm">Yükleniyor...</p>
         ) : data.profitRatio.percent === null ? (

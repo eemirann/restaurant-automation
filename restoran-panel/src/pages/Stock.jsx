@@ -254,7 +254,7 @@ export default function Stock() {
                           <button
                             onClick={() => handleDecrease(item)}
                             title="1 azalt"
-                            className="w-8 h-8 flex items-center justify-center font-mono text-paper border border-hairline rounded-sm
+                            className="w-11 h-11 flex items-center justify-center font-mono text-paper border border-hairline rounded-sm
                                        hover:border-ember hover:text-ember transition-colors"
                           >
                             −
@@ -262,7 +262,7 @@ export default function Stock() {
                           <button
                             onClick={() => handleIncrease(item)}
                             title="1 artır"
-                            className="w-8 h-8 flex items-center justify-center font-mono text-cream bg-ember rounded-sm
+                            className="w-11 h-11 flex items-center justify-center font-mono text-cream bg-ember rounded-sm
                                        hover:bg-ember/90 transition-colors"
                           >
                             +
@@ -341,6 +341,18 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Ürün listesinde ara / A-Z sırala (Stok listesindeki arama/sıralama ile aynı mantık)
+  const [productSearch, setProductSearch] = useState('');
+  const [productSort, setProductSort] = useState('name-asc');
+
+  const sortedProducts = [...products]
+    .filter((p) => p.Name.toLocaleLowerCase('tr-TR').includes(productSearch.toLocaleLowerCase('tr-TR')))
+    .sort((a, b) =>
+      productSort === 'name-asc'
+        ? a.Name.localeCompare(b.Name, 'tr-TR')
+        : b.Name.localeCompare(a.Name, 'tr-TR')
+    );
 
   // Seçilen ürünün zaten bir stok kaydı var mı? Varsa "düzenleme" (mevcut
   // stoğa ekleme) moduna geçilir, minimum stok alanı gizlenir.
@@ -426,6 +438,25 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
         <form onSubmit={handleSubmit} className="flex-1 overflow-auto px-6 py-5 bg-hairline/10 space-y-4">
           <div>
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün</label>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                placeholder="Ürün ara..."
+                className="flex-1 border border-hairline rounded-sm px-3 py-2 font-body text-sm text-paper bg-panel
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+              <select
+                value={productSort}
+                onChange={(e) => setProductSort(e.target.value)}
+                className="border border-hairline rounded-sm px-2 py-2 font-mono text-[11px] uppercase tracking-wide text-paper bg-panel
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              >
+                <option value="name-asc">A-Z</option>
+                <option value="name-desc">Z-A</option>
+              </select>
+            </div>
             <select
               value={productId}
               onChange={(e) => { setProductId(e.target.value); if (e.target.value) setNewProductName(''); }}
@@ -433,7 +464,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             >
               <option value="">Listeden seçin...</option>
-              {products.map((p) => {
+              {sortedProducts.map((p) => {
                 const hasStock = stockItems.some((s) => s.ProductId === p.ProductId);
                 return (
                   <option key={p.ProductId} value={p.ProductId}>

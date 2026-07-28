@@ -59,7 +59,7 @@ async function getDashboardStats(req, res) {
                 (SELECT COUNT(*) FROM Tables WHERE Status = 'Occupied') AS OccupiedTables,
                 (SELECT COUNT(*) FROM Tables WHERE Status = 'Empty') AS AvailableTables,
                 (SELECT COUNT(*) FROM Stock WHERE Quantity <= MinStockLevel) AS LowStockCount,
-                (SELECT COUNT(*) FROM Products WHERE IsRawMaterial = 0) AS TotalProducts
+                (SELECT COUNT(*) FROM Products WHERE IsRawMaterial = 0 AND IsExtra = 0 AND IsSyrup = 0) AS TotalProducts
         `);
         const summary = summaryResult.recordset[0];
 
@@ -121,6 +121,14 @@ async function getDashboardStats(req, res) {
             ORDER BY SUM(od.Quantity) DESC
         `);
 
+        // NOT: bestSellingProducts/categoryDistribution/profitRatio SİPARİŞ bazlı
+        // (OrderDetails, Status<>'Cancelled') hesaplanır — henüz ÖDENMEMİŞ ama
+        // servis edilmiş siparişleri de içerir. TodayRevenue/weeklyRevenue/
+        // hourlyRevenue ise NAKİT/tahsilat bazlı (Payments, RefundAmount düşülmüş)
+        // hesaplanır. İkisi kasıtlı olarak farklı yöntemler — toplamları
+        // birbirine denk gelmeyebilir, karşılaştırılmamalı (frontend'de "sipariş
+        // bazlı" etiketiyle ayrıştırılır, bkz. Dashboard.jsx).
+        //
         // Bugün satılan ürünlerin kategoriye göre ciro dağılımı.
         const categoryRevenueResult = await pool.request().query(`
             SELECT c.Name AS CategoryName, SUM(od.Quantity * od.UnitPrice) AS Revenue

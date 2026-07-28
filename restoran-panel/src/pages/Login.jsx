@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 
 const ROLE_LABELS = {
   Admin: 'Yönetici',
@@ -28,6 +29,7 @@ export default function Login() {
   const [pin, setPin] = useState('');
   const [shake, setShake] = useState(false);
   const { loginWithPin, error, loading } = useAuth();
+  const { RestaurantName } = useSettings();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -101,14 +103,14 @@ export default function Login() {
           <div className="px-8 pt-9 pb-7 text-center border-b border-hairline bg-gradient-to-b from-hairline/60 to-panel">
             <div
               className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center font-display font-bold text-xl text-cream mb-4 shadow-sm"
-              style={{ background: 'linear-gradient(145deg, #FF4713, #C23000)' }}
+              style={{ background: 'linear-gradient(145deg, rgb(var(--color-ember)), #C23000)' }}
             >
-              R
+              {(RestaurantName || 'R').trim()[0]?.toLocaleUpperCase('tr-TR')}
             </div>
             <p className="font-mono text-[11px] tracking-[0.3em] text-slate uppercase mb-1.5">
               Personel Girişi
             </p>
-            <h1 className="font-display text-2xl font-semibold text-paper">Restoran Panel</h1>
+            <h1 className="font-display text-2xl font-semibold text-paper">{RestaurantName || 'Restoran'} Panel</h1>
           </div>
 
           <div className={`px-8 py-8 transition-transform ${shake ? 'animate-[shake_.4s]' : ''}`}>

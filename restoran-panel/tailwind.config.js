@@ -11,7 +11,9 @@ export default {
         // Sidebar (Layout.jsx) zaten koyu tasarlanmıştı — light/dark switch'ten etkilenmez, sabit.
         ink: '#1C1B19',
         cream: '#F7F4EE',
-        ember: '#FF4713',
+        // Ayarlar sayfasından değiştirilebilir (bkz. SettingsContext) — CSS
+        // değişkenine bağlı, diğer sabit renkler gibi hex değil.
+        ember: 'rgb(var(--color-ember) / <alpha-value>)',
         moss: '#00C853',
         azure: '#0090FF',
         sand: '#E8E1D3',

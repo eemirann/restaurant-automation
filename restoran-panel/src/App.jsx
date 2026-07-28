@@ -13,6 +13,9 @@ import Payments from './pages/Payments';
 import Products from './pages/Products';
 import Users from './pages/Users';
 import Stock from './pages/Stock';
+import Extras from './pages/Extras';
+import Syrups from './pages/Syrups';
+import Settings from './pages/Settings';
 import StockMovements from './pages/StockMovements';
 import Reports from './pages/Reports';
 import Recipes from './pages/Recipes';
@@ -88,6 +91,30 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['Admin']}>
                 <Layout><Recipes /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/extras"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><Extras /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/syrups"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><Syrups /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><Settings /></Layout>
               </ProtectedRoute>
             }
           />

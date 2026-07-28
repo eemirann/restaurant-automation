@@ -4,21 +4,43 @@
 // Her tablo tek tanım, her ilişki tek Ref — dbdiagram.io uyumlu.
 // ============================================================
 
+Table AppSettings {
+  AppSettingsId int [pk, increment]
+  RestaurantName nvarchar(100) [not null]
+  ThemeColor char(7) [not null]
+  UpdatedAt datetime [not null]
+}
+
+Table AuditLog {
+  AuditLogId int [pk, increment]
+  UserId int
+  Action nvarchar(50) [not null]
+  EntityType nvarchar(50)
+  EntityId int
+  Details nvarchar(max)
+  CreatedAt datetime [not null]
+}
+
 Table Categories {
   CategoryId int [pk, increment]
   Name nvarchar(50) [unique, not null]
   IsActive bit [not null]
 }
 
-Table OrderDetailSyrups {
-  OrderDetailSyrupsId int [pk, increment]
+Table OrderDetailExtras {
+  OrderDetailExtraId int [pk, increment]
   OrderDetailsId int [not null]
-  SyrupsId int [not null]
-  Price decimal(10,2) [not null]
+  ExtraProductId int [not null]
+  Quantity int [not null]
+  UnitPrice decimal(10,2) [not null]
+}
 
-  indexes {
-    (OrderDetailsId, SyrupsId) [unique]
-  }
+Table OrderDetailSyrups {
+  OrderDetailSyrupId int [pk, increment]
+  OrderDetailsId int [not null]
+  SyrupProductId int [not null]
+  Quantity int [not null]
+  UnitPrice decimal(10,2) [not null]
 }
 
 Table OrderDetails {
@@ -69,6 +91,29 @@ Table Payments {
   DeletedBy int
   CreatedBy int
   RefundedBy int
+  ShiftId int
+}
+
+Table ProductExtras {
+  ProductId int [not null]
+  ExtraProductId int [not null]
+  DisplayOrder int [not null]
+  IsEnabled bit [not null]
+
+  indexes {
+    (ProductId, ExtraProductId) [pk]
+  }
+}
+
+Table ProductSyrups {
+  ProductId int [not null]
+  SyrupProductId int [not null]
+  DisplayOrder int [not null]
+  IsEnabled bit [not null]
+
+  indexes {
+    (ProductId, SyrupProductId) [pk]
+  }
 }
 
 Table ProductVariants {
@@ -92,6 +137,12 @@ Table Products {
   ImageUrl nvarchar(255)
   IsRawMaterial bit [not null]
   Cost decimal(10,2)
+  IsAvailable bit [not null]
+  IsExtra bit [not null]
+  IsSyrup bit [not null]
+  IsPopular bit [not null]
+  Barcode nvarchar(64)
+  StockCount int
 }
 
 Table Recipes {
@@ -117,6 +168,20 @@ Table Reservations {
   Status nvarchar(20) [not null]
   CreatedByUserId int [not null]
   CreatedAt datetime2 [not null]
+}
+
+Table Shifts {
+  ShiftId int [pk, increment]
+  UserId int [not null]
+  OpeningFloat decimal(10,2) [not null]
+  OpenedAt datetime [not null]
+  ClosedAt datetime
+  CountedCash decimal(10,2)
+  ExpectedCash decimal(10,2)
+  Difference decimal(10,2)
+  Status nvarchar(20) [not null]
+  Note nvarchar(500)
+  OpeningNote nvarchar(500)
 }
 
 Table Stock {
@@ -148,13 +213,6 @@ Table StockPurchases {
   PurchaseDate datetime [not null]
 }
 
-Table Syrups {
-  SyrupsId int [pk, increment]
-  Name nvarchar(50) [unique, not null]
-  Price decimal(10,2) [not null]
-  IsActive bit [not null]
-}
-
 Table TableTransferLog {
   TransferLogId int [pk, increment]
   OrderId int [not null]
@@ -172,6 +230,7 @@ Table Tables {
   TableNumber int [unique, not null]
   Capacity int
   Status nvarchar(20) [not null]
+  Area nvarchar(20) [not null]
 }
 
 Table Users {
@@ -186,8 +245,11 @@ Table Users {
 }
 
 // ---------- İlişkiler (Foreign Keys) ----------
+Ref: AuditLog.UserId > Users.UserId
+Ref: OrderDetailExtras.ExtraProductId > Products.ProductId
+Ref: OrderDetailExtras.OrderDetailsId > OrderDetails.OrderDetailsId
 Ref: OrderDetailSyrups.OrderDetailsId > OrderDetails.OrderDetailsId
-Ref: OrderDetailSyrups.SyrupsId > Syrups.SyrupsId
+Ref: OrderDetailSyrups.SyrupProductId > Products.ProductId
 Ref: OrderDetails.OrderId > Orders.OrderId
 Ref: OrderDetails.ProductId > Products.ProductId
 Ref: OrderDetails.VariantId > ProductVariants.ProductVariantsId
@@ -196,12 +258,18 @@ Ref: Orders.UserId > Users.UserId
 Ref: PaymentItems.OrderDetailsId > OrderDetails.OrderDetailsId
 Ref: PaymentItems.PaymentsId > Payments.PaymentsId
 Ref: Payments.OrderId > Orders.OrderId
+Ref: Payments.ShiftId > Shifts.ShiftId
+Ref: ProductExtras.ExtraProductId > Products.ProductId
+Ref: ProductExtras.ProductId > Products.ProductId
+Ref: ProductSyrups.ProductId > Products.ProductId
+Ref: ProductSyrups.SyrupProductId > Products.ProductId
 Ref: ProductVariants.ProductId > Products.ProductId
 Ref: Products.CategoryId > Categories.CategoryId
 Ref: Recipes.ProductId > Products.ProductId
 Ref: Recipes.RawMaterialProductId > Products.ProductId
 Ref: Reservations.CreatedByUserId > Users.UserId
 Ref: Reservations.TableId > Tables.TableId
+Ref: Shifts.UserId > Users.UserId
 Ref: Stock.ProductId > Products.ProductId
 Ref: StockMovements.StockId > Stock.StockId
 Ref: StockPurchases.StockId > Stock.StockId

@@ -176,6 +176,50 @@ const createPayment = async (req, res) => {
                 throw new Error('Ödeme tutarı sıfırdan büyük olmalıdır.');
             }
 
+            // Düz tutarlı (lump-sum) ödemede, Items ile kalem bazlı ödemenin
+            // aksine miktar hiçbir şeye göre sınırlanmadığından, kalan bakiyeyi
+            // aşan bir Amount sunucu tarafında da reddedilmeli (aksi halde
+            // fazla ödeme gerçek bir Payments satırı olarak kaydedilip
+            // ciro/rapor/vardiya kasa hesaplarını kalıcı olarak şişirir).
+            if (!hasItems) {
+                const beforeResult = await new sql.Request(transaction)
+                    .input('OrderId', sql.Int, OrderId)
+                    .query(`
+                        SELECT
+                            SUM(Amount - RefundAmount) AS NetPaid,
+                            SUM(DiscountAmount) AS TotalDiscount
+                        FROM Payments
+                        WHERE OrderId = @OrderId AND IsDeleted = 0
+                    `);
+                const orderRow = await new sql.Request(transaction)
+                    .input('OrderId', sql.Int, OrderId)
+                    .query(`SELECT TotalAmount FROM Orders WHERE OrderId = @OrderId`);
+
+                if (orderRow.recordset.length === 0) {
+                    throw new Error('Sipariş bulunamadı.');
+                }
+
+                const existingNetPaid = beforeResult.recordset[0].NetPaid || 0;
+                const existingDiscount = beforeResult.recordset[0].TotalDiscount || 0;
+                const totalAmount = Number(orderRow.recordset[0].TotalAmount);
+                const amountDueNow = totalAmount - (existingDiscount + discount);
+                const remainingBefore = Math.max(amountDueNow - existingNetPaid, 0);
+
+                if (amountToCharge - remainingBefore > 0.01) {
+                    throw new Error(`Ödeme tutarı (${amountToCharge.toFixed(2)}) kalan bakiyeyi (${remainingBefore.toFixed(2)}) aşıyor.`);
+                }
+            }
+
+            // Ödeme, oluşturulduğu ANDAki açık vardiyaya sabitlenir (varsa) —
+            // vardiya devri (transferShift) sonrasında da nakit doğru vardiyaya
+            // sayılabilsin diye (bkz. controllers/shiftController.js computeExpectedCash).
+            const openShiftResult = CreatedBy
+                ? await new sql.Request(transaction)
+                    .input('UserId', sql.Int, CreatedBy)
+                    .query(`SELECT TOP 1 ShiftId FROM Shifts WHERE UserId = @UserId AND Status = 'Open' ORDER BY ShiftId DESC`)
+                : { recordset: [] };
+            const shiftId = openShiftResult.recordset[0]?.ShiftId ?? null;
+
             const insertResult = await new sql.Request(transaction)
                 .input('OrderId', sql.Int, OrderId)
                 .input('Amount', sql.Decimal(10, 2), amountToCharge)
@@ -184,10 +228,11 @@ const createPayment = async (req, res) => {
                 .input('PaymentMethod', sql.NVarChar(20), PaymentMethod)
                 .input('InvoiceNumber', sql.NVarChar(50), InvoiceNumber || null)
                 .input('CreatedBy', sql.Int, CreatedBy || null)
+                .input('ShiftId', sql.Int, shiftId)
                 .query(`
-                    INSERT INTO Payments (OrderId, Amount, TipAmount, DiscountAmount, PaymentMethod, InvoiceNumber, CreatedBy)
+                    INSERT INTO Payments (OrderId, Amount, TipAmount, DiscountAmount, PaymentMethod, InvoiceNumber, CreatedBy, ShiftId)
                     OUTPUT INSERTED.PaymentsId
-                    VALUES (@OrderId, @Amount, @TipAmount, @DiscountAmount, @PaymentMethod, @InvoiceNumber, @CreatedBy)
+                    VALUES (@OrderId, @Amount, @TipAmount, @DiscountAmount, @PaymentMethod, @InvoiceNumber, @CreatedBy, @ShiftId)
                 `);
 
             const newPaymentId = insertResult.recordset[0].PaymentsId;
