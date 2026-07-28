@@ -253,6 +253,8 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
     items.forEach((it) => {
       const name = resolveProductName ? resolveProductName(it.ProductId) : `Ürün #${it.ProductId}`;
       lines.push(`${it.Quantity} x ${name}  ${money(it.Quantity * it.UnitPrice)}`);
+      (it.Extras || []).forEach((extra) => lines.push(`   + ${extra.Quantity}x ${extra.ExtraName}`));
+      (it.Syrups || []).forEach((syrup) => lines.push(`   + ${syrup.Quantity}x ${syrup.SyrupName}`));
     });
     lines.push('--------------------------');
     lines.push(`Toplam: ${money(totalAmount)}`);
@@ -267,7 +269,11 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
     const rows = items
       .map((it) => {
         const name = resolveProductName ? resolveProductName(it.ProductId) : `Ürün #${it.ProductId}`;
-        return `<tr><td>${it.Quantity}×</td><td>${name}</td><td style="text-align:right">${money(it.Quantity * it.UnitPrice)}</td></tr>`;
+        const optionRows = [
+          ...(it.Extras || []).map((extra) => `<tr><td></td><td style="padding-left:10px;color:#555">+ ${extra.Quantity}x ${extra.ExtraName}</td><td></td></tr>`),
+          ...(it.Syrups || []).map((syrup) => `<tr><td></td><td style="padding-left:10px;color:#555">+ ${syrup.Quantity}x ${syrup.SyrupName}</td><td></td></tr>`),
+        ].join('');
+        return `<tr><td>${it.Quantity}×</td><td>${name}</td><td style="text-align:right">${money(it.Quantity * it.UnitPrice)}</td></tr>${optionRows}`;
       })
       .join('');
     w.document.write(`
@@ -491,6 +497,20 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                                 <div className="min-w-0">
                                   <p className="text-base text-paper font-semibold truncate leading-tight">{name}</p>
                                   {item.Note && <p className="font-mono text-[11px] text-azure/90 truncate mt-0.5">📝 {item.Note}</p>}
+                                  {((item.Extras?.length > 0) || (item.Syrups?.length > 0)) && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {(item.Extras || []).map((extra) => (
+                                        <span key={`extra-${extra.ExtraProductId}`} className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5">
+                                          {extra.Quantity}x {extra.ExtraName}
+                                        </span>
+                                      ))}
+                                      {(item.Syrups || []).map((syrup) => (
+                                        <span key={`syrup-${syrup.SyrupProductId}`} className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5">
+                                          {syrup.Quantity}x {syrup.SyrupName}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
                                   {item.PaidQuantity > 0 && <p className="font-mono text-[10px] text-moss mt-0.5">{item.PaidQuantity} adet ödendi</p>}
                                 </div>
                               </div>

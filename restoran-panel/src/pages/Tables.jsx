@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import client from '../api/client';
 import { getSocket } from '../api/socket';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import PaymentDrawer from '../components/PaymentDrawer';
 import OptionCard from '../components/OptionCard';
 import ProductCard from '../components/ProductCard';
@@ -931,6 +932,7 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 // "Sipariş Ver" ile POST /api/orders çağır.
 // ============================================================
 function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, products, categories, onOrdered, onError }) {
+  const { ProductOptionsPopupEnabled } = useSettings();
   // { [ProductId]: { quantity, extras: { [ExtraProductId]: quantity }, syrups: { [SyrupProductId]: quantity } } }
   const [cart, setCart] = useState({});
   const [activeCategoryId, setActiveCategoryId] = useState('all');
@@ -1238,7 +1240,13 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                         key={p.ProductId}
                         product={p}
                         quantity={cart[p.ProductId]?.quantity || 0}
-                        onOpen={(product) => setSelectedProductId(product.ProductId)}
+                        onOpen={(product) => {
+                          if (ProductOptionsPopupEnabled === false) {
+                            addToCart(product.ProductId);
+                          } else {
+                            setSelectedProductId(product.ProductId);
+                          }
+                        }}
                       />
                     ))}
                   </AnimatePresence>
@@ -1269,42 +1277,65 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                   {existingOrder.items.map((item, i) => {
                     const product = products.find((p) => p.ProductId === item.ProductId);
                     const busy = itemActionBusy === item.OrderDetailsId;
+                    const hasOptions = (item.Extras?.length > 0) || (item.Syrups?.length > 0);
                     return (
-                      <div key={item.OrderDetailsId ?? i} className="flex items-center justify-between px-3 py-2 text-sm gap-2">
-                        <span className="text-paper truncate">{product?.Name || `Ürün #${item.ProductId}`}</span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => changeExistingItemQuantity(item, -1)}
-                            className="w-11 h-11 flex items-center justify-center font-mono text-sm text-slate hover:text-ember
-                                       border border-hairline rounded-sm select-none disabled:opacity-30"
-                          >
-                            −
-                          </button>
-                          <span className="font-mono text-xs text-paper w-4 text-center">{item.Quantity}</span>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => changeExistingItemQuantity(item, 1)}
-                            className="w-11 h-11 flex items-center justify-center font-mono text-sm text-cream bg-ember hover:bg-ember/90
-                                       rounded-sm select-none disabled:opacity-40"
-                          >
-                            +
-                          </button>
-                          <span className="font-mono text-xs text-slate w-16 text-right">
-                            {money(item.Quantity * item.UnitPrice)}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => removeExistingItem(item)}
-                            title="Siparişten çıkar"
-                            className="w-11 h-11 flex items-center justify-center font-mono text-xs text-slate hover:text-ember disabled:opacity-30"
-                          >
-                            ✕
-                          </button>
+                      <div key={item.OrderDetailsId ?? i} className="px-3 py-2 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-paper truncate">{product?.Name || `Ürün #${item.ProductId}`}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => changeExistingItemQuantity(item, -1)}
+                              className="w-11 h-11 flex items-center justify-center font-mono text-sm text-slate hover:text-ember
+                                         border border-hairline rounded-sm select-none disabled:opacity-30"
+                            >
+                              −
+                            </button>
+                            <span className="font-mono text-xs text-paper w-4 text-center">{item.Quantity}</span>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => changeExistingItemQuantity(item, 1)}
+                              className="w-11 h-11 flex items-center justify-center font-mono text-sm text-cream bg-ember hover:bg-ember/90
+                                         rounded-sm select-none disabled:opacity-40"
+                            >
+                              +
+                            </button>
+                            <span className="font-mono text-xs text-slate w-16 text-right">
+                              {money(item.Quantity * item.UnitPrice)}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => removeExistingItem(item)}
+                              title="Siparişten çıkar"
+                              className="w-11 h-11 flex items-center justify-center font-mono text-xs text-slate hover:text-ember disabled:opacity-30"
+                            >
+                              ✕
+                            </button>
+                          </div>
                         </div>
+                        {hasOptions && (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {(item.Extras || []).map((extra) => (
+                              <span
+                                key={`extra-${extra.ExtraProductId}`}
+                                className="font-mono text-[10px] text-slate border border-hairline rounded-full px-2 py-0.5"
+                              >
+                                {extra.Quantity}x {extra.ExtraName}
+                              </span>
+                            ))}
+                            {(item.Syrups || []).map((syrup) => (
+                              <span
+                                key={`syrup-${syrup.SyrupProductId}`}
+                                className="font-mono text-[10px] text-slate border border-hairline rounded-full px-2 py-0.5"
+                              >
+                                {syrup.Quantity}x {syrup.SyrupName}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1860,7 +1891,29 @@ function BillModal({ tableId, productName, onClose }) {
               <tbody>
                 {(order.items || []).map((item, i) => (
                   <tr key={i} className="border-b border-hairline last:border-b-0">
-                    <td className="px-3 py-2 text-paper">{productName(item.ProductId)}</td>
+                    <td className="px-3 py-2 text-paper">
+                      {productName(item.ProductId)}
+                      {((item.Extras?.length > 0) || (item.Syrups?.length > 0)) && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(item.Extras || []).map((extra) => (
+                            <span
+                              key={`extra-${extra.ExtraProductId}`}
+                              className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5"
+                            >
+                              {extra.Quantity}x {extra.ExtraName}
+                            </span>
+                          ))}
+                          {(item.Syrups || []).map((syrup) => (
+                            <span
+                              key={`syrup-${syrup.SyrupProductId}`}
+                              className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5"
+                            >
+                              {syrup.Quantity}x {syrup.SyrupName}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-center font-mono text-xs text-paper">{item.Quantity}</td>
                     <td className="px-3 py-2 text-right font-mono text-xs text-slate">{money(item.UnitPrice)}</td>
                     <td className="px-3 py-2 text-right font-mono text-xs text-paper font-medium">

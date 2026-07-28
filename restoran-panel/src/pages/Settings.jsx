@@ -7,10 +7,11 @@ import { useSettings } from '../context/SettingsContext';
 const PRESET_COLORS = ['#FF4713', '#0090FF', '#00C853', '#D6336C', '#7C3AED', '#B8860B'];
 
 export default function Settings() {
-  const { RestaurantName, ThemeColor, updateLocalSettings } = useSettings();
+  const { RestaurantName, ThemeColor, ProductOptionsPopupEnabled, updateLocalSettings } = useSettings();
 
   const [name, setName] = useState(RestaurantName || '');
   const [color, setColor] = useState(ThemeColor || '#FF4713');
+  const [popupEnabled, setPopupEnabled] = useState(ProductOptionsPopupEnabled !== false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -18,6 +19,7 @@ export default function Settings() {
   // Context ilk yüklendiğinde (async fetch tamamlanınca) formu güncelle
   useEffect(() => { setName(RestaurantName || ''); }, [RestaurantName]);
   useEffect(() => { setColor(ThemeColor || '#FF4713'); }, [ThemeColor]);
+  useEffect(() => { setPopupEnabled(ProductOptionsPopupEnabled !== false); }, [ProductOptionsPopupEnabled]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,7 +30,11 @@ export default function Settings() {
 
     setSubmitting(true);
     try {
-      const res = await client.put('/settings', { RestaurantName: name.trim(), ThemeColor: color });
+      const res = await client.put('/settings', {
+        RestaurantName: name.trim(),
+        ThemeColor: color,
+        ProductOptionsPopupEnabled: popupEnabled,
+      });
       updateLocalSettings(res.data);
       setSuccess(true);
     } catch (err) {
@@ -107,6 +113,27 @@ export default function Settings() {
           <p className="font-mono text-[11px] text-slate mt-2.5">
             Butonlar, aktif menü öğesi ve vurgu metinlerinde kullanılır (mevcut: <span style={{ color }}>{color}</span>).
           </p>
+        </div>
+
+        <div className="pt-2 border-t border-hairline">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={popupEnabled}
+              onChange={(e) => setPopupEnabled(e.target.checked)}
+              className="accent-ember w-4 h-4 mt-0.5 shrink-0"
+            />
+            <span>
+              <span className="block font-mono text-xs uppercase tracking-wide text-slate">
+                Ürün Seçenekleri Pop-up'ı
+              </span>
+              <span className="block font-mono text-[11px] text-slate mt-1">
+                Açıkken, sipariş ekranında ekstra/şurubu olan bir ürüne tıklandığında seçim
+                pop-up'ı açılır. Kapatırsan ürünler her zaman doğrudan sepete eklenir, pop-up
+                hiç açılmaz (ekstra/şurup bağlı ürünlerde bile).
+              </span>
+            </span>
+          </label>
         </div>
 
         {error && (

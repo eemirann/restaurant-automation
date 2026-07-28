@@ -326,6 +326,26 @@ function OrderDetailModal({ orderId, detail, loading, error, onClose, productNam
                     <div>
                       <p className="text-paper">{productName(item.ProductId)}</p>
                       {item.Note && <p className="text-xs text-slate mt-0.5">{item.Note}</p>}
+                      {((item.Extras?.length > 0) || (item.Syrups?.length > 0)) && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(item.Extras || []).map((extra) => (
+                            <span
+                              key={`extra-${extra.ExtraProductId}`}
+                              className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5"
+                            >
+                              {extra.Quantity}x {extra.ExtraName}
+                            </span>
+                          ))}
+                          {(item.Syrups || []).map((syrup) => (
+                            <span
+                              key={`syrup-${syrup.SyrupProductId}`}
+                              className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5"
+                            >
+                              {syrup.Quantity}x {syrup.SyrupName}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="text-right font-mono text-xs text-slate">
                       <span className="text-paper">{item.Quantity}×</span> {money(item.UnitPrice)}

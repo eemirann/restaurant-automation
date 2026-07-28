@@ -1,6 +1,7 @@
 const { sql, connectDB } = require('../config/db');
 const { emitTablesChanged } = require('../config/socket');
 const { logAudit } = require('../utils/audit');
+const { attachOrderItemOptions } = require('../utils/orderItemOptions');
 
 // Geçerli masa bölgeleri (Tables.Area CHECK kısıtıyla aynı olmalı).
 const ALLOWED_AREAS = ['Salon', 'Terrace', 'Garden', 'VIP', 'Bar'];
@@ -366,7 +367,9 @@ async function getTableById(req, res) {
                 .input('OrderId', sql.Int, order.OrderId)
                 .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
 
-            activeOrder = { ...order, items: detailsResult.recordset };
+            const itemsWithOptions = await attachOrderItemOptions(pool, order.OrderId, detailsResult.recordset);
+
+            activeOrder = { ...order, items: itemsWithOptions };
         }
 
         return res.status(200).json({

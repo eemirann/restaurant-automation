@@ -3,7 +3,7 @@ import client from '../api/client';
 
 const SettingsContext = createContext(null);
 
-const DEFAULTS = { RestaurantName: 'Restoran', ThemeColor: '#FF4713' };
+const DEFAULTS = { RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true };
 
 // #RRGGBB -> "R G B" (Tailwind'in rgb(var(--x) / <alpha-value>) beklediği format)
 function hexToRgbTriplet(hex) {

@@ -3,6 +3,7 @@ const { emitTablesChanged, emitKitchen } = require('../config/socket');
 const { recalculateOrderStatus } = require('./paymentController');
 const { deductStockForItem, restoreStockForItem } = require('../utils/stockDeduction');
 const { logAudit } = require('../utils/audit');
+const { attachOrderItemOptions } = require('../utils/orderItemOptions');
 
 // ============================================================
 // SİPARİŞ OLUŞTUR
@@ -331,45 +332,11 @@ async function getOrderById(req, res) {
             .input('OrderId', sql.Int, id)
             .query(`SELECT OrderDetailsId, ProductId, Quantity, UnitPrice, VariantId, Note FROM OrderDetails WHERE OrderId = @OrderId`);
 
-        const extrasResult = await pool.request()
-            .input('OrderId', sql.Int, id)
-            .query(`
-                SELECT ode.OrderDetailsId, ode.ExtraProductId, p.Name AS ExtraName, ode.Quantity, ode.UnitPrice
-                FROM OrderDetailExtras ode
-                JOIN OrderDetails od ON od.OrderDetailsId = ode.OrderDetailsId
-                JOIN Products p ON p.ProductId = ode.ExtraProductId
-                WHERE od.OrderId = @OrderId
-            `);
-
-        const extrasByDetailId = new Map();
-        for (const extra of extrasResult.recordset) {
-            if (!extrasByDetailId.has(extra.OrderDetailsId)) extrasByDetailId.set(extra.OrderDetailsId, []);
-            extrasByDetailId.get(extra.OrderDetailsId).push(extra);
-        }
-
-        const syrupsResult = await pool.request()
-            .input('OrderId', sql.Int, id)
-            .query(`
-                SELECT ods.OrderDetailsId, ods.SyrupProductId, p.Name AS SyrupName, ods.Quantity, ods.UnitPrice
-                FROM OrderDetailSyrups ods
-                JOIN OrderDetails od ON od.OrderDetailsId = ods.OrderDetailsId
-                JOIN Products p ON p.ProductId = ods.SyrupProductId
-                WHERE od.OrderId = @OrderId
-            `);
-
-        const syrupsByDetailId = new Map();
-        for (const syrup of syrupsResult.recordset) {
-            if (!syrupsByDetailId.has(syrup.OrderDetailsId)) syrupsByDetailId.set(syrup.OrderDetailsId, []);
-            syrupsByDetailId.get(syrup.OrderDetailsId).push(syrup);
-        }
+        const itemsWithOptions = await attachOrderItemOptions(pool, id, detailsResult.recordset);
 
         return res.status(200).json({
             ...orderResult.recordset[0],
-            items: detailsResult.recordset.map((item) => ({
-                ...item,
-                Extras: extrasByDetailId.get(item.OrderDetailsId) || [],
-                Syrups: syrupsByDetailId.get(item.OrderDetailsId) || []
-            }))
+            items: itemsWithOptions
         });
     } catch (err) {
         console.error('Sipariş getirilirken hata:', err);
