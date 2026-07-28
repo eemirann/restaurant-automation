@@ -101,15 +101,25 @@ export default function Stock() {
     }
   };
 
-  // Stok kalemini sil
-  const handleDelete = async (item) => {
-    if (!window.confirm(`"${item.ProductName}" için stok kaydı silinsin mi?`)) return;
+  // Stok kalemini pasifleştir (soft-delete — geçmiş alım/hareket kayıtları korunur)
+  const handleDeactivate = async (item) => {
+    if (!window.confirm(`"${item.ProductName}" pasifleştirilsin mi? Bu üründen artık sipariş anında stok düşülmez.`)) return;
     setActionError('');
     try {
       await client.delete(`/stock/${item.StockId}`);
       fetchStock();
     } catch (err) {
-      setActionError(err.response?.data?.error || 'Stok kalemi silinemedi.');
+      setActionError(err.response?.data?.error || 'Stok kalemi pasifleştirilemedi.');
+    }
+  };
+
+  const handleReactivate = async (item) => {
+    setActionError('');
+    try {
+      await client.patch(`/stock/${item.StockId}/reactivate`);
+      fetchStock();
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Stok kalemi aktifleştirilemedi.');
     }
   };
 
@@ -235,18 +245,27 @@ export default function Stock() {
                   ? 'border-ember/40 bg-ember/5'
                   : 'border-moss/40 bg-moss/5';
                 const statusDotClass = isOut ? 'bg-slate' : isLow ? 'bg-ember' : 'bg-moss';
+                const isTracked = item.IsTracked !== false && item.IsTracked !== 0;
                 return (
                   <tr key={item.StockId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
                     <td className="px-5 py-3 text-paper font-medium">{item.ProductName}</td>
                     <td className="px-5 py-3 font-mono text-paper">{item.Quantity}</td>
                     <td className="px-5 py-3 font-mono text-slate">{item.MinStockLevel}</td>
                     <td className="px-5 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${statusBadgeClass}`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
-                        {statusLabel}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${statusBadgeClass}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
+                          {statusLabel}
+                        </span>
+                        {!isTracked && (
+                          <span className="inline-flex items-center gap-1.5 border border-slate/40 bg-slate/5 rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate" />
+                            Pasif
+                          </span>
+                        )}
+                      </div>
                     </td>
                     {isAdmin && (
                       <td className="px-5 py-3">
@@ -274,12 +293,21 @@ export default function Stock() {
                           >
                             Düzenle
                           </button>
-                          <button
-                            onClick={() => handleDelete(item)}
-                            className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
-                          >
-                            Sil
-                          </button>
+                          {isTracked ? (
+                            <button
+                              onClick={() => handleDeactivate(item)}
+                              className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                            >
+                              Pasife Al
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleReactivate(item)}
+                              className="font-mono text-[11px] uppercase tracking-wide text-moss hover:text-moss/80 border border-moss/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                            >
+                              Aktif Et
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}

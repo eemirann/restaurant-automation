@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 // ============================================================
 // FAIL-FAST: Kritik env değişkenleri yoksa sunucu HİÇ başlamasın.
