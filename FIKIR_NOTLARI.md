@@ -287,6 +287,126 @@ Kullanıcı yukarıdaki promptu kendi tarafında uyguladı ve pushladı
 
 ---
 
+## Beşli Paket: Kampanya Tekrarı + Puan Görünürlüğü + Dashboard + Bahşiş + Anket (2026-08-04)
+
+Kullanıcı önceki 3 tespiti (kampanya günlük tekrar, müşteri puan
+görünürlüğü, Dashboard analitiği) aynen onayladı, üstüne 2 yeni özellik
+istedi: **Bahşiş** (QR menü sonunda, eklenip çıkarılabilir) ve
+**3 kategorili emoji anket** (Lezzet/Hizmet/Temizlik). Aşağıdaki prompt
+kullanıcının kendi Claude Code oturumuna yapıştırması için hazırlandı
+(bu oturumda uygulanmadı).
+
+### Claude Code'a yapıştırılacak prompt
+
+\`\`\`
+Restoran Otomasyonu projesine 5 bağlı iyileştirme ekle. Aşağıdaki
+spesifikasyonu birebir uygula, varsayımda bulunma.
+
+ÖNCE OKU: migrations/2026_08_01_campaigns_and_loyalty.sql,
+controllers/campaignController.js, controllers/loyaltyController.js
+(redeemLoyaltyProduct — transaction içinde sunucu tarafı doğrulama
+deseni), controllers/publicMenuController.js (resolveTableByToken,
+getPublicMenuStatus, rate limiter kullanımı), utils/orderBuilder.js
+(buildOrderInTransaction), routes/loyalty.js (şu an SADECE personel
+tarafı, verifyToken korumalı), middleware/rateLimiters.js
+(publicMenuViewLimiter/publicMenuActionLimiter), controllers/
+dashboardController.js (tek endpoint'te çoklu sorgu deseni),
+restoran-panel/src/components/PaymentDrawer.jsx (QUICK_AMOUNTS deseni,
+ödeme akışı).
+
+Yeni migration: migrations/2026_08_04_recurrence_tips_feedback.sql
+(mevcut dosyalardaki IF NOT EXISTS + yorum deseniyle).
+
+== 1) KAMPANYA GÜNLÜK TEKRAR ==
+Campaigns tablosuna nullable RecurringDailyStartTime TIME,
+RecurringDailyEndTime TIME eklenir. Doluysa kampanya HER GÜN sadece o
+saat aralığında aktif sayılır (StartAt/EndAt hâlâ "bu kampanya genel
+olarak ne zamandan ne zamana kadar geçerli" tarih aralığını belirler,
+ikisi birlikte çalışır: tarih aralığı İÇİNDE + günün o saatinde).
+controllers/campaignController.js (public liste sorgusu) ve
+controllers/publicMenuController.js (getPublicMenuCampaigns) aktiflik
+sorgusuna `(RecurringDailyStartTime IS NULL OR CAST(GETDATE() AS TIME)
+BETWEEN RecurringDailyStartTime AND RecurringDailyEndTime)` eklenir.
+restoran-panel Campaigns.jsx yönetim formuna bu iki opsiyonel saat
+alanı eklenir (boş bırakılırsa mevcut davranış — sürekli aktif — aynen
+çalışmaya devam eder).
+
+== 2) MÜŞTERİ KENDİ PUANINI GÖRSÜN ==
+controllers/publicMenuController.js'e YENİ bir anonim fonksiyon:
+getPublicMenuLoyaltyBalance(req, res) — GET
+/public/menu/:qrToken/loyalty/:username. resolveTableByToken ile
+qrToken doğrulanır (QR linkin kendisi zaten "bu masadasın" kanıtı),
+Customers'ta Username case-insensitive aranır, bulunamazsa 404, varsa
+{ Username, LoyaltyPoints } döner. routes/publicMenu.js'e
+publicMenuViewLimiter ile eklenir (mevcut view limiter deseni).
+musteri-menu StaffView.jsx'e yeni bir "Puanlarım" kartı: kullanıcı adı
+input + "Bakiyeni Gör" butonu, sonucu (puan sayısı) gösterir. i18n.jsx'e
+TR/EN string'ler eklenir.
+
+== 3) DASHBOARD KAMPANYA/SADAKAT ANALİTİĞİ ==
+controllers/dashboardController.js'deki mevcut tek-endpoint-çoklu-sorgu
+Promise.all (ya da benzeri) desenine 3 yeni sorgu eklenir:
+- En çok satılan combo (OrderDetails.ComboOfferId IS NOT NULL,
+  ComboOffers ile JOIN, adet bazında GROUP BY, ilk 5)
+- Kaç farklı Username puan biriktirmiş (COUNT(DISTINCT) Customers)
+- Toplam harcanan puan / verilen ücretsiz ürün sayısı (OrderDetails
+  WHERE UnitPrice = 0 AND ProductId IN (LoyaltyPointCost IS NOT NULL
+  olan ürünler) — ya da LOYALTY_REDEEM audit log'undan sayılabilir,
+  utils/audit.js'teki mevcut logAudit kayıtlarına bakılabilir)
+restoran-panel Dashboard.jsx'e bu 3 metrik için küçük widget'lar
+eklenir (mevcut widget'larla aynı görsel dil).
+
+== 4) BAHŞİŞ (QR menü sonunda, eklenip çıkarılabilir) ==
+Orders tablosuna nullable TipAmount DECIMAL(10,2) DEFAULT 0 eklenir.
+musteri-menu CartView.jsx'te "Siparişi Gönder" butonundan hemen önce
+bir bahşiş seçici: hızlı yüzde butonları (Yok / %5 / %10 / %15) +
+serbest tutar girişi, ara toplam (itemsTotal+combosTotal) üzerinden
+hesaplanır, seçilen tutar sepetin toplamına eklenir ve TipAmount olarak
+sipariş isteğine eklenir (createCustomerOrderRequest body'sine
+TipAmount, CustomerOrderRequestItems'a değil CustomerOrderRequests'e
+kendi kolonu olarak — request onaylanınca approveCustomerOrderRequest
+bunu buildOrderInTransaction'a geçirip Orders.TipAmount'a yazar).
+GÜVENLİK: TipAmount sunucuda da doğrulanır (negatif olamaz, mantıksız
+büyük olamaz — örn. ara toplamın en fazla %50'si gibi bir üst sınır).
+restoran-panel PaymentDrawer.jsx'te ödeme toplamına TipAmount ayrı bir
+satır olarak eklenir, personel silebilir/değiştirebilir (mevcut
+QUICK_AMOUNTS input deseni gibi düzenlenebilir bir alan — "çıkarmalı"
+gereksinimini karşılar, müşterinin seçtiği bahşiş son sözü değildir,
+kasada değiştirilebilir/kaldırılabilir).
+
+== 5) ANKET (3 kategori, emoji, Lezzet/Hizmet/Temizlik) ==
+Yeni tablo Feedback: FeedbackId, TableId (FK Tables), TasteRating
+TINYINT CHECK (1-3), ServiceRating TINYINT CHECK (1-3),
+CleanlinessRating TINYINT CHECK (1-3), CreatedAt DATETIME DEFAULT
+GETDATE(). Anonim, oturum/ziyaret sınırı YOK (aynı masada birden fazla
+kez gönderilebilir — bu bir "memnuniyet nabzı", katı bir tekillik
+kontrolüne gerek yok).
+controllers/publicMenuController.js'e createFeedback(req, res) — POST
+/public/menu/:qrToken/feedback, body: { TasteRating, ServiceRating,
+CleanlinessRating } (1-3 arası doğrulanır), publicMenuActionLimiter ile
+korunur.
+musteri-menu StaffView.jsx'in altına (Sipariş Durumu'ndan sonra) yeni
+bir "Deneyiminizi Değerlendir" kartı: 3 satır (Lezzet/Hizmet/Temizlik),
+her satırda 3 emoji butonu (örn. 😞 😐 😄), gönderince "Teşekkürler"
+mesajı gösterilip kart o oturumda tekrar gönderilemez hale gelir
+(sadece client-side state, backend'de tekrar engeli yok). i18n.jsx'e
+TR/EN string'ler eklenir.
+restoran-panel'de bu verinin görülebileceği bir yer: Dashboard.jsx'e
+(madde 3'teki widget'larla birlikte) ortalama Lezzet/Hizmet/Temizlik
+puanı widget'ı eklenebilir (opsiyonel, zaman kalırsa).
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle yeni/değişen
+fonksiyonlar için test yaz. Mevcut TÜM testler (şu an 123/123) geçmeye
+devam etmeli — npm test. Her iki frontend'de (restoran-panel,
+musteri-menu) npm run build hatasız tamamlanmalı. Bitince commit + push
+(branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+**Durum:** Henüz uygulanmadı — kullanıcı kendi tarafında uygulayacak.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
