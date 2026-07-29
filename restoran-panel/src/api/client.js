@@ -8,6 +8,10 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4091/api';
 export const API_ORIGIN = BASE_URL.replace(/\/api$/, '');
 export const imageUrl = (path) => (path ? `${API_ORIGIN}${path}` : null);
 
+// Müşteri QR menüsünün (musteri-menu/) çalıştığı adres — masa QR kodu
+// üretiminde /:qrToken eklenerek kullanılır (bkz. src/pages/CustomerRequests.jsx).
+export const CUSTOMER_MENU_URL = import.meta.env.VITE_CUSTOMER_MENU_URL || 'http://localhost:5174';
+
 const client = axios.create({
   baseURL: BASE_URL,
 });

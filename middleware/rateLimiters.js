@@ -25,4 +25,27 @@ const apiLimiter = rateLimit({
     message: { message: 'Çok fazla istek gönderildi. Lütfen biraz bekleyin.' },
 });
 
-module.exports = { loginLimiter, apiLimiter };
+// ============================================================
+// Müşteri QR menüsü - KİMLİK DOĞRULAMASIZ, halka açık uçlar.
+// Menü görüntüleme (GET) daha rahat; sipariş/hizmet isteği gönderme
+// (POST) spam'i (ör. "garson çağır"a defalarca basmak) önlemek için
+// daha sıkı. İkisi de tek bir masanın (QrToken ile) trafiğini değil,
+// IP başına genel bir tavanı sınırlar.
+// ============================================================
+const publicMenuViewLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Çok fazla istek gönderildi. Lütfen biraz bekleyin.' },
+});
+
+const publicMenuActionLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Çok fazla istek gönderildi. Lütfen biraz bekleyin.' },
+});
+
+module.exports = { loginLimiter, apiLimiter, publicMenuViewLimiter, publicMenuActionLimiter };

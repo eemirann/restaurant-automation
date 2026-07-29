@@ -8,7 +8,7 @@ async function getAllStock(req, res) {
         const pool = await connectDB();
         const result = await pool.request().query(`
             SELECT s.StockId, s.ProductId, p.Name AS ProductName,
-                   s.Quantity, s.MinStockLevel, s.UpdatedAt
+                   s.Quantity, s.MinStockLevel, s.IsTracked, s.UpdatedAt
             FROM Stock s
             JOIN Products p ON p.ProductId = s.ProductId
             ORDER BY p.Name ASC
@@ -167,7 +167,12 @@ async function updateStockItem(req, res) {
 }
 
 // ============================================================
-// STOK KALEMİNİ SİL (SADECE ADMIN)
+// STOK KALEMİNİ PASİFLEŞTİR (SADECE ADMIN)
+// Diğer tüm varlıklarla (Ürünler, Kategoriler, Kullanıcılar, Ekstralar/
+// Şuruplar) aynı soft-delete deseni: hard DELETE yapılmaz, IsTracked=0
+// yapılır. Böylece StockMovements/StockPurchases geçmişi (FK ON DELETE
+// CASCADE nedeniyle hard delete'te kaybolurdu) korunur. IsTracked=0 olan
+// ürünler ayrıca sipariş anında stoktan hiç düşülmez (bkz. utils/stockDeduction.js).
 // ============================================================
 async function deleteStockItem(req, res) {
     try {
@@ -176,16 +181,47 @@ async function deleteStockItem(req, res) {
         const pool = await connectDB();
         const result = await pool.request()
             .input('Id', sql.Int, id)
-            .query('DELETE FROM Stock OUTPUT DELETED.* WHERE StockId = @Id');
+            .query(`
+                UPDATE Stock SET IsTracked = 0, UpdatedAt = GETDATE()
+                OUTPUT INSERTED.*
+                WHERE StockId = @Id
+            `);
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Stok kalemi bulunamadı' });
         }
 
-        res.status(200).json({ message: 'Stok kalemi silindi.' });
+        res.status(200).json({ message: 'Stok kalemi pasifleştirildi.', stock: result.recordset[0] });
     } catch (err) {
-        console.error('Stok kalemi silinirken hata:', err);
-        res.status(500).json({ error: 'Stok kalemi silinemedi' });
+        console.error('Stok kalemi pasifleştirilirken hata:', err);
+        res.status(500).json({ error: 'Stok kalemi pasifleştirilemedi' });
+    }
+}
+
+// ============================================================
+// STOK KALEMİNİ TEKRAR AKTİFLEŞTİR (SADECE ADMIN)
+// ============================================================
+async function reactivateStockItem(req, res) {
+    try {
+        const { id } = req.params;
+
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('Id', sql.Int, id)
+            .query(`
+                UPDATE Stock SET IsTracked = 1, UpdatedAt = GETDATE()
+                OUTPUT INSERTED.*
+                WHERE StockId = @Id
+            `);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Stok kalemi bulunamadı' });
+        }
+
+        res.status(200).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Stok kalemi aktifleştirilirken hata:', err);
+        res.status(500).json({ error: 'Stok kalemi aktifleştirilemedi' });
     }
 }
 
@@ -198,9 +234,9 @@ async function deleteStockItem(req, res) {
 async function increaseStock(req, res) {
     try {
         const { id } = req.params;
-        const amount = req.body.amount || 1;
+        const amount = req.body.amount ?? 1;
 
-        if (amount <= 0) {
+        if (typeof amount !== 'number' || amount <= 0) {
             return res.status(400).json({ error: 'amount pozitif bir sayı olmalıdır' });
         }
 
@@ -242,9 +278,9 @@ async function increaseStock(req, res) {
 async function decreaseStock(req, res) {
     try {
         const { id } = req.params;
-        const amount = req.body.amount || 1;
+        const amount = req.body.amount ?? 1;
 
-        if (amount <= 0) {
+        if (typeof amount !== 'number' || amount <= 0) {
             return res.status(400).json({ error: 'amount pozitif bir sayı olmalıdır' });
         }
 
@@ -371,6 +407,7 @@ module.exports = {
     createStockItem,
     updateStockItem,
     deleteStockItem,
+    reactivateStockItem,
     increaseStock,
     decreaseStock,
     getAllStockMovements,

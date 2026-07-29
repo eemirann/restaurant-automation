@@ -8,6 +8,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Orders from './pages/Orders';
 import Tables from './pages/Tables';
+import Reservations from './pages/Reservations';
+import CustomerRequests from './pages/CustomerRequests';
 import Kds from './pages/Kds';
 import Payments from './pages/Payments';
 import Products from './pages/Products';
@@ -44,6 +46,8 @@ export default function App() {
           <Route path="/" element={<Page><Dashboard /></Page>} />
           <Route path="/orders" element={<Page><Orders /></Page>} />
           <Route path="/tables" element={<Page><Tables /></Page>} />
+          <Route path="/reservations" element={<Page><Reservations /></Page>} />
+          <Route path="/customer-requests" element={<Page><CustomerRequests /></Page>} />
           <Route path="/kds" element={<Page><Kds /></Page>} />
           <Route path="/shifts" element={<Page><Shifts /></Page>} />
           <Route

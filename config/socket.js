@@ -51,4 +51,14 @@ function emitKitchen(event, payload) {
     ioInstance?.emit(event, payload || {});
 }
 
-module.exports = { initSocket, emitTablesChanged, emitKitchen };
+// ============================================================
+// Müşteri QR menüsünden gelen bildirimler (yeni sipariş isteği /
+// hizmet isteği). Aynı "sadece sinyal, tek doğruluk kaynağı REST"
+// deseni — personel ekranı event'i alınca ilgili GET ucunu tazeler.
+//   event: 'customerRequests:new' -> yeni sipariş isteği veya hizmet isteği geldi
+// ============================================================
+function emitCustomerRequests(payload) {
+    ioInstance?.emit('customerRequests:new', payload || {});
+}
+
+module.exports = { initSocket, emitTablesChanged, emitKitchen, emitCustomerRequests };

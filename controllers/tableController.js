@@ -580,4 +580,23 @@ async function deleteTable(req, res) {
     }
 }
 
-module.exports = { getAllTables, transferTable, getTableById, updateTableStatus, createTable, updateTable, deleteTable };
+// ============================================================
+// MASA QR KODLARI (SADECE ADMIN) — müşteri QR menüsü linklerini
+// üretmek/yazdırmak için. QrToken hassas bir değer olduğu için
+// (bu token'ı bilen, o masa adına anonim sipariş/hizmet isteği
+// gönderebilir) yalnızca bu ayrı, Admin'e özel uçtan döner —
+// GET /api/tables genel listelemesine dahil edilmez.
+// ============================================================
+async function getTableQrCodes(req, res) {
+    try {
+        const pool = await connectDB();
+        const result = await pool.request()
+            .query(`SELECT TableId, TableNumber, Area, QrToken FROM Tables ORDER BY TableNumber ASC`);
+        return res.status(200).json(result.recordset);
+    } catch (err) {
+        console.error('Masa QR kodları getirilirken hata:', err);
+        return res.status(500).json({ error: 'Masa QR kodları getirilemedi' });
+    }
+}
+
+module.exports = { getAllTables, transferTable, getTableById, updateTableStatus, createTable, updateTable, deleteTable, getTableQrCodes };

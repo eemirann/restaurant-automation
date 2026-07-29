@@ -7,8 +7,9 @@
 #        docker compose exec db /opt/mssql-tools/bin/sqlcmd -S localhost -U sa \
 #          -P "$DB_PASSWORD" -Q "IF DB_ID('RestoranDB') IS NULL CREATE DATABASE RestoranDB"
 #        docker compose run --rm backend npm run migrate
-#   Panel:   http://localhost:8080
-#   Backend: http://localhost:4091
+#   Panel:         http://localhost:8080
+#   Müşteri Menü:  http://localhost:8081
+#   Backend:       http://localhost:4091
 # ============================================================
 services:
   db:
@@ -33,7 +34,7 @@ services:
       JWT_SECRET: "${JWT_SECRET}"
       PORT: "4091"
       NODE_ENV: production
-      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:8080}"
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:8080,http://localhost:8081}"
     ports:
       - "4091:4091"
     volumes:
@@ -47,8 +48,20 @@ services:
       context: ./restoran-panel
       args:
         VITE_API_URL: "${VITE_API_URL:-http://localhost:4091/api}"
+        VITE_CUSTOMER_MENU_URL: "${VITE_CUSTOMER_MENU_URL:-http://localhost:8081}"
     ports:
       - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  customer-menu:
+    build:
+      context: ./musteri-menu
+      args:
+        VITE_API_URL: "${VITE_API_URL:-http://localhost:4091/api}"
+    ports:
+      - "8081:80"
     depends_on:
       - backend
     restart: unless-stopped

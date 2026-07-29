@@ -75,6 +75,8 @@ Sunucu varsayılan olarak `http://localhost:4091` üzerinde çalışır (`PORT` 
 | 9 | `2026_07_27_recipes.sql` | `Recipes` tablosu (BOM) |
 | 10 | `2026_07_27_stock_decimal.sql` | `Stock`/`StockMovements`/`StockPurchases` miktarları → `DECIMAL(10,3)` |
 | 11 | `2026_07_27_kds.sql` | `OrderDetails.PrepStatus` + `PreparedAt` (KDS) |
+| ... | *(bu tablo, aradan geçen migration'ların tümünü kapsamıyor — Extras/Syrups/Shifts/Audit/Ürün Seçenekleri vb. için `migrations/` klasörüne bakın)* | |
+| N | `2026_07_31_qr_customer_menu.sql` | `Tables.QrToken` + `CustomerOrderRequests`(+Items) + `ServiceRequests` (müşteri QR menüsü) |
 
 > **Not:** `2026_07_22_base_schema.sql` uygulama kodundan yeniden kurgulanmıştır ve canlı
 > şemanın birebir kopyası olmayabilir. Mevcut bir veritabanında hiçbir şeyi değiştirmez
@@ -163,6 +165,32 @@ Taban yol: `/api`. `VT` = JWT gerekir (`Authorization: Bearer <token>`).
 ### Dashboard — `/api/dashboard`  (VT)
 `GET /` — canlı özet (bugünkü ciro, masalar, düşük stok, haftalık/saatlik ciro, çok satanlar, kâr oranı…)
 
+### Müşteri QR Menüsü — `/api/public/menu/:qrToken`  (KİMLİK DOĞRULAMASIZ, rate-limitli)
+Masaya özel, tahmin edilemez bir token (`Tables.QrToken`) ile erişilir. Ayrı bir mini
+uygulama olan `musteri-menu/` bu uçları kullanır. Müşterinin gönderdiği sipariş
+**doğrudan `Orders`'a yazılmaz** — personel onaylayana kadar `CustomerOrderRequests`'te
+"Pending" bekler (bkz. `controllers/publicMenuController.js`).
+
+| Metod | Yol | Açıklama |
+|-------|-----|----------|
+| GET | `/:qrToken` | Masa bilgisi + aktif menü |
+| GET | `/:qrToken/options/:productId` | Bir ürüne bağlı ekstra/şurup seçenekleri |
+| POST | `/:qrToken/order` | Sipariş İSTEĞİ oluştur (onay bekler) |
+| POST | `/:qrToken/request` | Hızlı hizmet isteği (garson çağır/hesap/su/peçete/çatal-bıçak) |
+| GET | `/:qrToken/status` | Son sipariş isteğinin durumu + bekleyen hizmet istekleri |
+
+### Customer Orders — `/api/customer-orders` · Service Requests — `/api/service-requests`  (VT — personel tarafı)
+| Metod | Yol | Açıklama |
+|-------|-----|----------|
+| GET | `/customer-orders?status=Pending` | Bekleyen müşteri sipariş isteklerini kalemleriyle listele |
+| POST | `/customer-orders/:id/approve` | Onayla — gerçek `Orders` kaydı oluşturur (fiyat sunucuda yeniden hesaplanır) |
+| POST | `/customer-orders/:id/reject` | Reddet |
+| GET | `/service-requests?status=Pending` | Bekleyen hizmet isteklerini listele |
+| PATCH | `/service-requests/:id/resolve` | İsteği çözümlendi olarak işaretle |
+
+Masa QR kodları (Admin): `GET /api/tables/qrcodes` — `restoran-panel`'deki
+"Müşteri İstekleri" sayfasından üretilip yazdırılabilir.
+
 ---
 
 ## Roller
@@ -184,6 +212,7 @@ Bağlantı JWT ile doğrulanır: `io(url, { auth: { token } })`. Origin, `CORS_O
 | `tables:changed` | sunucu → istemci | yok | Masa/sipariş/ödeme değişti → istemci `GET /api/tables` ile tazelenir |
 | `kds:new` | sunucu → istemci | `{ orderId, tableId? }` | Mutfağa yeni kalem düştü → `GET /api/kds/queue` |
 | `kds:updated` | sunucu → istemci | `{ orderDetailsId, orderId, prepStatus }` | Bir kalemin hazırlanma durumu değişti |
+| `customerRequests:new` | sunucu → istemci | `{ type: 'order'\|'service', tableId, tableNumber, ... }` | Müşteri QR menüsünden yeni sipariş/hizmet isteği geldi → `GET /api/customer-orders` veya `/api/service-requests` |
 
 > Olaylar tüm kimlik-doğrulanmış istemcilere yayınlanır; ilgili ekran (KDS/kasa/masa) kendi olayını dinler.
 
@@ -191,7 +220,7 @@ Bağlantı JWT ile doğrulanır: `io(url, { auth: { token } })`. Origin, `CORS_O
 
 ## Docker ile Dağıtım
 
-Tam yığın (MSSQL + backend + panel) `docker-compose.yml` ile gelir.
+Tam yığın (MSSQL + backend + panel + müşteri QR menüsü) `docker-compose.yml` ile gelir.
 
 ```bash
 # 1) Kök dizinde .env oluştur (en az JWT_SECRET ve DB_PASSWORD gerekli)
@@ -207,10 +236,13 @@ docker compose exec db /opt/mssql-tools/bin/sqlcmd -S localhost -U sa \
 docker compose run --rm backend npm run migrate
 ```
 
-- **Panel:** http://localhost:8080  ·  **Backend:** http://localhost:4091
-- `VITE_API_URL` panel imajına **build anında** gömülür — üretimde gerçek API adresini `.env`'de ayarlayın, panel'i yeniden build edin.
+- **Panel:** http://localhost:8080  ·  **Müşteri Menü:** http://localhost:8081  ·  **Backend:** http://localhost:4091
+- `VITE_API_URL` (her iki panel imajına) ve `VITE_CUSTOMER_MENU_URL` (sadece panel'e — masa QR
+  kodlarının işaret edeceği adres) **build anında** gömülür — üretimde gerçek adresleri `.env`'de
+  ayarlayın, ilgili imaj(lar)ı yeniden build edin.
 - Ürün görselleri `uploads` volume'unda kalıcıdır; MSSQL verisi `mssql-data` volume'unda.
-- Panel'i Docker'sız çalıştırmak için `restoran-panel/.env` içinde `VITE_API_URL` ayarlayıp `npm run build`/`npm run dev` kullanın.
+- Panel'i/müşteri menüsünü Docker'sız çalıştırmak için ilgili klasörde `.env` içinde
+  `VITE_API_URL` (ve panel için `VITE_CUSTOMER_MENU_URL`) ayarlayıp `npm run build`/`npm run dev` kullanın.
 
 ## Proje Yapısı
 
@@ -220,7 +252,9 @@ config/              # db, socket, cors
 controllers/         # iş mantığı + ham parametreli SQL
 routes/              # URL -> controller eşlemesi
 middleware/          # auth, upload, rateLimiters, errorHandler
-utils/               # stockDeduction (BOM-farkında stok)
+utils/               # stockDeduction (BOM-farkında stok), orderBuilder (paylaşılan sipariş oluşturma)
 migrations/          # tarih sıralı .sql şema betikleri
 uploads/products/    # ürün görselleri (statik: /uploads)
+restoran-panel/      # personel/yönetici React paneli (JWT ile giriş)
+musteri-menu/        # müşteri QR menüsü — anonim, tek başına React uygulaması
 ```
