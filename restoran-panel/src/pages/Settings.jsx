@@ -7,11 +7,13 @@ import { useSettings } from '../context/SettingsContext';
 const PRESET_COLORS = ['#FF4713', '#0090FF', '#00C853', '#D6336C', '#7C3AED', '#B8860B'];
 
 export default function Settings() {
-  const { RestaurantName, ThemeColor, ProductOptionsPopupEnabled, updateLocalSettings } = useSettings();
+  const { RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, EArsivVatRate, updateLocalSettings } = useSettings();
 
   const [name, setName] = useState(RestaurantName || '');
   const [color, setColor] = useState(ThemeColor || '#FF4713');
   const [popupEnabled, setPopupEnabled] = useState(ProductOptionsPopupEnabled !== false);
+  const [stockChartEnabled, setStockChartEnabled] = useState(StockChartEnabled !== false);
+  const [vatRate, setVatRate] = useState(EArsivVatRate ?? 10);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -20,6 +22,8 @@ export default function Settings() {
   useEffect(() => { setName(RestaurantName || ''); }, [RestaurantName]);
   useEffect(() => { setColor(ThemeColor || '#FF4713'); }, [ThemeColor]);
   useEffect(() => { setPopupEnabled(ProductOptionsPopupEnabled !== false); }, [ProductOptionsPopupEnabled]);
+  useEffect(() => { setStockChartEnabled(StockChartEnabled !== false); }, [StockChartEnabled]);
+  useEffect(() => { setVatRate(EArsivVatRate ?? 10); }, [EArsivVatRate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,6 +31,10 @@ export default function Settings() {
     setSuccess(false);
 
     if (!name.trim()) { setError('Restoran adı zorunludur.'); return; }
+    if (vatRate === '' || Number(vatRate) < 0 || Number(vatRate) > 100) {
+      setError('KDV oranı 0-100 arasında olmalıdır.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -34,6 +42,8 @@ export default function Settings() {
         RestaurantName: name.trim(),
         ThemeColor: color,
         ProductOptionsPopupEnabled: popupEnabled,
+        StockChartEnabled: stockChartEnabled,
+        EArsivVatRate: Number(vatRate),
       });
       updateLocalSettings(res.data);
       setSuccess(true);
@@ -134,6 +144,48 @@ export default function Settings() {
               </span>
             </span>
           </label>
+        </div>
+
+        <div className="pt-2 border-t border-hairline">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={stockChartEnabled}
+              onChange={(e) => setStockChartEnabled(e.target.checked)}
+              className="accent-ember w-4 h-4 mt-0.5 shrink-0"
+            />
+            <span>
+              <span className="block font-mono text-xs uppercase tracking-wide text-slate">
+                Stok Grafiği
+              </span>
+              <span className="block font-mono text-[11px] text-slate mt-1">
+                Açıkken, Stok sayfasında üst kısımda büyük bir çubuk grafik ve her ürün
+                satırında küçük bir çubuk görünür. Kapatırsan Stok sayfası sadece tablo
+                olarak görünür.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div className="pt-2 border-t border-hairline">
+          <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+            e-Arşiv KDV Oranı (%)
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value={vatRate}
+            onChange={(e) => setVatRate(e.target.value)}
+            className="w-32 border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-charcoal
+                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          />
+          <p className="font-mono text-[11px] text-slate mt-1.5">
+            Fatura kesilirken menü fiyatının bu oranda KDV içerdiği varsayılır (yeme-içme için
+            Türkiye'de yaygın oran %10'dur). Şu an gerçek bir e-Arşiv entegratörüne bağlı
+            değiliz — faturalar test amaçlı üretiliyor (bkz. Faturalar sayfası).
+          </p>
         </div>
 
         {error && (

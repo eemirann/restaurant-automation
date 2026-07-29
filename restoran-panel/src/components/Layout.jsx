@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
-import { useShift } from '../context/ShiftContext';
+import { useShift, SHIFT_ROLES } from '../context/ShiftContext';
 import { OpenShiftModal, CloseShiftModal } from './ShiftWorkflow';
 import client from '../api/client';
 
@@ -19,11 +19,13 @@ const NAV_ITEMS = [
   { to: '/shifts', label: 'Vardiya', roles: null, icon: '🗄️' },
   { to: '/active-shifts', label: 'Aktif Vardiya', roles: ['Admin'], icon: '🟢' },
   { to: '/products', label: 'Ürünler', roles: ['Admin'], icon: '☕' },
+  { to: '/categories', label: 'Kategoriler', roles: ['Admin'], icon: '🗂️' },
   { to: '/users', label: 'Kullanıcılar', roles: ['Admin'], icon: '👤' },
   { to: '/stock', label: 'Stok', roles: ['Admin'], icon: '📦' },
   { to: '/recipes', label: 'Reçeteler', roles: ['Admin'], icon: '🧪' },
   { to: '/extras', label: 'Ekstralar', roles: ['Admin'], icon: '🍯' },
   { to: '/syrups', label: 'Şuruplar', roles: ['Admin'], icon: '🍮' },
+  { to: '/invoices', label: 'Faturalar', roles: ['Admin'], icon: '🧾' },
   { to: '/audit', label: 'Denetim', roles: ['Admin'], icon: '🛡️' },
   { to: '/settings', label: 'Ayarlar', roles: ['Admin'], icon: '⚙️' },
 ];
@@ -42,8 +44,9 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const [showClose, setShowClose] = useState(false);
 
-  // Giriş yapan HER kullanıcı vardiya açar (rol ayrımı yok).
-  const requiresShift = !!user;
+  // Sadece kasa/servis rolleri (Cashier, Waiter) vardiya açmak zorunda.
+  // Admin muaf — kendi kasası olmadan panele erişir, gözetim/override yapar.
+  const requiresShift = !!user && SHIFT_ROLES.includes(user.role);
   const mustOpenShift = requiresShift && !shiftLoading && !shift;
 
   const doLogout = async () => {

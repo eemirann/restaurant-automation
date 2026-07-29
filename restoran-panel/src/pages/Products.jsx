@@ -31,6 +31,7 @@ export default function Products() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [actionError, setActionError] = useState('');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -93,9 +94,15 @@ const reactivateProduct = async (productId) => {
     }
   };
 
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('tr-TR');
   const visibleProducts = products.filter((p) => {
-    if (filter === 'active') return p.IsActive !== false && p.IsActive !== 0;
-    if (filter === 'inactive') return p.IsActive === false || p.IsActive === 0;
+    if (filter === 'active' && (p.IsActive === false || p.IsActive === 0)) return false;
+    if (filter === 'inactive' && p.IsActive !== false && p.IsActive !== 0) return false;
+    if (normalizedSearch) {
+      const nameMatch = p.Name?.toLocaleLowerCase('tr-TR').includes(normalizedSearch);
+      const descMatch = p.Description?.toLocaleLowerCase('tr-TR').includes(normalizedSearch);
+      if (!nameMatch && !descMatch) return false;
+    }
     return true;
   });
 
@@ -156,6 +163,24 @@ const reactivateProduct = async (productId) => {
           <span className="w-2 h-2 rounded-full inline-block bg-slate" />
           {inactiveCount} pasif
         </span>
+      </div>
+
+      {/* Arama */}
+      <div className="mb-4">
+        <div className="relative max-w-sm">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate/60 text-sm">🔍</span>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Ürün ara..."
+            className="w-full border border-hairline rounded-sm pl-9 pr-3 py-2.5 font-body text-paper
+                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-ember text-xs">✕</button>
+          )}
+        </div>
       </div>
 
       {/* Filtre sekmeleri */}

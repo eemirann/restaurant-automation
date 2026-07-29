@@ -282,6 +282,9 @@ const createPayment = async (req, res) => {
 // ============================================================
 const getPaymentsByOrder = async (req, res) => {
     const { orderId } = req.params;
+    // Admin, iptal edilmiş (IsDeleted=1) ödemeleri de görüp geri alabilsin diye
+    // rolüne göre filtre kaldırılır; diğer roller yalnızca aktif ödemeleri görür.
+    const includeDeleted = req.user?.role === 'Admin';
 
     try {
         const pool = await connectDB();
@@ -293,7 +296,7 @@ const getPaymentsByOrder = async (req, res) => {
                        RefundAmount, RefundDate, RefundedBy,
                        IsDeleted, DeletedBy, CreatedBy
                 FROM Payments
-                WHERE OrderId = @OrderId AND IsDeleted = 0
+                WHERE OrderId = @OrderId ${includeDeleted ? '' : 'AND IsDeleted = 0'}
                 ORDER BY PaymentDate ASC
             `);
 

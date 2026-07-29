@@ -15,6 +15,7 @@ import Payments from './pages/Payments';
 import Products from './pages/Products';
 import Users from './pages/Users';
 import Stock from './pages/Stock';
+import Categories from './pages/Categories';
 import Extras from './pages/Extras';
 import Syrups from './pages/Syrups';
 import Settings from './pages/Settings';
@@ -24,6 +25,7 @@ import Recipes from './pages/Recipes';
 import Shifts from './pages/Shifts';
 import ActiveShifts from './pages/ActiveShifts';
 import Audit from './pages/Audit';
+import Invoices from './pages/Invoices';
 
 function Page({ children }) {
   return (
@@ -99,6 +101,14 @@ export default function App() {
             }
           />
           <Route
+            path="/categories"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><Categories /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/extras"
             element={
               <ProtectedRoute allowedRoles={['Admin']}>
@@ -127,6 +137,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['Admin']}>
                 <Layout><Audit /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><Invoices /></Layout>
               </ProtectedRoute>
             }
           />

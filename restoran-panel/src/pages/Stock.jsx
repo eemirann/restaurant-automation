@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer } from 'recharts';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 
 export default function Stock() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'Admin';
+  const { StockChartEnabled } = useSettings();
+  const chartEnabled = StockChartEnabled !== false;
 
   // Veriler
   const [stockItems, setStockItems] = useState([]);
@@ -23,8 +27,11 @@ export default function Stock() {
   // Yeni stok kalemi ekleme çekmecesi
   const [showAddDrawer, setShowAddDrawer] = useState(false);
 
-  // Stok alımı çekmecesi ("Düzenle" butonu)
+  // Stok alımı çekmecesi ("Alım Ekle" butonu)
   const [purchaseItem, setPurchaseItem] = useState(null);
+
+  // Stok kalemi düzenleme çekmecesi ("Düzenle" butonu — Adet/Min. Stok direkt güncelleme)
+  const [editItem, setEditItem] = useState(null);
 
   // Stok listesini backend'den çek (basit fonksiyon, useCallback yok)
   const fetchStock = async () => {
@@ -43,7 +50,8 @@ export default function Stock() {
   // Sayfa ilk açıldığında stok ve ürün listesini getir
   useEffect(() => {
     fetchStock();
-    client.get('/products').then((res) => setProducts(res.data)).catch(() => {});
+    // raw: 'all' -> menü ürünleri + hammaddeler + ekstralar + şuruplar (hepsi stok kaydı alabilir)
+    client.get('/products', { params: { raw: 'all' } }).then((res) => setProducts(res.data)).catch(() => {});
   }, []);
 
   // Önce ürün adına göre ara (basit, memoization yok)
@@ -76,6 +84,21 @@ export default function Stock() {
 
   const outOfStockCount = stockItems.filter((item) => item.Quantity <= 0).length;
   const lowStockCount = stockItems.filter((item) => item.Quantity > 0 && item.Quantity <= item.MinStockLevel).length;
+
+  // Grafik verisi: filtrelenmiş listeden, adete göre çoktan aza, en fazla 15 ürün
+  // (tablo sıralamasından bağımsız — grafik her zaman en yüksek/en düşük stoğu net göstersin diye)
+  const CHART_LIMIT = 15;
+  const chartSource = [...filteredItems].sort((a, b) => b.Quantity - a.Quantity);
+  const chartData = chartSource.slice(0, CHART_LIMIT).map((item) => ({
+    name: item.ProductName,
+    Adet: item.Quantity,
+    isOut: item.Quantity <= 0,
+    isLow: item.Quantity > 0 && item.Quantity <= item.MinStockLevel,
+  }));
+  const barColor = (d) => (d.isOut ? 'rgb(var(--color-slate))' : d.isLow ? 'rgb(var(--color-ember))' : '#00C853');
+
+  // Satır içi mini çubuklar için ölçek: listedeki en yüksek adede göre orantılı genişlik
+  const maxQuantity = Math.max(1, ...filteredItems.map((item) => item.Quantity));
 
   // Stoğu 1 artır — hiçbir pencere/soru çıkmaz, direkt artırır.
   // Her artış otomatik olarak bir "IN" hareketi olarak kaydedilir (tarih/tür otomatik).
@@ -173,6 +196,61 @@ export default function Stock() {
         </span>
       </div>
 
+      {/* Stok grafiği — ürün başına adet, duruma göre renklendirilmiş çubuk grafik (Ayarlar'dan aç/kapa) */}
+      {chartEnabled && !loading && chartData.length > 0 && (
+        <div className="border border-hairline rounded-sm bg-panel p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-slate">
+              Stok Grafiği{chartSource.length > CHART_LIMIT ? ` · İlk ${CHART_LIMIT} ürün` : ''}
+            </p>
+            <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-wide text-slate">
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: '#00C853' }} />Yeterli</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block bg-ember" />Düşük</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block bg-slate" />Yok</span>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={Math.max(180, chartData.length * 34)}>
+            <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 24, left: 0, bottom: 4 }}>
+              <CartesianGrid horizontal={false} stroke="rgb(var(--color-hairline))" />
+              <XAxis
+                type="number"
+                allowDecimals={false}
+                tick={{ fontSize: 11, fill: 'rgb(var(--color-slate))', fontFamily: 'IBM Plex Mono, monospace' }}
+                axisLine={{ stroke: 'rgb(var(--color-hairline))' }}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                tick={{ fontSize: 12, fill: 'rgb(var(--color-paper))', fontFamily: 'IBM Plex Mono, monospace' }}
+                axisLine={false}
+                tickLine={false}
+                width={140}
+              />
+              <Tooltip
+                cursor={{ fill: 'rgb(var(--color-hairline))', opacity: 0.4 }}
+                formatter={(value) => [value, 'Adet']}
+                contentStyle={{
+                  borderRadius: 10,
+                  border: '1px solid rgb(var(--color-hairline))',
+                  background: 'rgb(var(--color-panel))',
+                  fontFamily: 'IBM Plex Mono, monospace',
+                  fontSize: 12,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                }}
+                itemStyle={{ color: 'rgb(var(--color-paper))' }}
+                labelStyle={{ color: 'rgb(var(--color-paper))' }}
+              />
+              <Bar dataKey="Adet" radius={[0, 4, 4, 0]} maxBarSize={22}>
+                {chartData.map((d, i) => (
+                  <Cell key={i} fill={barColor(d)} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
       {/* Arama / Sırala / Filtrele */}
       <div className="flex flex-wrap gap-3 mb-6">
         <input
@@ -231,6 +309,7 @@ export default function Stock() {
                 <th className="px-5 py-3">Adet</th>
                 <th className="px-5 py-3">Min. Stok</th>
                 <th className="px-5 py-3">Durum</th>
+                {chartEnabled && <th className="px-5 py-3">Grafik</th>}
                 {isAdmin && <th className="px-5 py-3 text-right">İşlemler</th>}
               </tr>
             </thead>
@@ -267,6 +346,19 @@ export default function Stock() {
                         )}
                       </div>
                     </td>
+                    {chartEnabled && (
+                      <td className="px-5 py-3">
+                        <div className="w-24 h-1.5 rounded-full bg-hairline overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.max((item.Quantity / maxQuantity) * 100, item.Quantity > 0 ? 4 : 0)}%`,
+                              background: isOut ? 'rgb(var(--color-slate))' : isLow ? 'rgb(var(--color-ember))' : '#00C853',
+                            }}
+                          />
+                        </div>
+                      </td>
+                    )}
                     {isAdmin && (
                       <td className="px-5 py-3">
                         <div className="flex justify-end items-center gap-2 flex-wrap">
@@ -290,6 +382,13 @@ export default function Stock() {
                             onClick={() => setPurchaseItem(item)}
                             title="Stok alımı ekle"
                             className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+                          >
+                            Alım Ekle
+                          </button>
+                          <button
+                            onClick={() => setEditItem(item)}
+                            title="Adet / Min. stok düzenle"
+                            className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-azure border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
                           >
                             Düzenle
                           </button>
@@ -332,13 +431,25 @@ export default function Stock() {
         />
       )}
 
-      {/* Stok alımı çekmecesi ("Düzenle" butonu) */}
+      {/* Stok alımı çekmecesi ("Alım Ekle" butonu) */}
       {purchaseItem && (
         <StockPurchaseDrawer
           item={purchaseItem}
           onClose={() => setPurchaseItem(null)}
           onSaved={() => {
             setPurchaseItem(null);
+            fetchStock();
+          }}
+        />
+      )}
+
+      {/* Stok kalemi düzenleme çekmecesi ("Düzenle" butonu) */}
+      {editItem && (
+        <StockEditDrawer
+          item={editItem}
+          onClose={() => setEditItem(null)}
+          onSaved={() => {
+            setEditItem(null);
             fetchStock();
           }}
         />
@@ -722,7 +833,6 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün</label>
             <p className="text-paper font-medium bg-panel border border-hairline rounded-sm px-3 py-2.5">{item.ProductName}</p>
           </div>
-
           <div>
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Adet</label>
             <input
@@ -812,6 +922,127 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
             disabled={submitting}
             className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-ember
                        hover:bg-ember/90 active:bg-ember/80 disabled:opacity-40 disabled:cursor-not-allowed
+                       rounded-sm px-6 py-3 transition-colors shadow-sm"
+          >
+            {submitting ? 'Kaydediliyor...' : 'Kaydet'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Stok Kalemi Düzenleme Çekmecesi — Adet ve Minimum Stok'u doğrudan
+// üzerine yazarak günceller (PUT /stock/:id). Alım kaydı OLUŞTURMAZ,
+// hareket geçmişine düşmez — StockPurchaseDrawer'dan (alım ekleme,
+// mevcut adede üstüne ekleme) farklı, doğrudan düzeltme amaçlıdır
+// (ör. sayım farkı düzeltme).
+// ============================================================
+function StockEditDrawer({ item, onClose, onSaved }) {
+  const [quantity, setQuantity] = useState(item.Quantity);
+  const [minStockLevel, setMinStockLevel] = useState(item.MinStockLevel);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (quantity === '' || Number(quantity) < 0 || minStockLevel === '' || Number(minStockLevel) < 0) {
+      setError('Adet ve minimum stok negatif olmayan birer sayı olmalıdır.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await client.put(`/stock/${item.StockId}`, {
+        Quantity: Number(quantity),
+        MinStockLevel: Number(minStockLevel),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Stok kalemi güncellenemedi.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end">
+      <div className="absolute inset-0 bg-ink/50" onClick={() => !submitting && onClose()} />
+
+      <div className="relative w-full max-w-md h-full bg-panel shadow-2xl flex flex-col animate-[slideIn_0.2s_ease-out]">
+        <style>{`
+          @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+          }
+        `}</style>
+
+        <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
+          <div>
+            <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Stok Düzenle</p>
+            <h2 className="font-display text-lg font-semibold text-paper leading-tight">{item.ProductName}</h2>
+          </div>
+          <button
+            onClick={() => !submitting && onClose()}
+            className="font-mono text-xs text-slate hover:text-paper w-9 h-9 flex items-center justify-center shrink-0 rounded-sm hover:bg-charcoal transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex-1 overflow-auto px-6 py-5 bg-hairline/10 space-y-4">
+          <p className="font-mono text-[11px] text-slate bg-hairline/60 border border-hairline rounded-sm px-3 py-2">
+            Buradaki değişiklik doğrudan stok kaydını günceller, hareket geçmişine işlenmez. Yeni alım eklemek için "Alım Ekle" butonunu kullanın.
+          </p>
+
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Adet</label>
+            <input
+              type="number"
+              min="0"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+          </div>
+
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Minimum Stok</label>
+            <input
+              type="number"
+              min="0"
+              value={minStockLevel}
+              onChange={(e) => setMinStockLevel(e.target.value)}
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+          </div>
+
+          {error && (
+            <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 bg-panel py-2">{error}</p>
+          )}
+        </form>
+
+        <div className="px-6 py-4 border-t border-hairline shrink-0 bg-panel flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+          >
+            Vazgeç
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-azure
+                       hover:bg-azure/90 active:bg-azure/80 disabled:opacity-40 disabled:cursor-not-allowed
                        rounded-sm px-6 py-3 transition-colors shadow-sm"
           >
             {submitting ? 'Kaydediliyor...' : 'Kaydet'}

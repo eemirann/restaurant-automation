@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 const {
-    getCurrentShift, openShift, closeShift, listShifts,
+    getCurrentShift, openShift, openShiftFor, closeShift, listShifts,
     getActiveShifts, forceCloseShift, forceLogoutCashier, transferShift,
 } = require('../controllers/shiftController');
 
@@ -17,5 +17,6 @@ router.get('/', verifyToken, requireRole('Admin'), listShifts);
 router.post('/:id/force-close', verifyToken, requireRole('Admin'), forceCloseShift);
 router.post('/:id/force-logout', verifyToken, requireRole('Admin'), forceLogoutCashier);
 router.post('/:id/transfer', verifyToken, requireRole('Admin'), transferShift);
+router.post('/open-for', verifyToken, requireRole('Admin'), openShiftFor);
 
 module.exports = router;
