@@ -101,7 +101,7 @@ async function approveCustomerOrderRequest(req, res) {
 
         const requestResult = await new sql.Request(transaction)
             .input('Id', sql.Int, id)
-            .query(`SELECT CustomerOrderRequestId, TableId, Note, Status, Username, CombosJson FROM CustomerOrderRequests WITH (UPDLOCK, ROWLOCK) WHERE CustomerOrderRequestId = @Id`);
+            .query(`SELECT CustomerOrderRequestId, TableId, Note, Status, Username, CombosJson, TipAmount FROM CustomerOrderRequests WITH (UPDLOCK, ROWLOCK) WHERE CustomerOrderRequestId = @Id`);
 
         if (requestResult.recordset.length === 0) {
             await transaction.rollback();
@@ -136,6 +136,7 @@ async function approveCustomerOrderRequest(req, res) {
             Items: items,
             Note: orderRequest.Note,
             Combos: combos,
+            TipAmount: orderRequest.TipAmount !== null && orderRequest.TipAmount !== undefined ? Number(orderRequest.TipAmount) : undefined,
         });
 
         await new sql.Request(transaction)

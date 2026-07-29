@@ -87,7 +87,12 @@ export default function Campaigns() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {campaigns.map((c) => {
-            const isLive = c.IsActive && new Date(c.StartAt) <= now && new Date(c.EndAt) >= now;
+            const withinDailyWindow = () => {
+              if (!c.RecurringDailyStartTime || !c.RecurringDailyEndTime) return true;
+              const nowTime = new Date().toTimeString().slice(0, 8);
+              return nowTime >= c.RecurringDailyStartTime && nowTime <= c.RecurringDailyEndTime;
+            };
+            const isLive = c.IsActive && new Date(c.StartAt) <= now && new Date(c.EndAt) >= now && withinDailyWindow();
             return (
               <div key={c.CampaignId} className="border border-hairline rounded-sm bg-panel overflow-hidden">
                 <div className="w-full aspect-video bg-hairline/40">
@@ -115,9 +120,14 @@ export default function Campaigns() {
                     <p className="font-mono text-xs text-ember mb-1">{c.ComboName} · {money(c.ComboPrice)}</p>
                   )}
                   {c.Description && <p className="text-xs text-slate mb-2 line-clamp-2">{c.Description}</p>}
-                  <p className="font-mono text-[10px] text-slate mb-3">
+                  <p className="font-mono text-[10px] text-slate mb-1">
                     {fmtDate(c.StartAt)} → {fmtDate(c.EndAt)}
                   </p>
+                  {c.RecurringDailyStartTime && c.RecurringDailyEndTime && (
+                    <p className="font-mono text-[10px] text-azure mb-2">
+                      ⏰ Her gün {c.RecurringDailyStartTime.slice(0, 5)} – {c.RecurringDailyEndTime.slice(0, 5)}
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={() => setEditingCampaign(c)}
@@ -189,6 +199,8 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
   const [isActive, setIsActive] = useState(initial ? initial.IsActive !== false : true);
   const [campaignType, setCampaignType] = useState(initial?.CampaignType ?? 'Info');
   const [imageFile, setImageFile] = useState(null);
+  const [recurringDailyStartTime, setRecurringDailyStartTime] = useState(initial?.RecurringDailyStartTime?.slice(0, 5) ?? '');
+  const [recurringDailyEndTime, setRecurringDailyEndTime] = useState(initial?.RecurringDailyEndTime?.slice(0, 5) ?? '');
 
   const [comboName, setComboName] = useState(initial?.ComboName ?? '');
   const [comboPrice, setComboPrice] = useState(initial?.ComboPrice ?? '');
@@ -210,6 +222,10 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
     if (!campaignTitle.trim()) { setError('Başlık zorunludur.'); return; }
     if (!startAt || !endAt) { setError('Başlangıç/bitiş tarihi zorunludur.'); return; }
     if (new Date(endAt) <= new Date(startAt)) { setError('Bitiş, başlangıçtan sonra olmalıdır.'); return; }
+    if ((recurringDailyStartTime && !recurringDailyEndTime) || (!recurringDailyStartTime && recurringDailyEndTime)) {
+      setError('Günlük tekrar saatleri birlikte girilmeli veya ikisi de boş bırakılmalıdır.');
+      return;
+    }
 
     let comboPayload;
     if (campaignType === 'Combo') {
@@ -239,6 +255,8 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
         IsActive: isActive,
         CampaignType: campaignType,
         Combo: comboPayload,
+        RecurringDailyStartTime: recurringDailyStartTime || '',
+        RecurringDailyEndTime: recurringDailyEndTime || '',
       });
 
       const savedId = saved?.CampaignId ?? initial?.CampaignId;
@@ -320,6 +338,36 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
               />
             </div>
           </div>
+
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                Günlük Başlangıç Saati <span className="normal-case text-slate/70">(opsiyonel)</span>
+              </label>
+              <input
+                type="time"
+                value={recurringDailyStartTime}
+                onChange={(e) => setRecurringDailyStartTime(e.target.value)}
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-sm text-paper bg-charcoal
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                Günlük Bitiş Saati <span className="normal-case text-slate/70">(opsiyonel)</span>
+              </label>
+              <input
+                type="time"
+                value={recurringDailyEndTime}
+                onChange={(e) => setRecurringDailyEndTime(e.target.value)}
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-sm text-paper bg-charcoal
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
+          </div>
+          <p className="font-mono text-[10px] text-slate/70 -mt-2">
+            Doldurulursa kampanya her gün sadece bu saat aralığında aktif olur (tarih aralığıyla birlikte). Boş bırakılırsa sürekli aktif kalır.
+          </p>
 
           <div className="flex gap-3 items-end">
             <div className="flex-1">

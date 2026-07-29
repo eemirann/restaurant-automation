@@ -81,6 +81,7 @@ async function getPublicMenuCampaigns(req, res) {
             FROM Campaigns c
             LEFT JOIN ComboOffers co ON co.ComboOfferId = c.ComboOfferId
             WHERE c.IsActive = 1 AND c.StartAt <= GETDATE() AND c.EndAt >= GETDATE()
+                  AND (c.RecurringDailyStartTime IS NULL OR CAST(GETDATE() AS TIME) BETWEEN c.RecurringDailyStartTime AND c.RecurringDailyEndTime)
             ORDER BY c.DisplayOrder ASC, c.CampaignId DESC
         `);
 
@@ -160,7 +161,7 @@ async function getPublicMenuProductOptions(req, res) {
 // ============================================================
 async function createCustomerOrderRequest(req, res) {
     const { qrToken } = req.params;
-    const { Items, Note, Combos, Username } = req.body || {};
+    const { Items, Note, Combos, Username, TipAmount } = req.body || {};
 
     const hasItems = Items && Array.isArray(Items) && Items.length > 0;
     const hasCombos = Combos && Array.isArray(Combos) && Combos.length > 0;
@@ -186,6 +187,12 @@ async function createCustomerOrderRequest(req, res) {
     }
     if (Username !== undefined && Username !== null && (typeof Username !== 'string' || Username.trim().length > 50)) {
         return res.status(400).json({ error: 'Username en fazla 50 karakter olabilen bir metin olmalıdır' });
+    }
+    // Hafif ön-doğrulama (şekil) — asıl doğrulama (negatif olamaz, ara
+    // toplamın en fazla %50'si) onay anında utils/orderBuilder.js
+    // resolveTipAmount() içinde, gerçek fiyatlar hesaplandıktan sonra yapılır.
+    if (TipAmount !== undefined && TipAmount !== null && (typeof TipAmount !== 'number' || Number.isNaN(TipAmount) || TipAmount < 0)) {
+        return res.status(400).json({ error: 'TipAmount negatif olmayan bir sayı olmalıdır' });
     }
 
     try {
@@ -228,10 +235,11 @@ async function createCustomerOrderRequest(req, res) {
                 .input('Note', sql.NVarChar(500), Note || null)
                 .input('Username', sql.NVarChar(50), Username?.trim() || null)
                 .input('CombosJson', sql.NVarChar(sql.MAX), hasCombos ? JSON.stringify(Combos) : null)
+                .input('TipAmount', sql.Decimal(10, 2), typeof TipAmount === 'number' ? TipAmount : null)
                 .query(`
-                    INSERT INTO CustomerOrderRequests (TableId, Note, Username, CombosJson)
+                    INSERT INTO CustomerOrderRequests (TableId, Note, Username, CombosJson, TipAmount)
                     OUTPUT INSERTED.CustomerOrderRequestId, INSERTED.CreatedAt
-                    VALUES (@TableId, @Note, @Username, @CombosJson)
+                    VALUES (@TableId, @Note, @Username, @CombosJson, @TipAmount)
                 `);
 
             const requestId = requestResult.recordset[0].CustomerOrderRequestId;
@@ -320,6 +328,79 @@ async function createServiceRequest(req, res) {
 }
 
 // ============================================================
+// GET /api/public/menu/:qrToken/loyalty/:username — müşteri kendi puan
+// bakiyesini görsün. QR linkin kendisi zaten "bu masadasın" kanıtı
+// (qrToken doğrulanır), Username case-insensitive aranır (Customers
+// collation'ı, bkz. migrations/2026_08_01_campaigns_and_loyalty.sql).
+// ============================================================
+async function getPublicMenuLoyaltyBalance(req, res) {
+    const { qrToken, username } = req.params;
+
+    try {
+        const pool = await connectDB();
+        const table = await resolveTableByToken(pool, qrToken);
+        if (!table) {
+            return res.status(404).json({ error: 'Masa bulunamadı. QR kodu tekrar okutmayı deneyin.' });
+        }
+
+        const customerResult = await pool.request()
+            .input('Username', sql.NVarChar(50), username)
+            .query(`SELECT Username, LoyaltyPoints FROM Customers WHERE Username = @Username`);
+
+        if (customerResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Bu kullanıcı adında bir müşteri kaydı yok' });
+        }
+
+        return res.status(200).json(customerResult.recordset[0]);
+    } catch (err) {
+        console.error('Müşteri puan bakiyesi getirilirken hata:', err);
+        return res.status(500).json({ error: 'Puan bakiyesi getirilemedi' });
+    }
+}
+
+// ============================================================
+// POST /api/public/menu/:qrToken/feedback — 3 kategoride (Lezzet/Hizmet/
+// Temizlik) 1-3 arası memnuniyet anketi. Anonim, oturum/ziyaret sınırı
+// YOK — bir "memnuniyet nabzı", aynı masada birden fazla kez gönderilebilir.
+// Body: { TasteRating, ServiceRating, CleanlinessRating } (1-3)
+// ============================================================
+function isValidRating(v) {
+    return Number.isInteger(v) && v >= 1 && v <= 3;
+}
+
+async function createFeedback(req, res) {
+    const { qrToken } = req.params;
+    const { TasteRating, ServiceRating, CleanlinessRating } = req.body || {};
+
+    if (!isValidRating(TasteRating) || !isValidRating(ServiceRating) || !isValidRating(CleanlinessRating)) {
+        return res.status(400).json({ error: 'TasteRating, ServiceRating ve CleanlinessRating 1-3 arası tam sayı olmalıdır' });
+    }
+
+    try {
+        const pool = await connectDB();
+        const table = await resolveTableByToken(pool, qrToken);
+        if (!table) {
+            return res.status(404).json({ error: 'Masa bulunamadı. QR kodu tekrar okutmayı deneyin.' });
+        }
+
+        await pool.request()
+            .input('TableId', sql.Int, table.TableId)
+            .input('TasteRating', sql.Int, TasteRating)
+            .input('ServiceRating', sql.Int, ServiceRating)
+            .input('CleanlinessRating', sql.Int, CleanlinessRating)
+            .query(`
+                INSERT INTO Feedback (TableId, TasteRating, ServiceRating, CleanlinessRating)
+                VALUES (@TableId, @TasteRating, @ServiceRating, @CleanlinessRating)
+            `);
+
+        return res.status(201).json({ message: 'Değerlendirmeniz için teşekkürler.' });
+    } catch (err) {
+        console.error('Müşteri değerlendirmesi kaydedilirken hata:', err);
+        return res.status(500).json({ error: 'Değerlendirme kaydedilemedi' });
+    }
+}
+
+// ============================================================
 // GET /api/public/menu/:qrToken/status — müşterinin son sipariş
 // isteğinin durumu + masadaki bekleyen hizmet istekleri
 // ============================================================
@@ -368,4 +449,6 @@ module.exports = {
     createCustomerOrderRequest,
     createServiceRequest,
     getPublicMenuStatus,
+    getPublicMenuLoyaltyBalance,
+    createFeedback,
 };

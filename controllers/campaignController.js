@@ -78,8 +78,23 @@ async function getAllCampaigns(req, res) {
 // Body: { Title, Description?, StartAt, EndAt, DisplayOrder?, CampaignType,
 //         Combo?: { Name, Price, Items: [{ProductId, Quantity}] } }
 // ============================================================
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+
+function validateRecurringDailyTimes(RecurringDailyStartTime, RecurringDailyEndTime) {
+    const hasStart = RecurringDailyStartTime !== undefined && RecurringDailyStartTime !== null && RecurringDailyStartTime !== '';
+    const hasEnd = RecurringDailyEndTime !== undefined && RecurringDailyEndTime !== null && RecurringDailyEndTime !== '';
+    if (!hasStart && !hasEnd) return null;
+    if (hasStart !== hasEnd) {
+        throw new HttpError(400, 'RecurringDailyStartTime ve RecurringDailyEndTime birlikte gönderilmeli veya ikisi de boş bırakılmalıdır');
+    }
+    if (!TIME_RE.test(RecurringDailyStartTime) || !TIME_RE.test(RecurringDailyEndTime)) {
+        return { error: 'RecurringDailyStartTime/RecurringDailyEndTime HH:MM (24 saat) biçiminde olmalıdır' };
+    }
+    return { RecurringDailyStartTime, RecurringDailyEndTime };
+}
+
 async function createCampaign(req, res) {
-    const { Title, Description, StartAt, EndAt, DisplayOrder, CampaignType, Combo } = req.body;
+    const { Title, Description, StartAt, EndAt, DisplayOrder, CampaignType, Combo, RecurringDailyStartTime, RecurringDailyEndTime } = req.body;
 
     if (!Title || typeof Title !== 'string' || !Title.trim()) {
         return res.status(400).json({ error: 'Başlık zorunludur' });
@@ -97,6 +112,17 @@ async function createCampaign(req, res) {
         if (!Combo || typeof Combo.Name !== 'string' || !Combo.Name.trim() || typeof Combo.Price !== 'number' || Combo.Price <= 0) {
             return res.status(400).json({ error: 'Combo tipi için geçerli bir Combo{Name, Price, Items} gönderilmelidir' });
         }
+    }
+
+    let recurringDaily;
+    try {
+        recurringDaily = validateRecurringDailyTimes(RecurringDailyStartTime, RecurringDailyEndTime);
+    } catch (err) {
+        if (err instanceof HttpError) return res.status(err.statusCode).json({ error: err.message });
+        throw err;
+    }
+    if (recurringDaily?.error) {
+        return res.status(400).json({ error: recurringDaily.error });
     }
 
     const pool = await connectDB();
@@ -132,10 +158,12 @@ async function createCampaign(req, res) {
             .input('DisplayOrder', sql.Int, Number.isInteger(DisplayOrder) ? DisplayOrder : 0)
             .input('CampaignType', sql.NVarChar(20), CampaignType)
             .input('ComboOfferId', sql.Int, comboOfferId)
+            .input('RecurringDailyStartTime', sql.NVarChar(8), recurringDaily?.RecurringDailyStartTime || null)
+            .input('RecurringDailyEndTime', sql.NVarChar(8), recurringDaily?.RecurringDailyEndTime || null)
             .query(`
-                INSERT INTO Campaigns (Title, Description, StartAt, EndAt, DisplayOrder, CampaignType, ComboOfferId)
+                INSERT INTO Campaigns (Title, Description, StartAt, EndAt, DisplayOrder, CampaignType, ComboOfferId, RecurringDailyStartTime, RecurringDailyEndTime)
                 OUTPUT INSERTED.*
-                VALUES (@Title, @Description, @StartAt, @EndAt, @DisplayOrder, @CampaignType, @ComboOfferId)
+                VALUES (@Title, @Description, @StartAt, @EndAt, @DisplayOrder, @CampaignType, @ComboOfferId, @RecurringDailyStartTime, @RecurringDailyEndTime)
             `);
 
         await transaction.commit();
@@ -157,7 +185,7 @@ async function createCampaign(req, res) {
 // ============================================================
 async function updateCampaign(req, res) {
     const { id } = req.params;
-    const { Title, Description, StartAt, EndAt, DisplayOrder, IsActive, CampaignType, Combo } = req.body;
+    const { Title, Description, StartAt, EndAt, DisplayOrder, IsActive, CampaignType, Combo, RecurringDailyStartTime, RecurringDailyEndTime } = req.body;
 
     if (Title !== undefined && (typeof Title !== 'string' || !Title.trim())) {
         return res.status(400).json({ error: 'Başlık boş olamaz' });
@@ -167,6 +195,17 @@ async function updateCampaign(req, res) {
     }
     if (CampaignType !== undefined && !CAMPAIGN_TYPES.includes(CampaignType)) {
         return res.status(400).json({ error: `CampaignType şunlardan biri olmalı: ${CAMPAIGN_TYPES.join(', ')}` });
+    }
+
+    let recurringDaily;
+    try {
+        recurringDaily = validateRecurringDailyTimes(RecurringDailyStartTime, RecurringDailyEndTime);
+    } catch (err) {
+        if (err instanceof HttpError) return res.status(err.statusCode).json({ error: err.message });
+        throw err;
+    }
+    if (recurringDaily?.error) {
+        return res.status(400).json({ error: recurringDaily.error });
     }
 
     const pool = await connectDB();
@@ -215,6 +254,10 @@ async function updateCampaign(req, res) {
             }
         }
 
+        const recurringProvided = RecurringDailyStartTime !== undefined || RecurringDailyEndTime !== undefined;
+        const finalRecurringStart = recurringProvided ? (recurringDaily?.RecurringDailyStartTime || null) : existing.RecurringDailyStartTime;
+        const finalRecurringEnd = recurringProvided ? (recurringDaily?.RecurringDailyEndTime || null) : existing.RecurringDailyEndTime;
+
         const result = await new sql.Request(transaction)
             .input('Id', sql.Int, id)
             .input('Title', sql.NVarChar(150), Title !== undefined ? Title.trim() : existing.Title)
@@ -225,10 +268,13 @@ async function updateCampaign(req, res) {
             .input('IsActive', sql.Bit, IsActive !== undefined ? Boolean(IsActive) : existing.IsActive)
             .input('CampaignType', sql.NVarChar(20), CampaignType !== undefined ? CampaignType : existing.CampaignType)
             .input('ComboOfferId', sql.Int, comboOfferId)
+            .input('RecurringDailyStartTime', sql.NVarChar(8), finalRecurringStart)
+            .input('RecurringDailyEndTime', sql.NVarChar(8), finalRecurringEnd)
             .query(`
                 UPDATE Campaigns
                 SET Title = @Title, Description = @Description, StartAt = @StartAt, EndAt = @EndAt,
-                    DisplayOrder = @DisplayOrder, IsActive = @IsActive, CampaignType = @CampaignType, ComboOfferId = @ComboOfferId
+                    DisplayOrder = @DisplayOrder, IsActive = @IsActive, CampaignType = @CampaignType, ComboOfferId = @ComboOfferId,
+                    RecurringDailyStartTime = @RecurringDailyStartTime, RecurringDailyEndTime = @RecurringDailyEndTime
                 OUTPUT INSERTED.*
                 WHERE CampaignId = @Id
             `);

@@ -179,6 +179,50 @@ async function getDashboardStats(req, res) {
             GROUP BY DATEPART(HOUR, PaymentDate)
         `);
 
+        // En çok satılan combo — bestSellingResult ile aynı desen, ama
+        // OrderDetails.ComboOfferId üzerinden ComboOffers'a bağlanır.
+        const bestSellingCombosResult = await pool.request().query(`
+            SELECT TOP 5 co.Name AS ComboName, SUM(od.Quantity) AS QuantitySold
+            FROM OrderDetails od
+            JOIN ComboOffers co ON co.ComboOfferId = od.ComboOfferId
+            JOIN Orders o ON o.OrderId = od.OrderId
+            WHERE od.ComboOfferId IS NOT NULL AND o.Status != 'Cancelled'
+            GROUP BY co.Name
+            ORDER BY SUM(od.Quantity) DESC
+        `);
+
+        // Sadaklık — kaç farklı kullanıcı adı puan biriktirmiş (Customers
+        // Username'de zaten UNIQUE, bkz. migrations/2026_08_01_campaigns_and_loyalty.sql).
+        const loyaltyCustomerCountResult = await pool.request().query(`
+            SELECT COUNT(*) AS LoyaltyCustomerCount FROM Customers
+        `);
+
+        // Toplam harcanan puan / verilen ücretsiz ürün sayısı — Products.LoyaltyPointCost
+        // dolu olan ürünlerin UnitPrice=0 yazılmış satırları (bkz. controllers/
+        // loyaltyController.js redeemLoyaltyProduct, her zaman Quantity=1 ekler).
+        const loyaltyRedeemResult = await pool.request().query(`
+            SELECT
+                ISNULL(COUNT(*), 0) AS FreeProductCount,
+                ISNULL(SUM(p.LoyaltyPointCost * od.Quantity), 0) AS TotalPointsSpent
+            FROM OrderDetails od
+            JOIN Products p ON p.ProductId = od.ProductId
+            JOIN Orders o ON o.OrderId = od.OrderId
+            WHERE od.UnitPrice = 0 AND p.LoyaltyPointCost IS NOT NULL AND o.Status != 'Cancelled'
+        `);
+        const loyaltyRedeemRow = loyaltyRedeemResult.recordset[0];
+
+        // Anket — ortalama Lezzet/Hizmet/Temizlik puanı (1-3 arası, bkz.
+        // migrations/2026_08_04_recurrence_tips_feedback.sql).
+        const feedbackResult = await pool.request().query(`
+            SELECT
+                AVG(CAST(TasteRating AS FLOAT)) AS AvgTaste,
+                AVG(CAST(ServiceRating AS FLOAT)) AS AvgService,
+                AVG(CAST(CleanlinessRating AS FLOAT)) AS AvgCleanliness,
+                COUNT(*) AS FeedbackCount
+            FROM Feedback
+        `);
+        const feedbackRow = feedbackResult.recordset[0];
+
         res.status(200).json({
             todayRevenue: Number(summary.TodayRevenue) || 0,
             todayOrders: summary.TodayOrders,
@@ -194,6 +238,18 @@ async function getDashboardStats(req, res) {
             categoryDistribution,
             profitRatio,
             hourlyRevenue: buildHourlyRevenue(hourlyRevenueResult.recordset),
+            bestSellingCombos: bestSellingCombosResult.recordset,
+            loyaltyCustomerCount: loyaltyCustomerCountResult.recordset[0].LoyaltyCustomerCount,
+            loyaltyRedeem: {
+                freeProductCount: Number(loyaltyRedeemRow.FreeProductCount) || 0,
+                totalPointsSpent: Number(loyaltyRedeemRow.TotalPointsSpent) || 0,
+            },
+            feedback: {
+                avgTaste: feedbackRow.AvgTaste !== null ? Number(feedbackRow.AvgTaste) : null,
+                avgService: feedbackRow.AvgService !== null ? Number(feedbackRow.AvgService) : null,
+                avgCleanliness: feedbackRow.AvgCleanliness !== null ? Number(feedbackRow.AvgCleanliness) : null,
+                count: feedbackRow.FeedbackCount,
+            },
         });
     } catch (err) {
         console.error('Dashboard verileri getirilirken hata:', err);

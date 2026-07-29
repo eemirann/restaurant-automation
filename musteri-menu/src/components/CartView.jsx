@@ -1,14 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { calculateLineTotal, money } from '../utils/priceCalculator';
 import { useLanguage } from '../i18n';
+
+const TIP_PRESETS = [0, 0.05, 0.10, 0.15];
 
 // Sepet + checkout. Beyaz/premium tasarım dili.
 export default function CartView({
   products, cart, optionsCache, campaigns = [], comboCart = {}, onComboQuantityChange, onRemoveCombo,
-  note, onNoteChange, username, onUsernameChange, onEditLine, onSubmit, submitting, error,
+  note, onNoteChange, username, onUsernameChange, onTipAmountChange, onEditLine, onSubmit, submitting, error,
 }) {
   const { t } = useLanguage();
   const [confirming, setConfirming] = useState(false);
+  const [tipPreset, setTipPreset] = useState(0);
+  const [customTip, setCustomTip] = useState('');
 
   const entries = Object.entries(cart);
   const comboEntries = Object.entries(comboCart)
@@ -29,7 +33,20 @@ export default function CartView({
 
   const itemsTotal = entries.reduce((sum, [productId, line]) => sum + lineTotal(productId, line), 0);
   const combosTotal = comboEntries.reduce((sum, { quantity, campaign }) => sum + Number(campaign.ComboPrice) * quantity, 0);
-  const total = itemsTotal + combosTotal;
+  const subtotal = itemsTotal + combosTotal;
+
+  const effectiveTip = customTip !== '' ? Number(customTip) || 0 : Math.round(subtotal * tipPreset * 100) / 100;
+  const total = subtotal + effectiveTip;
+
+  const selectPreset = (pct) => {
+    setTipPreset(pct);
+    setCustomTip('');
+  };
+
+  useEffect(() => {
+    onTipAmountChange?.(effectiveTip);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveTip]);
 
   if (entries.length === 0 && comboEntries.length === 0) {
     return (
@@ -150,9 +167,50 @@ export default function CartView({
         />
       </div>
 
-      <div className="border-t border-line pt-4 flex items-center justify-between mb-5">
-        <span className="text-xs uppercase tracking-[0.2em] text-muted font-semibold">{t('total')}</span>
-        <span className="font-display text-2xl font-semibold text-ink">{money(total)}</span>
+      <div className="mb-5">
+        <label className="block text-[11px] uppercase tracking-[0.2em] text-muted font-semibold mb-1.5">{t('tipLabel')}</label>
+        <div className="grid grid-cols-4 gap-2 mb-2">
+          {TIP_PRESETS.map((pct) => (
+            <button
+              key={pct}
+              type="button"
+              onClick={() => selectPreset(pct)}
+              className={`text-xs uppercase tracking-wide font-semibold rounded-full px-2 py-2.5 border transition-colors ${
+                customTip === '' && tipPreset === pct ? 'border-gold bg-gold/10 text-ink' : 'border-line text-muted'
+              }`}
+            >
+              {pct === 0 ? t('tipNone') : `%${Math.round(pct * 100)}`}
+            </button>
+          ))}
+        </div>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          value={customTip}
+          onChange={(e) => setCustomTip(e.target.value)}
+          placeholder={t('tipCustomPlaceholder')}
+          className="w-full border border-line rounded-2xl px-4 py-3 bg-cream text-ink text-sm placeholder:text-muted
+                     focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold"
+        />
+      </div>
+
+      <div className="border-t border-line pt-4 mb-5">
+        <div className="flex items-center justify-between text-sm text-muted mb-1">
+          <span>{t('subtotalLabel')}</span>
+          <span>{money(subtotal)}</span>
+        </div>
+        {effectiveTip > 0 && (
+          <div className="flex items-center justify-between text-sm text-muted mb-1">
+            <span>{t('tipLabel')}</span>
+            <span>{money(effectiveTip)}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-xs uppercase tracking-[0.2em] text-muted font-semibold">{t('total')}</span>
+          <span className="font-display text-2xl font-semibold text-ink">{money(total)}</span>
+        </div>
       </div>
 
       {error && (

@@ -125,6 +125,52 @@ describe('POST /api/campaigns', () => {
     });
 });
 
+describe('POST /api/campaigns — RecurringDailyStartTime/EndTime', () => {
+    test('sadece başlangıç saati gönderilirse 400 döner', async () => {
+        const res = await request(app)
+            .post('/api/campaigns')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+                Title: 'Öğle Kampanyası', StartAt: '2026-01-01T00:00:00Z', EndAt: '2026-01-31T00:00:00Z',
+                CampaignType: 'Info', RecurringDailyStartTime: '12:00',
+            });
+        expect(res.status).toBe(400);
+    });
+
+    test('geçersiz saat biçimi 400 döner', async () => {
+        const res = await request(app)
+            .post('/api/campaigns')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+                Title: 'Öğle Kampanyası', StartAt: '2026-01-01T00:00:00Z', EndAt: '2026-01-31T00:00:00Z',
+                CampaignType: 'Info', RecurringDailyStartTime: '25:99', RecurringDailyEndTime: '14:00',
+            });
+        expect(res.status).toBe(400);
+    });
+
+    test('geçerli günlük tekrar saatleriyle kampanya oluşturulabilir (201)', async () => {
+        let insertedRecurring = null;
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('INSERT INTO Campaigns')) {
+                insertedRecurring = { start: inputs.RecurringDailyStartTime, end: inputs.RecurringDailyEndTime };
+                return { recordset: [{ CampaignId: 3, Title: 'Öğle Kampanyası', CampaignType: 'Info', IsActive: true }] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/campaigns')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+                Title: 'Öğle Kampanyası', StartAt: '2026-01-01T00:00:00Z', EndAt: '2026-01-31T00:00:00Z',
+                CampaignType: 'Info', RecurringDailyStartTime: '12:00', RecurringDailyEndTime: '14:00',
+            });
+
+        expect(res.status).toBe(201);
+        expect(insertedRecurring).toEqual({ start: '12:00', end: '14:00' });
+    });
+});
+
 describe('DELETE /api/campaigns/:id', () => {
     test('bulunamazsa 404 döner', async () => {
         fakeDb.__setHandler(async () => ({ recordset: [] }));

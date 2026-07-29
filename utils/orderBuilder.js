@@ -94,6 +94,7 @@ async function resolveCombo(transaction, combo) {
         .query(`
             SELECT TOP 1 CampaignId FROM Campaigns
             WHERE ComboOfferId = @ComboOfferId AND IsActive = 1 AND StartAt <= GETDATE() AND EndAt >= GETDATE()
+                  AND (RecurringDailyStartTime IS NULL OR CAST(GETDATE() AS TIME) BETWEEN RecurringDailyStartTime AND RecurringDailyEndTime)
         `);
     if (activeCampaignResult.recordset.length === 0) {
         throw new HttpError(400, `Bu kampanya artık geçerli değil (ComboOfferId: ${combo.ComboOfferId})`);
@@ -146,7 +147,28 @@ async function resolveCombo(transaction, combo) {
 // yapmaz — çağıran taraf catch bloğunda rollback + err.statusCode'a göre
 // cevap üretir).
 // ============================================================
-async function buildOrderInTransaction(transaction, { TableId, UserId, Items, Note, Combos }) {
+// ============================================================
+// Bahşiş doğrulaması — GÜVENLİK: negatif olamaz, ara toplamın (Items+Combos
+// tutarı, bahşiş HARİÇ) en fazla %50'si kadar olabilir (mantıksız büyük
+// bahşiş bir veri girişi hatası/kötüye kullanım olabilir). Müşterinin QR
+// menüden seçtiği tutar sunucuda burada YENİDEN doğrulanır — client'tan
+// gelen hiçbir değer doğrudan güvenilmez (bkz. dosya başındaki genel ilke).
+// ============================================================
+const MAX_TIP_RATIO = 0.5;
+
+function resolveTipAmount(TipAmount, subtotal) {
+    if (TipAmount === undefined || TipAmount === null) return 0;
+    if (typeof TipAmount !== 'number' || Number.isNaN(TipAmount) || TipAmount < 0) {
+        throw new HttpError(400, 'TipAmount negatif olamayan bir sayı olmalıdır');
+    }
+    const maxTip = subtotal * MAX_TIP_RATIO;
+    if (TipAmount > maxTip) {
+        throw new HttpError(400, `TipAmount çok yüksek (ara toplamın en fazla %${MAX_TIP_RATIO * 100}'i kadar olabilir)`);
+    }
+    return TipAmount;
+}
+
+async function buildOrderInTransaction(transaction, { TableId, UserId, Items, Note, Combos, TipAmount }) {
     validateOrderItemsShape(TableId, UserId, Items, Combos);
 
     const validatedItems = [];
@@ -269,17 +291,20 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
         totalAmount += resolved.price * resolved.comboQuantity;
     }
 
+    const resolvedTipAmount = resolveTipAmount(TipAmount, totalAmount);
+
     const orderResult = await new sql.Request(transaction)
         .input('TableId', sql.Int, TableId)
         .input('UserId', sql.Int, UserId)
         .input('TotalAmount', sql.Decimal(10, 2), totalAmount)
         .input('Note', sql.NVarChar, Note || null)
+        .input('TipAmount', sql.Decimal(10, 2), resolvedTipAmount)
         .query(`DECLARE @InsertedOrders TABLE (
                 OrderId INT, TableId INT, UserId INT, TotalAmount DECIMAL(10,2),
-                Status NVARCHAR(50), Note NVARCHAR(MAX), CreatedAt DATETIME);
-                INSERT INTO Orders (TableId, UserId, TotalAmount, Note) OUTPUT INSERTED.OrderId, INSERTED.TableId, INSERTED.UserId,
+                Status NVARCHAR(50), Note NVARCHAR(MAX), CreatedAt DATETIME, TipAmount DECIMAL(10,2));
+                INSERT INTO Orders (TableId, UserId, TotalAmount, Note, TipAmount) OUTPUT INSERTED.OrderId, INSERTED.TableId, INSERTED.UserId,
                 INSERTED.TotalAmount, INSERTED.Status,
-                INSERTED.Note, INSERTED.CreatedAt INTO @InsertedOrders (OrderId, TableId, UserId, TotalAmount, Status, Note, CreatedAt) VALUES (@TableId, @UserId, @TotalAmount, @Note);
+                INSERTED.Note, INSERTED.CreatedAt, INSERTED.TipAmount INTO @InsertedOrders (OrderId, TableId, UserId, TotalAmount, Status, Note, CreatedAt, TipAmount) VALUES (@TableId, @UserId, @TotalAmount, @Note, @TipAmount);
                 SELECT * FROM @InsertedOrders;`);
 
     const newOrderId = orderResult.recordset[0].OrderId;

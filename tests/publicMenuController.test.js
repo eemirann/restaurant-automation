@@ -180,6 +180,123 @@ describe('POST /api/public/menu/:qrToken/request', () => {
     });
 });
 
+describe('POST /api/public/menu/:qrToken/order — TipAmount', () => {
+    test('negatif TipAmount 400 döner', async () => {
+        const res = await request(app)
+            .post(`/api/public/menu/${TOKEN}/order`)
+            .send({ Items: [{ ProductId: 5, Quantity: 1 }], TipAmount: -10 });
+        expect(res.status).toBe(400);
+    });
+
+    test('sayısal olmayan TipAmount 400 döner', async () => {
+        const res = await request(app)
+            .post(`/api/public/menu/${TOKEN}/order`)
+            .send({ Items: [{ ProductId: 5, Quantity: 1 }], TipAmount: 'abc' });
+        expect(res.status).toBe(400);
+    });
+
+    test('geçerli TipAmount CustomerOrderRequests.TipAmount olarak kaydedilir', async () => {
+        let insertedTip = null;
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM Tables WHERE QrToken')) {
+                return { recordset: [{ TableId: 12, TableNumber: 12, Area: 'Salon', Status: 'Occupied' }] };
+            }
+            if (queryText.includes('FROM Products WHERE ProductId = @ProductId AND IsActive')) {
+                return { recordset: [{ ProductId: 5 }] };
+            }
+            if (queryText.includes('INSERT INTO CustomerOrderRequests')) {
+                insertedTip = inputs.TipAmount;
+                return { recordset: [{ CustomerOrderRequestId: 90, CreatedAt: new Date().toISOString() }] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .post(`/api/public/menu/${TOKEN}/order`)
+            .send({ Items: [{ ProductId: 5, Quantity: 1 }], TipAmount: 15.5 });
+
+        expect(res.status).toBe(201);
+        expect(insertedTip).toBe(15.5);
+    });
+});
+
+describe('GET /api/public/menu/:qrToken/loyalty/:username', () => {
+    test('masa bulunamazsa 404 döner', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('FROM Tables WHERE QrToken')) return { recordset: [] };
+            return { recordset: [] };
+        });
+        const res = await request(app).get(`/api/public/menu/${TOKEN}/loyalty/ahmet`);
+        expect(res.status).toBe(404);
+    });
+
+    test('kullanıcı adı bulunamazsa 404 döner', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('FROM Tables WHERE QrToken')) {
+                return { recordset: [{ TableId: 12, TableNumber: 12, Area: 'Salon', Status: 'Occupied' }] };
+            }
+            if (queryText.includes('FROM Customers WHERE Username')) return { recordset: [] };
+            return { recordset: [] };
+        });
+        const res = await request(app).get(`/api/public/menu/${TOKEN}/loyalty/ahmet`);
+        expect(res.status).toBe(404);
+    });
+
+    test('puan bakiyesi bulunur (200)', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('FROM Tables WHERE QrToken')) {
+                return { recordset: [{ TableId: 12, TableNumber: 12, Area: 'Salon', Status: 'Occupied' }] };
+            }
+            if (queryText.includes('FROM Customers WHERE Username')) {
+                return { recordset: [{ Username: 'ahmet', LoyaltyPoints: 42 }] };
+            }
+            return { recordset: [] };
+        });
+        const res = await request(app).get(`/api/public/menu/${TOKEN}/loyalty/ahmet`);
+        expect(res.status).toBe(200);
+        expect(res.body.LoyaltyPoints).toBe(42);
+    });
+});
+
+describe('POST /api/public/menu/:qrToken/feedback', () => {
+    test('geçersiz rating değeri 400 döner', async () => {
+        const res = await request(app)
+            .post(`/api/public/menu/${TOKEN}/feedback`)
+            .send({ TasteRating: 5, ServiceRating: 2, CleanlinessRating: 2 });
+        expect(res.status).toBe(400);
+    });
+
+    test('masa bulunamazsa 404 döner', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('FROM Tables WHERE QrToken')) return { recordset: [] };
+            return { recordset: [] };
+        });
+        const res = await request(app)
+            .post(`/api/public/menu/${TOKEN}/feedback`)
+            .send({ TasteRating: 3, ServiceRating: 3, CleanlinessRating: 3 });
+        expect(res.status).toBe(404);
+    });
+
+    test('geçerli değerlendirme kaydedilir (201)', async () => {
+        let inserted = null;
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM Tables WHERE QrToken')) {
+                return { recordset: [{ TableId: 12, TableNumber: 12, Area: 'Salon', Status: 'Occupied' }] };
+            }
+            if (queryText.includes('INSERT INTO Feedback')) {
+                inserted = inputs;
+                return { recordset: [] };
+            }
+            return { recordset: [] };
+        });
+        const res = await request(app)
+            .post(`/api/public/menu/${TOKEN}/feedback`)
+            .send({ TasteRating: 3, ServiceRating: 2, CleanlinessRating: 1 });
+        expect(res.status).toBe(201);
+        expect(inserted).toEqual({ TableId: 12, TasteRating: 3, ServiceRating: 2, CleanlinessRating: 1 });
+    });
+});
+
 describe('GET /api/public/menu/:qrToken/status', () => {
     test('masa bulunamazsa 404 döner', async () => {
         fakeDb.__setHandler(async (queryText) => {

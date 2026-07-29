@@ -381,6 +381,62 @@ export default function Dashboard() {
         )}
       </Panel>
 
+      {/* Kampanya/Combo + Sadaklık Analitiği */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <Panel title="En Çok Satılan Combo">
+          {!data ? (
+            <p className="text-slate font-mono text-sm">Yükleniyor...</p>
+          ) : data.bestSellingCombos.length === 0 ? (
+            <EmptyState text="Henüz combo satışı yok." />
+          ) : (
+            <div className="space-y-3">
+              {data.bestSellingCombos.map((c, i) => (
+                <div key={i} className="flex items-center justify-between gap-3">
+                  <span className="text-paper text-sm font-medium truncate">{c.ComboName}</span>
+                  <span className="font-mono text-xs text-slate shrink-0">{c.QuantitySold} adet</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Sadaklık">
+          {!data ? (
+            <p className="text-slate font-mono text-sm">Yükleniyor...</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate">Puan biriktiren müşteri</span>
+                <span className="font-display text-xl font-semibold text-paper">{data.loyaltyCustomerCount}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate">Verilen ücretsiz ürün</span>
+                <span className="font-display text-xl font-semibold text-paper">{data.loyaltyRedeem.freeProductCount}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate">Harcanan toplam puan</span>
+                <span className="font-display text-xl font-semibold text-paper">{data.loyaltyRedeem.totalPointsSpent}</span>
+              </div>
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Müşteri Memnuniyeti">
+          {!data ? (
+            <p className="text-slate font-mono text-sm">Yükleniyor...</p>
+          ) : data.feedback.count === 0 ? (
+            <EmptyState text="Henüz değerlendirme yok." />
+          ) : (
+            <div className="space-y-3">
+              <FeedbackScoreRow label="Lezzet" value={data.feedback.avgTaste} />
+              <FeedbackScoreRow label="Hizmet" value={data.feedback.avgService} />
+              <FeedbackScoreRow label="Temizlik" value={data.feedback.avgCleanliness} />
+              <p className="font-mono text-[10px] text-slate/70 pt-1">{data.feedback.count} değerlendirme</p>
+            </div>
+          )}
+        </Panel>
+      </div>
+
       {/* Son 7 Gün · Ciro */}
       <Panel title="Son 7 Gün · Ciro" className="mb-8">
         {!data ? (
@@ -594,6 +650,18 @@ function EmptyState({ text }) {
   return (
     <div className="border border-dashed border-hairline rounded-xl py-10 text-center">
       <p className="text-slate font-mono text-sm">{text}</p>
+    </div>
+  );
+}
+
+// Anket ortalama puanı satırı (1-3 arası, bkz. Feedback tablosu)
+function FeedbackScoreRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-sm text-slate">{label}</span>
+      <span className="font-display text-xl font-semibold text-paper">
+        {value === null ? '—' : `${value.toFixed(1)} / 3`}
+      </span>
     </div>
   );
 }

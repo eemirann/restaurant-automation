@@ -8,6 +8,8 @@ const {
     createCustomerOrderRequest,
     createServiceRequest,
     getPublicMenuStatus,
+    getPublicMenuLoyaltyBalance,
+    createFeedback,
 } = require('../controllers/publicMenuController');
 
 // KİMLİK DOĞRULAMASIZ — anonim müşteri QR menüsü. Erişim tamamen
@@ -16,7 +18,9 @@ router.get('/:qrToken', publicMenuViewLimiter, getPublicMenu);
 router.get('/:qrToken/campaigns', publicMenuViewLimiter, getPublicMenuCampaigns);
 router.get('/:qrToken/options/:productId', publicMenuViewLimiter, getPublicMenuProductOptions);
 router.get('/:qrToken/status', publicMenuViewLimiter, getPublicMenuStatus);
+router.get('/:qrToken/loyalty/:username', publicMenuViewLimiter, getPublicMenuLoyaltyBalance);
 router.post('/:qrToken/order', publicMenuActionLimiter, createCustomerOrderRequest);
 router.post('/:qrToken/request', publicMenuActionLimiter, createServiceRequest);
+router.post('/:qrToken/feedback', publicMenuActionLimiter, createFeedback);
 
 module.exports = router;

@@ -203,6 +203,55 @@ describe('POST /api/customer-orders/:id/approve', () => {
     });
 });
 
+describe('POST /api/customer-orders/:id/approve — TipAmount', () => {
+    test('istekte TipAmount varsa Orders.TipAmount olarak yazılır', async () => {
+        let insertedTip = null;
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM CustomerOrderRequests') && queryText.includes('UPDLOCK')) {
+                return { recordset: [{ CustomerOrderRequestId: 1, TableId: 4, Note: null, Status: 'Pending', Username: null, CombosJson: null, TipAmount: 12 }] };
+            }
+            if (queryText.includes('FROM CustomerOrderRequestItems')) {
+                return { recordset: [{ ProductId: 5, Quantity: 2, VariantId: null, Note: null, ExtrasJson: null, SyrupsJson: null }] };
+            }
+            if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
+                return { recordset: [{ ProductId: 5, Price: 50, IsActive: true, IsAvailable: true }] };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                insertedTip = inputs.TipAmount;
+                return { recordset: [{ OrderId: 70, TableId: 4, UserId: inputs.UserId, TotalAmount: inputs.TotalAmount, Status: 'Pending', Note: null, CreatedAt: new Date(), TipAmount: inputs.TipAmount }] };
+            }
+            if (queryText.includes('INSERT INTO OrderDetails')) return { recordset: [{ OrderDetailsId: 1 }] };
+            if (queryText.includes('FROM Recipes')) return { recordset: [] };
+            if (queryText.includes('UPDATE CustomerOrderRequests')) return { recordset: [] };
+            return { recordset: [] };
+        });
+
+        const res = await request(app).post('/api/customer-orders/1/approve').set('Authorization', `Bearer ${waiterToken}`);
+        expect(res.status).toBe(201);
+        // totalAmount = 50 * 2 = 100; TipAmount=12 < %50 sınırı, kabul edilir
+        expect(insertedTip).toBe(12);
+    });
+
+    test('TipAmount ara toplamın %50 sınırını aşarsa 400 döner', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('FROM CustomerOrderRequests') && queryText.includes('UPDLOCK')) {
+                return { recordset: [{ CustomerOrderRequestId: 1, TableId: 4, Note: null, Status: 'Pending', Username: null, CombosJson: null, TipAmount: 999 }] };
+            }
+            if (queryText.includes('FROM CustomerOrderRequestItems')) {
+                return { recordset: [{ ProductId: 5, Quantity: 2, VariantId: null, Note: null, ExtrasJson: null, SyrupsJson: null }] };
+            }
+            if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
+                return { recordset: [{ ProductId: 5, Price: 50, IsActive: true, IsAvailable: true }] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app).post('/api/customer-orders/1/approve').set('Authorization', `Bearer ${waiterToken}`);
+        expect(res.status).toBe(400);
+    });
+});
+
 describe('POST /api/customer-orders/:id/reject', () => {
     test('istek bulunamazsa 404 döner', async () => {
         fakeDb.__setHandler(async () => ({ recordset: [] }));

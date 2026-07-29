@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import client from '../api/client';
 import { useLanguage } from '../i18n';
 
 const QUICK_REQUEST_TYPES = [
@@ -24,7 +25,7 @@ const SERVICE_TYPE_KEYS = {
 
 // Personel çağırma + hızlı istekler + sipariş/istek durumu. Beyaz/premium
 // tasarım dili — restoran-panel'in koyu POS temasından bağımsız.
-export default function StaffView({ tableNumber, status, onSendRequest, sending }) {
+export default function StaffView({ qrToken, tableNumber, status, onSendRequest, sending }) {
   const { t } = useLanguage();
   const [justSent, setJustSent] = useState(null);
 
@@ -97,6 +98,155 @@ export default function StaffView({ tableNumber, status, onSendRequest, sending 
           </div>
         </div>
       )}
+
+      <LoyaltyBalanceCard qrToken={qrToken} t={t} />
+      <FeedbackCard qrToken={qrToken} t={t} />
+    </div>
+  );
+}
+
+// ============================================================
+// "Puanlarım" kartı — müşteri kullanıcı adını yazıp kendi sadaklık puan
+// bakiyesini görebilir (bkz. backend: getPublicMenuLoyaltyBalance).
+// ============================================================
+function LoyaltyBalanceCard({ qrToken, t }) {
+  const [username, setUsername] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const checkBalance = async () => {
+    const trimmed = username.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await client.get(`/public/menu/${qrToken}/loyalty/${encodeURIComponent(trimmed)}`);
+      setResult(res.data);
+    } catch (err) {
+      setError(err.response?.data?.error || t('loyaltyLookupError'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-7">
+      <p className="text-[11px] uppercase tracking-[0.2em] text-muted font-semibold mb-2.5">{t('myPointsTitle')}</p>
+      <div className="rounded-2xl bg-white shadow-card p-4">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder={t('usernamePlaceholder')}
+            maxLength={50}
+            className="flex-1 border border-line rounded-2xl px-4 py-2.5 bg-cream text-ink text-sm placeholder:text-muted
+                       focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold"
+          />
+          <button
+            type="button"
+            disabled={loading || !username.trim()}
+            onClick={checkBalance}
+            className="text-xs uppercase tracking-[0.15em] font-semibold text-paper bg-ink hover:bg-ink/90
+                       disabled:opacity-50 rounded-full px-4 py-2.5 transition-colors shrink-0"
+          >
+            {loading ? t('loading') : t('checkBalance')}
+          </button>
+        </div>
+        {error && <p className="text-danger text-xs font-medium mt-2.5">{error}</p>}
+        {result && (
+          <p className="text-sm text-ink mt-2.5">
+            {t('pointsBalanceLabel', { username: result.Username })}: <span className="font-display text-lg font-semibold text-gold">{result.LoyaltyPoints}</span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const FEEDBACK_CATEGORIES = [
+  { key: 'TasteRating', labelKey: 'feedbackTaste' },
+  { key: 'ServiceRating', labelKey: 'feedbackService' },
+  { key: 'CleanlinessRating', labelKey: 'feedbackCleanliness' },
+];
+const FEEDBACK_EMOJIS = [
+  { value: 1, emoji: '😞' },
+  { value: 2, emoji: '😐' },
+  { value: 3, emoji: '😄' },
+];
+
+// ============================================================
+// "Deneyiminizi Değerlendir" kartı — 3 kategori (Lezzet/Hizmet/Temizlik),
+// her biri 1-3 arası emoji puanı (bkz. backend: createFeedback). Anonim,
+// tekrar gönderim engeli sadece client-side (bu oturumda tekrar gösterme).
+// ============================================================
+function FeedbackCard({ qrToken, t }) {
+  const [ratings, setRatings] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const setRating = (key, value) => setRatings((prev) => ({ ...prev, [key]: value }));
+  const complete = FEEDBACK_CATEGORIES.every((c) => ratings[c.key]);
+
+  const submit = async () => {
+    if (!complete || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await client.post(`/public/menu/${qrToken}/feedback`, ratings);
+      setSent(true);
+    } catch (err) {
+      setError(err.response?.data?.error || t('feedbackSendError'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mt-7">
+      <p className="text-[11px] uppercase tracking-[0.2em] text-muted font-semibold mb-2.5">{t('feedbackTitle')}</p>
+      <div className="rounded-2xl bg-white shadow-card p-4">
+        {sent ? (
+          <p className="text-sm text-ink text-center py-2">{t('feedbackThanks')}</p>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {FEEDBACK_CATEGORIES.map((c) => (
+                <div key={c.key} className="flex items-center justify-between">
+                  <span className="text-sm text-ink font-medium">{t(c.labelKey)}</span>
+                  <div className="flex gap-1.5">
+                    {FEEDBACK_EMOJIS.map((f) => (
+                      <button
+                        key={f.value}
+                        type="button"
+                        onClick={() => setRating(c.key, f.value)}
+                        className={`w-9 h-9 flex items-center justify-center text-xl rounded-full border transition-colors ${
+                          ratings[c.key] === f.value ? 'border-gold bg-gold/10' : 'border-line'
+                        }`}
+                      >
+                        {f.emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {error && <p className="text-danger text-xs font-medium mt-2.5">{error}</p>}
+            <button
+              type="button"
+              disabled={!complete || submitting}
+              onClick={submit}
+              className="w-full mt-3.5 text-sm uppercase tracking-[0.15em] font-semibold text-paper bg-ink hover:bg-ink/90
+                         disabled:opacity-50 rounded-full px-4 py-3 transition-colors"
+            >
+              {submitting ? t('sending') : t('sendFeedback')}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

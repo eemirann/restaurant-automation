@@ -95,7 +95,7 @@ async function getOrderById(req, res) {
 
         const orderResult = await pool.request()
             .input('OrderId', sql.Int, id)
-            .query(`SELECT OrderId, TableId, UserId, Status, TotalAmount, Note, CreatedAt FROM Orders WHERE OrderId = @OrderId`);
+            .query(`SELECT OrderId, TableId, UserId, Status, TotalAmount, Note, CreatedAt, TipAmount FROM Orders WHERE OrderId = @OrderId`);
 
         if (orderResult.recordset.length === 0) {
             return res.status(404).json({ error: 'Sipariş bulunamadı' });

@@ -36,6 +36,7 @@ export default function MenuApp() {
 
   const [orderNote, setOrderNote] = useState('');
   const [username, setUsername] = useState('');
+  const [tipAmount, setTipAmount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
@@ -137,11 +138,13 @@ export default function MenuApp() {
         Combos: Combos.length > 0 ? Combos : undefined,
         Note: orderNote || undefined,
         Username: username.trim() || undefined,
+        TipAmount: tipAmount > 0 ? tipAmount : undefined,
       });
 
       setCart({});
       setComboCart({});
       setOrderNote('');
+      setTipAmount(0);
       fetchStatus();
       setView('staff');
     } catch (err) {
@@ -217,6 +220,7 @@ export default function MenuApp() {
           onNoteChange={setOrderNote}
           username={username}
           onUsernameChange={setUsername}
+          onTipAmountChange={setTipAmount}
           onEditLine={(product, line) => openProduct(product, line)}
           onSubmit={submitOrder}
           submitting={submitting}
@@ -225,6 +229,7 @@ export default function MenuApp() {
       )}
       {view === 'staff' && (
         <StaffView
+          qrToken={qrToken}
           tableNumber={menu.table.TableNumber}
           status={status}
           onSendRequest={sendServiceRequest}

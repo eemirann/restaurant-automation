@@ -169,7 +169,12 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
       setSplit({ Cash: '', Card: '', QR: '', FoodCard: '' });
       setLastReceipt(null);
       loadBalance();
-      loadOrder();
+      // Müşterinin QR menüden checkout'ta seçtiği bahşiş varsa (Orders.TipAmount,
+      // bkz. musteri-menu CartView.jsx) tutar alanına ön-dolu gelir — kasiyer
+      // isterse değiştirebilir/kaldırabilir (müşterinin seçimi son söz değildir).
+      loadOrder().then((data) => {
+        if (data?.TipAmount > 0) setTip(String(data.TipAmount));
+      });
     }
   }, [open, loadBalance, loadOrder]);
 
@@ -760,7 +765,9 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                         {/* Bahşiş + İndirim (kompakt) */}
                         <div className="grid grid-cols-2 gap-2">
                           <div className="flex items-center gap-1.5 bg-panel rounded-lg px-3 border border-hairline focus-within:border-ember">
-                            <span className="font-mono text-[10px] uppercase text-slate shrink-0">Bahşiş ₺</span>
+                            <span className="font-mono text-[10px] uppercase text-slate shrink-0" title={orderData?.TipAmount > 0 ? 'Müşterinin QR menüden seçtiği bahşiş — değiştirilebilir/kaldırılabilir' : undefined}>
+                              Bahşiş ₺{orderData?.TipAmount > 0 ? ' · müşteri' : ''}
+                            </span>
                             <input type="number" min="0" step="0.01" inputMode="decimal" value={tip} onChange={(e) => setTip(e.target.value)} placeholder="0.00"
                               className="w-full bg-transparent border-0 py-2 font-mono text-sm text-paper text-right focus:outline-none focus:ring-0 placeholder:text-slate/40" />
                           </div>
