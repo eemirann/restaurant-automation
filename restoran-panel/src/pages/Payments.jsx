@@ -256,6 +256,17 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
     }
   };
 
+  const restorePayment = async (paymentId) => {
+    if (!window.confirm('Bu ödeme geri alınsın mı?')) return;
+    setActionError('');
+    try {
+      await client.patch(`/payments/${paymentId}/restore`);
+      await refresh();
+    } catch (err) {
+      setActionError(err.response?.data?.message || err.response?.data?.error || 'Ödeme geri alınamadı.');
+    }
+  };
+
   const startRefund = (p) => {
     setActionError('');
     setRefundingId(p.Id);
@@ -372,11 +383,14 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                       {payments.map((p) => {
                         const refunded = Number(p.RefundAmount || 0) > 0;
                         const fullyRefunded = refunded && Number(p.RefundAmount) >= Number(p.Amount);
-                        const canRefund = isAdmin && !fullyRefunded;
+                        const canRefund = isAdmin && !fullyRefunded && !p.IsDeleted;
                         return (
-                          <tr key={p.Id} className="border-b border-hairline last:border-b-0 align-top">
+                          <tr key={p.Id} className={`border-b border-hairline last:border-b-0 align-top ${p.IsDeleted ? 'opacity-50' : ''}`}>
                             <td className="px-3 py-2.5 text-paper">
                               {PAYMENT_METHOD_LABELS[p.PaymentMethod] || p.PaymentMethod}
+                              {p.IsDeleted && (
+                                <span className="block font-mono text-[10px] text-ember mt-0.5 uppercase tracking-wide">İptal Edildi</span>
+                              )}
                               {p.InvoiceNumber && (
                                 <span className="block font-mono text-[10px] text-slate mt-0.5">Fiş: {p.InvoiceNumber}</span>
                               )}
@@ -424,6 +438,15 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                                         {refundBusy ? '...' : 'Onayla'}
                                       </button>
                                     </div>
+                                  </div>
+                                ) : p.IsDeleted ? (
+                                  <div className="flex justify-end">
+                                    <button
+                                      onClick={() => restorePayment(p.Id)}
+                                      className="font-mono text-[10px] uppercase tracking-wide text-moss hover:text-moss/80 border border-moss/40 rounded-sm px-2 py-1 transition-colors"
+                                    >
+                                      Geri Al
+                                    </button>
                                   </div>
                                 ) : (
                                   <div className="flex justify-end gap-1.5 flex-wrap">

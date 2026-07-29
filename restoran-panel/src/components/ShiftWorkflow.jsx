@@ -7,16 +7,6 @@ const money = (n) =>
 
 const fmtTime = (d) => new Intl.DateTimeFormat('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(d);
 const fmtDate = (d) => new Intl.DateTimeFormat('tr-TR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(d);
-const fmtClock = (v) => (v ? new Intl.DateTimeFormat('tr-TR', { hour: '2-digit', minute: '2-digit' }).format(new Date(v)) : '—');
-
-const fmtDuration = (from, now) => {
-  if (!from) return '—';
-  const s = Math.max(0, Math.floor((now - new Date(from).getTime()) / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-};
 
 const KEYFRAMES = `
   @keyframes swFade { from { opacity: 0 } to { opacity: 1 } }
@@ -102,66 +92,6 @@ function Info({ label, value, className = '' }) {
     <div className={`rounded-xl bg-charcoal border border-hairline px-3 py-2 ${className}`}>
       <p className="font-mono text-[9px] uppercase tracking-wider text-slate/70">{label}</p>
       <p className="font-mono text-sm text-paper truncate mt-0.5">{value}</p>
-    </div>
-  );
-}
-
-// ============================================================
-// YÜZEN VARDİYA DURUM KARTI
-// ============================================================
-export function ShiftStatusCard() {
-  const { user } = useAuth();
-  const { shift } = useShift();
-  const [now, setNow] = useState(Date.now());
-  const [open, setOpen] = useState(true);
-
-  useEffect(() => {
-    const i = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(i);
-  }, []);
-
-  if (!shift) return null;
-
-  return (
-    <div className="fixed bottom-5 right-5 z-[70] w-72" style={{ animation: 'swPop .3s ease-out' }}>
-      <style>{KEYFRAMES}</style>
-      <div className="rounded-2xl bg-ink text-cream shadow-2xl border border-cream/10 overflow-hidden">
-        <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors">
-          <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wide">
-            <span className="w-2 h-2 rounded-full bg-moss animate-pulse" /> Vardiya Açık
-          </span>
-          <span className="font-mono text-sm tabular-nums text-cream/80">{fmtDuration(shift.OpenedAt, now)}</span>
-        </button>
-
-        {open && (
-          <div className="px-4 pb-4 space-y-3">
-            <div className="flex items-center justify-between font-mono text-[11px]">
-              <span className="text-cream/50">Kasiyer</span>
-              <span className="text-cream font-semibold truncate ml-2">{user?.fullName}</span>
-            </div>
-            <div className="flex items-center justify-between font-mono text-[11px]">
-              <span className="text-cream/50">Başlangıç</span>
-              <span className="text-cream">{fmtClock(shift.OpenedAt)} · #{shift.ShiftId}</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <Metric label="Açılış" value={money(shift.OpeningFloat)} />
-              <Metric label="Beklenen Nakit" value={money(shift.ExpectedCash)} tone="text-moss" />
-              <Metric label="Satış" value={money(shift.CurrentSales)} />
-              <Metric label="Sipariş" value={shift.CurrentOrders ?? 0} />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Metric({ label, value, tone = 'text-cream' }) {
-  return (
-    <div className="rounded-lg bg-white/5 px-2.5 py-1.5">
-      <p className="font-mono text-[8px] uppercase tracking-wider text-cream/40">{label}</p>
-      <p className={`font-mono text-sm font-semibold tabular-nums mt-0.5 ${tone}`}>{value}</p>
     </div>
   );
 }

@@ -19,6 +19,7 @@ export default function ActiveShifts() {
   const [forceClose, setForceClose] = useState(null); // shift
   const [transfer, setTransfer] = useState(null);      // shift
   const [users, setUsers] = useState([]);
+  const [openFor, setOpenFor] = useState(null);        // user
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) { setLoading(true); setError(''); }
@@ -61,6 +62,28 @@ export default function ActiveShifts() {
       </div>
 
       {error && <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-6">{error}</p>}
+
+      {!loading && (() => {
+        const openUserIds = new Set(rows.map((r) => r.UserId));
+        const withoutShift = users.filter((u) => u.IsActive !== false && u.IsActive !== 0 && !openUserIds.has(u.UserId));
+        if (withoutShift.length === 0) return null;
+        return (
+          <div className="border border-hairline rounded-2xl bg-panel/50 p-4 mb-6">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-3">Vardiyası Kapalı Personel — Onlar Adına Başlat</p>
+            <div className="flex flex-wrap gap-2">
+              {withoutShift.map((u) => (
+                <button
+                  key={u.UserId}
+                  onClick={() => setOpenFor(u)}
+                  className="font-mono text-[11px] uppercase tracking-wide px-3 py-2 rounded-lg border border-hairline text-slate hover:border-moss hover:text-moss transition-colors"
+                >
+                  🟢 {u.FullName} ({u.Role})
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {loading ? (
         <p className="text-slate font-mono text-sm animate-pulse">Yükleniyor…</p>
@@ -107,6 +130,9 @@ export default function ActiveShifts() {
       )}
       {transfer && (
         <TransferModal shift={transfer} users={users} onClose={() => setTransfer(null)} onDone={() => { setTransfer(null); load({ silent: true }); }} />
+      )}
+      {openFor && (
+        <OpenForModal user={openFor} onClose={() => setOpenFor(null)} onDone={() => { setOpenFor(null); load({ silent: true }); }} />
       )}
     </div>
   );
@@ -169,6 +195,43 @@ function ForceCloseModal({ shift, onClose, onDone }) {
       <div className="grid grid-cols-2 gap-2">
         <button onClick={onClose} disabled={busy} className="font-mono text-xs uppercase text-slate border border-hairline rounded-lg py-2.5 disabled:opacity-50">Vazgeç</button>
         <button onClick={submit} disabled={busy} className="font-mono text-xs uppercase text-cream bg-ember hover:bg-ember/90 rounded-lg py-2.5 disabled:opacity-50">{busy ? '…' : 'Kapat'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function OpenForModal({ user, onClose, onDone }) {
+  const [openingFloat, setOpeningFloat] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    if (openingFloat === '' || Number(openingFloat) < 0) { setError('Açılış kasasını girin.'); return; }
+    setBusy(true); setError('');
+    try {
+      await client.post('/shifts/open-for', {
+        UserId: user.UserId,
+        OpeningFloat: Number(openingFloat),
+        OpeningNote: note.trim() || undefined,
+      });
+      onDone();
+    } catch (err) { setError(err.response?.data?.error || 'Vardiya açılamadı.'); setBusy(false); }
+  };
+
+  return (
+    <Modal title={`Vardiya Başlat · ${user.FullName}`} onClose={onClose}>
+      <p className="font-mono text-[11px] text-slate mb-3">{user.FullName} ({user.Role}) adına vardiya açılacak.</p>
+      <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Açılış Kasası</label>
+      <input type="number" min="0" step="0.01" autoFocus value={openingFloat} onChange={(e) => setOpeningFloat(e.target.value)} placeholder="0.00"
+        className="w-full border border-hairline rounded-lg px-3 py-2 font-mono text-sm text-paper bg-charcoal mb-3 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember" />
+      <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Not (opsiyonel)</label>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+        className="w-full border border-hairline rounded-lg px-3 py-2 font-body text-sm text-paper bg-charcoal mb-3 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember" />
+      {error && <p className="text-ember text-sm mb-3">{error}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={onClose} disabled={busy} className="font-mono text-xs uppercase text-slate border border-hairline rounded-lg py-2.5 disabled:opacity-50">Vazgeç</button>
+        <button onClick={submit} disabled={busy} className="font-mono text-xs uppercase text-cream bg-moss hover:bg-moss/90 rounded-lg py-2.5 disabled:opacity-50">{busy ? '…' : 'Başlat'}</button>
       </div>
     </Modal>
   );

@@ -13,6 +13,7 @@ import ProductGridSkeleton from '../components/ProductGridSkeleton';
 import EmptyState from '../components/EmptyState';
 import { calculateLineTotal } from '../components/PriceCalculator';
 import { isProductAvailable } from '../utils/productAvailability';
+import { printKitchenTicket } from '../utils/print';
 
 const STATUS_CONFIG = {
   Empty: { label: 'Boş', dot: 'bg-moss', border: 'border-hairline', bg: 'bg-panel' },
@@ -92,7 +93,7 @@ const fmtResTime = (v) => {
 // ============================================================
 // Premium masa kartı — minimal, sürükle-bırak destekli
 // ============================================================
-function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isAdmin, isDragging, isDropTarget, onOpen, onPayment, onEdit, onDelete, onDragStart, onDragOverCard, onDropCard, onDragEnd }) {
+function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isAdmin, canManageReservation, isDragging, isDropTarget, onOpen, onPayment, onBill, onEdit, onDelete, onReserve, onCancelReservation, onDragStart, onDragOverCard, onDropCard, onDragEnd }) {
   const hasActiveOrder = Boolean(table.ActiveOrderId);
   const cfg = STATUS_CONFIG[table.Status] || STATUS_CONFIG.Empty;
 
@@ -171,15 +172,26 @@ function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isA
       {/* Aksiyon alanı — duruma göre tek net eylem */}
       <div className="mt-auto pt-3">
         {hasActiveOrder ? (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onPayment(); }}
-            className="w-full flex items-center justify-center gap-2 font-mono text-sm uppercase tracking-wide text-cream
-                       bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl py-3 min-h-[3rem]
-                       shadow-sm transition-colors"
-          >
-            💳 Ödeme Al
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onPayment(); }}
+              className="flex-1 flex items-center justify-center gap-2 font-mono text-sm uppercase tracking-wide text-cream
+                         bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl py-3 min-h-[3rem]
+                         shadow-sm transition-colors"
+            >
+              💳 Ödeme Al
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onBill(); }}
+              title="Fatura Görüntüle"
+              className="flex items-center justify-center font-mono text-sm text-slate border border-hairline
+                         hover:border-ember hover:text-ember rounded-xl px-3 min-h-[3rem] transition-colors"
+            >
+              🧾
+            </button>
+          </div>
         ) : table.Status === 'Reserved' ? (
           <div className="rounded-xl bg-azure/10 border border-azure/30 px-3 py-2.5">
             <p className="font-mono text-[9px] uppercase tracking-widest text-azure mb-1">Rezervasyon</p>
@@ -187,6 +199,15 @@ function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isA
               <div className="font-mono text-[11px] text-paper space-y-0.5">
                 <p className="truncate">👤 {reservation.CustomerName}</p>
                 <p className="text-slate">🕒 {fmtResTime(reservation.ReservationTime)}{reservation.PartySize ? ` · ${reservation.PartySize} kişi` : ''}</p>
+                {canManageReservation && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onCancelReservation(reservation); }}
+                    className="mt-1 font-mono text-[10px] uppercase tracking-wide text-ember hover:text-ember/80"
+                  >
+                    ✕ Rezervasyonu İptal Et
+                  </button>
+                )}
               </div>
             ) : (
               <p className="font-mono text-[11px] text-slate">Detay yok</p>
@@ -206,10 +227,13 @@ function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isA
 
       {/* Admin düzenle/sil — her zaman görünür (opacity-0+hover dokunmatik ekranda
           hover olmadığı için hiç görünmez/tıklanamaz hale geliyordu) */}
-      {isAdmin && (
+      {(isAdmin || (canManageReservation && table.Status === 'Empty')) && (
         <div className="flex items-center justify-end gap-3 mt-2">
-          <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-ember py-1 px-1">Düzenle</button>
-          <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-red-500 py-1 px-1">Sil</button>
+          {canManageReservation && table.Status === 'Empty' && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onReserve(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-azure py-1 px-1">Rezerve Et</button>
+          )}
+          {isAdmin && <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-ember py-1 px-1">Düzenle</button>}
+          {isAdmin && <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-red-500 py-1 px-1">Sil</button>}
         </div>
       )}
     </div>
@@ -281,6 +305,7 @@ function TransferConfirmModal({ from, to, type, submitting, error, onCancel, onC
 export default function Tables() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
+  const canManageReservation = isAdmin || user?.role === 'Cashier';
 
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -298,6 +323,7 @@ export default function Tables() {
   const [editingTable, setEditingTable] = useState(null);
   const [quickPaymentTableId, setQuickPaymentTableId] = useState(null);
   const [quickBillTableId, setQuickBillTableId] = useState(null);
+  const [reserveTable, setReserveTable] = useState(null);
   const [flashTableId, setFlashTableId] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -412,6 +438,22 @@ export default function Tables() {
       fetchTables({ silent: true });
     } catch (err) {
       alert(err.response?.data?.error || 'Masa silinemedi.');
+    }
+  };
+
+  const cancelReservation = async (reservation) => {
+    if (!window.confirm('Bu rezervasyonu iptal etmek istediğinize emin misiniz?')) return;
+    try {
+      await client.patch(`/reservations/${reservation.ReservationId}/cancel`);
+      const table = tables.find((t) => t.TableId === reservation.TableId);
+      if (table && table.Status === 'Reserved') {
+        await client.patch(`/tables/${reservation.TableId}/status`, { Status: 'Empty' });
+      }
+      fetchReservations();
+      fetchTables({ silent: true });
+      setToast({ message: 'Rezervasyon iptal edildi.' });
+    } catch (err) {
+      setToast({ message: err.response?.data?.error || 'Rezervasyon iptal edilemedi.' });
     }
   };
 
@@ -614,12 +656,16 @@ export default function Tables() {
               flashing={flashTableId === table.TableId}
               needsPay={needsPayment(table)}
               isAdmin={isAdmin}
+              canManageReservation={canManageReservation}
               isDragging={draggingId === table.TableId}
               isDropTarget={dragOverId === table.TableId && draggingId != null && draggingId !== table.TableId}
               onOpen={() => openDetail(table.TableId)}
               onPayment={() => setQuickPaymentTableId(table.TableId)}
+              onBill={() => setQuickBillTableId(table.TableId)}
               onEdit={() => setEditingTable(table)}
               onDelete={() => deleteTable(table.TableId)}
+              onReserve={() => setReserveTable(table)}
+              onCancelReservation={cancelReservation}
               onDragStart={handleDragStart}
               onDragOverCard={handleDragOverCard}
               onDropCard={handleDropCard}
@@ -691,6 +737,21 @@ export default function Tables() {
             await client.post('/tables', { TableNumber: values.TableNumber, Capacity: values.Capacity, Area: values.Area || DEFAULT_AREA });
             setShowCreateModal(false);
             fetchTables({ silent: true });
+          }}
+        />
+      )}
+
+      {reserveTable && (
+        <ReservationFormModal
+          table={reserveTable}
+          onClose={() => setReserveTable(null)}
+          onSubmit={async (values) => {
+            await client.post('/reservations', { TableId: reserveTable.TableId, ...values });
+            await client.patch(`/tables/${reserveTable.TableId}/status`, { Status: 'Reserved' });
+            setReserveTable(null);
+            fetchReservations();
+            fetchTables({ silent: true });
+            setToast({ message: 'Rezervasyon oluşturuldu, masa rezerve edildi.' });
           }}
         />
       )}
@@ -856,6 +917,7 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
             userId={userId}
             products={products}
             categories={categories}
+            tableLabel={`Masa ${detail.TableNumber}`}
             onOrdered={async (msg) => {
               setActionMessage(msg);
               setActionError('');
@@ -891,6 +953,7 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
             userId={userId}
             products={products}
             categories={categories}
+            tableLabel={`Masa ${detail.TableNumber}`}
             onOrdered={async (msg, meta) => {
               // Yeni sipariş oluşturulunca: modalı otomatik kapat, panoya dön,
               // sadece etkilenen masayı tazele (kasiyer manuel kapatmaz).
@@ -931,7 +994,7 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 // Masada aktif sipariş yokken: ürünleri (fotoğraflı) listele, sepete ekle,
 // "Sipariş Ver" ile POST /api/orders çağır.
 // ============================================================
-function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, products, categories, onOrdered, onError }) {
+function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, products, categories, tableLabel, onOrdered, onError }) {
   const { ProductOptionsPopupEnabled } = useSettings();
   // { [ProductId]: { quantity, extras: { [ExtraProductId]: quantity }, syrups: { [SyrupProductId]: quantity } } }
   const [cart, setCart] = useState({});
@@ -1144,15 +1207,38 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
         };
       });
 
+      let newOrderId = existingOrderId;
       if (existingOrderId) {
         await client.post(`/orders/${existingOrderId}/items`, { Items: itemsPayload });
       } else {
-        await client.post('/orders', {
+        const res = await client.post('/orders', {
           TableId: tableId,
           UserId: userId,
           Items: itemsPayload,
           Note: note.trim() || undefined,
         });
+        newOrderId = res.data?.order?.OrderId;
+      }
+
+      // Mutfak/bar fişi — fiyat içermez, sadece adet + ürün + ekstra/şurup + not.
+      // Sepet temizlenmeden önce, o an ekranda gösterilen isimlerle (findOption) kurulur.
+      const kitchenItems = cartEntries.map(([productId, line]) => {
+        const product = products.find((p) => String(p.ProductId) === String(productId));
+        return {
+          quantity: line.quantity,
+          name: product?.Name || `Ürün #${productId}`,
+          extras: Object.entries(line.extras)
+            .filter(([, qty]) => qty > 0)
+            .map(([extraId, qty]) => ({ quantity: qty, name: findOption(productId, 'extras', extraId)?.Name || 'Ekstra' })),
+          syrups: Object.entries(line.syrups)
+            .filter(([, qty]) => qty > 0)
+            .map(([syrupId, qty]) => ({ quantity: qty, name: findOption(productId, 'syrups', syrupId)?.Name || 'Şurup' })),
+        };
+      });
+      try {
+        printKitchenTicket({ orderId: newOrderId, tableLabel, items: kitchenItems, note: note.trim() });
+      } catch {
+        // Yazdırma başarısız olsa bile (ör. pop-up engellendi) sipariş akışı durmamalı
       }
 
       setCart({});
@@ -1786,6 +1872,129 @@ function TableFormModal({ title, initial, initialArea = DEFAULT_AREA, onClose, o
                        hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
           >
             {submitting ? 'Kaydediliyor...' : 'Kaydet'}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+// ============================================================
+// Rezervasyon oluşturma formu — masa kartındaki "Rezerve Et" butonu için.
+// ============================================================
+function ReservationFormModal({ table, onClose, onSubmit }) {
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [partySize, setPartySize] = useState('');
+  const [reservationTime, setReservationTime] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!customerName.trim()) { setError('Müşteri adı zorunludur.'); return; }
+    if (!partySize || Number(partySize) <= 0) { setError('Kişi sayısı geçerli bir sayı olmalıdır.'); return; }
+    if (!reservationTime) { setError('Rezervasyon zamanı zorunludur.'); return; }
+
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        CustomerName: customerName.trim(),
+        CustomerPhone: customerPhone.trim() || undefined,
+        PartySize: Number(partySize),
+        ReservationTime: new Date(reservationTime).toISOString(),
+        Note: note.trim() || undefined,
+      });
+    } catch (err) {
+      setError(err.response?.data?.error || 'Rezervasyon oluşturulamadı.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} title={`Masa ${table.TableNumber} — Rezervasyon`} eyebrow="Rezervasyon">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Müşteri Adı</label>
+          <input
+            type="text"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
+                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          />
+        </div>
+        <div>
+          <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+            Telefon <span className="normal-case text-slate/70">(opsiyonel)</span>
+          </label>
+          <input
+            type="text"
+            value={customerPhone}
+            onChange={(e) => setCustomerPhone(e.target.value)}
+            className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
+                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Kişi Sayısı</label>
+            <input
+              type="number"
+              min="1"
+              value={partySize}
+              onChange={(e) => setPartySize(e.target.value)}
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+          </div>
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Tarih / Saat</label>
+            <input
+              type="datetime-local"
+              value={reservationTime}
+              onChange={(e) => setReservationTime(e.target.value)}
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+            Not <span className="normal-case text-slate/70">(opsiyonel)</span>
+          </label>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper
+                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          />
+        </div>
+
+        {error && (
+          <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{error}</p>
+        )}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
+          >
+            Vazgeç
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
+                       hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
+          >
+            {submitting ? 'Kaydediliyor...' : 'Rezerve Et'}
           </button>
         </div>
       </form>

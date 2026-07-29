@@ -115,6 +115,48 @@ async function openShift(req, res) {
     }
 }
 
+// POST /api/shifts/open-for  body: { UserId, OpeningFloat, OpeningNote? } (Yönetici)
+// Admin, kendi adına değil BAŞKA bir kullanıcı (kasiyer/garson) adına vardiya açar
+// (ör. personel unuttuğunda ya da vardiyayı yönetici bizzat başlatmak istediğinde).
+async function openShiftFor(req, res) {
+    try {
+        const { UserId, OpeningFloat, OpeningNote } = req.body;
+        if (!UserId) return res.status(400).json({ error: 'UserId zorunludur' });
+        if (OpeningFloat !== undefined && (typeof OpeningFloat !== 'number' || OpeningFloat < 0)) {
+            return res.status(400).json({ error: 'Açılış kasası negatif olmayan bir sayı olmalı' });
+        }
+
+        const pool = await connectDB();
+
+        const targetRes = await pool.request()
+            .input('UserId', sql.Int, UserId)
+            .query(`SELECT UserId, IsActive FROM Users WHERE UserId = @UserId`);
+        if (targetRes.recordset.length === 0 || !targetRes.recordset[0].IsActive) {
+            return res.status(400).json({ error: 'Hedef kullanıcı bulunamadı veya aktif değil' });
+        }
+
+        const existing = await pool.request()
+            .input('UserId', sql.Int, UserId)
+            .query(`SELECT ShiftId FROM Shifts WHERE UserId = @UserId AND Status = 'Open'`);
+        if (existing.recordset.length > 0) {
+            return res.status(409).json({ error: 'Bu kullanıcının zaten açık bir vardiyası var.' });
+        }
+
+        const result = await pool.request()
+            .input('UserId', sql.Int, UserId)
+            .input('OpeningFloat', sql.Decimal(10, 2), OpeningFloat || 0)
+            .input('OpeningNote', sql.NVarChar(500), OpeningNote || null)
+            .query(`INSERT INTO Shifts (UserId, OpeningFloat, OpeningNote) OUTPUT INSERTED.* VALUES (@UserId, @OpeningFloat, @OpeningNote)`);
+
+        const shift = result.recordset[0];
+        logAudit(pool, { userId: req.user?.userId, action: 'SHIFT_OPEN_FOR', entityType: 'Shift', entityId: shift.ShiftId, details: { forUserId: UserId, OpeningFloat: OpeningFloat || 0 } });
+        return res.status(201).json(shift);
+    } catch (err) {
+        console.error('Vardiya (başkası adına) açılırken hata:', err);
+        return res.status(500).json({ error: 'Vardiya açılamadı' });
+    }
+}
+
 // Ortak kapatma yardımcı: bir vardiyayı kapatır, beklenen/fark hesaplar.
 async function closeShiftRecord(pool, shift, countedCash, note) {
     const expectedCash = await computeExpectedCash(pool, shift.ShiftId, shift.UserId, shift.OpenedAt, shift.OpeningFloat);
@@ -271,6 +313,6 @@ async function listShifts(req, res) {
 }
 
 module.exports = {
-    getCurrentShift, openShift, closeShift, listShifts,
+    getCurrentShift, openShift, openShiftFor, closeShift, listShifts,
     getActiveShifts, forceCloseShift, forceLogoutCashier, transferShift,
 };

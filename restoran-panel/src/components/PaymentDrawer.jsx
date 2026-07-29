@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import client from '../api/client';
 import { getSocket } from '../api/socket';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
+import { printCustomerReceipt } from '../utils/print';
 
 const money = (n) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(n) || 0);
@@ -69,6 +71,7 @@ function AnimatedMoney({ value, className = '' }) {
 // ============================================================
 export default function PaymentDrawer({ order, resolveProductName, tableLabel, onPaid, autoOpen = false, hideTrigger = false, onClose, triggerClassName, triggerLabel }) {
   const { user } = useAuth();
+  const { RestaurantName } = useSettings();
   const canDiscount = ['Cashier', 'Admin'].includes(user?.role);
 
   const [open, setOpen] = useState(autoOpen);
@@ -95,6 +98,38 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
   const [splitMode, setSplitMode] = useState(false);
   const [split, setSplit] = useState({ Cash: '', Card: '', QR: '', FoodCard: '' });
   const [lastReceipt, setLastReceipt] = useState(null);
+
+  // e-Arşiv fatura kesme — henüz gerçek bir entegratör bağlı değil, backend
+  // utils/invoiceProvider.js içinde MOCK bir fatura numarası üretiyor.
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false);
+  const [invoiceCustomerName, setInvoiceCustomerName] = useState('');
+  const [invoiceTckn, setInvoiceTckn] = useState('');
+  const [invoiceEmail, setInvoiceEmail] = useState('');
+  const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
+  const [invoiceError, setInvoiceError] = useState('');
+  const [invoiceResult, setInvoiceResult] = useState(null);
+
+  const issueInvoice = async () => {
+    setInvoiceError('');
+    if (invoiceTckn.trim() && !/^\d{11}$/.test(invoiceTckn.trim())) {
+      setInvoiceError('TCKN 11 haneli bir sayı olmalıdır.');
+      return;
+    }
+    setInvoiceSubmitting(true);
+    try {
+      const res = await client.post(`/invoices/order/${order.OrderId}`, {
+        CustomerName: invoiceCustomerName.trim() || undefined,
+        CustomerTckn: invoiceTckn.trim() || undefined,
+        CustomerEmail: invoiceEmail.trim() || undefined,
+      });
+      setInvoiceResult(res.data);
+      setShowInvoiceForm(false);
+    } catch (err) {
+      setInvoiceError(err.response?.data?.error || 'Fatura kesilemedi.');
+    } finally {
+      setInvoiceSubmitting(false);
+    }
+  };
 
   const loadBalance = useCallback(async () => {
     setBalanceLoading(true);
@@ -264,9 +299,7 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
     return lines.join('\n');
   };
   const printReceipt = () => {
-    const w = window.open('', 'PRINT', 'height=640,width=380');
-    if (!w) return;
-    const rows = items
+    const rowsHtml = items
       .map((it) => {
         const name = resolveProductName ? resolveProductName(it.ProductId) : `Ürün #${it.ProductId}`;
         const optionRows = [
@@ -276,22 +309,16 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
         return `<tr><td>${it.Quantity}×</td><td>${name}</td><td style="text-align:right">${money(it.Quantity * it.UnitPrice)}</td></tr>${optionRows}`;
       })
       .join('');
-    w.document.write(`
-      <html><head><title>Fiş #${order.OrderId}</title>
-      <style>*{font-family:'Courier New',monospace;font-size:12px;color:#000}h2{font-size:14px;margin:0 0 2px;text-align:center}table{width:100%;border-collapse:collapse;margin:6px 0}td{padding:2px 0}.hr{border-top:1px dashed #000;margin:6px 0}.tot{display:flex;justify-content:space-between}.big{font-size:16px;font-weight:bold}.center{text-align:center}</style>
-      </head><body>
-        <h2>RESTORAN</h2>
-        <div class="center">Sipariş #${order.OrderId}${tableLabel ? ' · ' + tableLabel : ''}</div>
-        <div class="hr"></div><table>${rows}</table><div class="hr"></div>
-        <div class="tot"><span>Toplam</span><span>${money(totalAmount)}</span></div>
-        ${totalPaid > 0 ? `<div class="tot"><span>Ödenen</span><span>${money(totalPaid)}</span></div>` : ''}
-        <div class="tot big"><span>Kalan</span><span>${money(remaining)}</span></div>
-        <div class="hr"></div><div class="center">Teşekkür ederiz!</div>
-      </body></html>`);
-    w.document.close();
-    w.focus();
-    w.print();
-    w.close();
+    printCustomerReceipt({
+      restaurantName: RestaurantName || 'RESTORAN',
+      orderId: order.OrderId,
+      tableLabel,
+      rowsHtml,
+      totalAmount,
+      totalPaid,
+      remaining,
+      money,
+    });
   };
   const sendWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(receiptLines())}`, '_blank');
   const sendEmail = () => { window.location.href = `mailto:?subject=${encodeURIComponent(`Fiş #${order.OrderId}`)}&body=${encodeURIComponent(receiptLines())}`; };
@@ -566,6 +593,75 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                           <button type="button" onClick={sendEmail} className="font-mono text-[10px] uppercase tracking-wide px-2 py-3 rounded-lg bg-panel border border-azure/40 text-azure hover:bg-azure/10 transition-colors">E-posta</button>
                         </div>
                       )}
+
+                      {/* e-Arşiv fatura kesme — mock (bkz. utils/invoiceProvider.js) */}
+                      <div className="mt-3 w-full max-w-xs text-left">
+                        {invoiceResult ? (
+                          <div className="rounded-lg border border-moss/40 bg-moss/5 px-3 py-2">
+                            <p className="font-mono text-[10px] uppercase tracking-wide text-moss">
+                              e-Arşiv Fişi Kesildi (TEST/MOCK)
+                            </p>
+                            <p className="font-mono text-xs text-paper mt-0.5">{invoiceResult.InvoiceNumber}</p>
+                          </div>
+                        ) : showInvoiceForm ? (
+                          <div className="rounded-lg border border-hairline bg-panel p-3 space-y-2">
+                            <input
+                              type="text"
+                              value={invoiceCustomerName}
+                              onChange={(e) => setInvoiceCustomerName(e.target.value)}
+                              placeholder="Müşteri adı (opsiyonel)"
+                              className="w-full border border-hairline rounded-sm px-2.5 py-2 font-body text-xs text-paper bg-charcoal
+                                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                            />
+                            <input
+                              type="text"
+                              value={invoiceTckn}
+                              onChange={(e) => setInvoiceTckn(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                              placeholder="TCKN (opsiyonel)"
+                              maxLength={11}
+                              className="w-full border border-hairline rounded-sm px-2.5 py-2 font-mono text-xs text-paper bg-charcoal
+                                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                            />
+                            <input
+                              type="email"
+                              value={invoiceEmail}
+                              onChange={(e) => setInvoiceEmail(e.target.value)}
+                              placeholder="E-posta (opsiyonel)"
+                              className="w-full border border-hairline rounded-sm px-2.5 py-2 font-body text-xs text-paper bg-charcoal
+                                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                            />
+                            {invoiceError && <p className="text-ember text-[10px] font-medium">{invoiceError}</p>}
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => { setShowInvoiceForm(false); setInvoiceError(''); }}
+                                disabled={invoiceSubmitting}
+                                className="flex-1 font-mono text-[10px] uppercase tracking-wide text-slate hover:text-paper
+                                           border border-hairline rounded-sm px-2 py-2 transition-colors disabled:opacity-50"
+                              >
+                                Vazgeç
+                              </button>
+                              <button
+                                type="button"
+                                onClick={issueInvoice}
+                                disabled={invoiceSubmitting}
+                                className="flex-1 font-mono text-[10px] uppercase tracking-wide text-cream bg-ember
+                                           hover:bg-ember/90 disabled:opacity-40 rounded-sm px-2 py-2 transition-colors"
+                              >
+                                {invoiceSubmitting ? 'Kesiliyor...' : 'Onayla'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setShowInvoiceForm(true)}
+                            className="w-full font-mono text-[10px] uppercase tracking-wide px-2 py-3 rounded-lg bg-panel border border-hairline text-paper hover:bg-hairline/50 transition-colors"
+                          >
+                            🧾 e-Arşiv Fatura Kes
+                          </button>
+                        )}
+                      </div>{/* /e-Arşiv fatura kesme */}
                     </div>
                   ) : (
                     <>
