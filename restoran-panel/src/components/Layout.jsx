@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { to: '/orders', label: 'Siparişler', roles: null, icon: '🧾' },
   { to: '/tables', label: 'Masalar', roles: null, icon: '🍽️' },
   { to: '/reservations', label: 'Rezervasyonlar', roles: null, icon: '📅' },
+  { to: '/customer-requests', label: 'Müşteri İstekleri', roles: null, icon: '📱' },
   { to: '/kds', label: 'Mutfak', roles: null, icon: '👨‍🍳' },
   { to: '/payments', label: 'Ödemeler', roles: null, icon: '💳' },
   { to: '/reports', label: 'Raporlar', roles: ['Admin', 'Cashier'], icon: '📈' },

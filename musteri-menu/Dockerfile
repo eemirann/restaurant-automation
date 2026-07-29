@@ -1,5 +1,5 @@
 # ============================================================
-# Panel (React + Vite) — çok aşamalı: build + nginx ile servis
+# Müşteri QR Menüsü (React + Vite) — çok aşamalı: build + nginx ile servis
 # ============================================================
 FROM node:20-alpine AS build
 WORKDIR /app
@@ -7,13 +7,9 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
-# VITE_API_URL ve VITE_CUSTOMER_MENU_URL BUILD anında gömülür —
-# compose'tan build arg ile geçilir (bkz. src/pages/CustomerRequests.jsx:
-# masa QR kodları CUSTOMER_MENU_URL'e göre üretilir).
+# VITE_API_URL BUILD anında gömülür — compose'tan build arg ile geçilir.
 ARG VITE_API_URL=http://localhost:4091/api
-ARG VITE_CUSTOMER_MENU_URL=http://localhost:5174
 ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_CUSTOMER_MENU_URL=$VITE_CUSTOMER_MENU_URL
 RUN npm run build
 
 FROM nginx:alpine

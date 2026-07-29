@@ -38,6 +38,9 @@ const auditRoutes = require('./routes/audit');
 const extraRoutes = require('./routes/extras');
 const syrupRoutes = require('./routes/syrups');
 const settingsRoutes = require('./routes/settings');
+const publicMenuRoutes = require('./routes/publicMenu');
+const customerOrderRoutes = require('./routes/customerOrders');
+const serviceRequestRoutes = require('./routes/serviceRequests');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -78,6 +81,9 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/extras', extraRoutes);
 app.use('/api/syrups', syrupRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/public/menu', publicMenuRoutes);
+app.use('/api/customer-orders', customerOrderRoutes);
+app.use('/api/service-requests', serviceRequestRoutes);
 
 // Hata yönetimi (TÜM route'lardan SONRA olmalı)
 app.use(notFoundHandler);

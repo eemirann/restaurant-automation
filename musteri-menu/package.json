@@ -1,5 +1,5 @@
 {
-  "name": "restoran-panel",
+  "name": "musteri-menu",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,17 +11,11 @@
   },
   "dependencies": {
     "axios": "^1.18.1",
-    "framer-motion": "^12.42.2",
-    "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1",
-    "recharts": "^3.10.0",
-    "socket.io-client": "^4.8.3"
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.5.4",
     "oxlint": "^1.71.0",
