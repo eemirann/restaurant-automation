@@ -240,6 +240,53 @@ Backend:
 
 ---
 
+## Kampanya + Sadakat Sonrası Durum ve Yeni Boşluklar (2026-08-03 civarı)
+
+Kullanıcı yukarıdaki promptu kendi tarafında uyguladı ve pushladı
+(`3e98e57`). Kod tabanı incelendi, şunlar artık gerçekten çalışıyor
+(123/123 test yeşil):
+
+- Kampanya/combo motoru (`controllers/campaignController.js`,
+  `ComboOffers`/`ComboOfferItems`/`Campaigns`)
+- Kullanıcı adı bazlı sadakat + puanla ücretsiz ürün
+  (`controllers/loyaltyController.js` — `redeemLoyaltyProduct`,
+  transaction içinde puan/uygunluk yeniden doğrulanıyor)
+- Masa Alanları yönetimi (`tableAreaController.js`)
+- Vergi/Fatura bilgileri + e-Fatura sağlayıcı ayarları (API key
+  BİLEREK ayrı `InvoiceProviderSettings` tablosunda — `AppSettings`
+  public okunduğu için oraya konmamış, iyi bir güvenlik kararı)
+- Yazıcı ayarları (`KitchenAutoPrintEnabled`, `PrinterPaperWidth`)
+- Bonus: Kafe bilgi notu + sosyal medya + iletişim paneli
+  (musteri-menu sol panel için, planlanmamıştı ama iyi bir ek)
+- musteri-menu tamamen beyaz/premium bir temaya geçirilmiş (ilk
+  KOMA-tarzı koyu temadan vazgeçilmiş — kullanıcı kendi zevkine göre
+  yeniden tasarlamış)
+
+**Yeni tespit edilen boşluklar (öncelik sırasıyla):**
+
+1. **Kampanya zamanlaması tek seferlik** — `Campaigns.StartAt`/`EndAt`
+   sadece DATETIME aralığı, günlük tekrar eden "happy hour" desteği
+   yok (oysa orijinal fikir "her gün X saatinde Y kampanyası" idi).
+   Öneri: nullable `RecurringDailyStartTime`/`RecurringDailyEndTime`
+   (TIME), doluysa `publicMenuController.js`'teki aktiflik sorgusuna
+   `CAST(GETDATE() AS TIME) BETWEEN ...` eklenir.
+2. **Müşteri kendi puanını göremiyor** — Username sadece puan
+   kazanmak için toplanıyor, musteri-menu'de bakiye görüntüleme yok.
+   Öneri: StaffView'e (ya da yeni sekmeye) rate-limitli, anonim bir
+   "Puanlarım" görünümü (`publicMenuActionLimiter` deseniyle).
+3. **Dashboard'da kampanya/sadakat analitiği yok** — `dashboardController.js`'de
+   hiç sorgu yok. Öneri: en çok satılan combo, kaç farklı kullanıcı
+   puan biriktirmiş, toplam harcanan puan (=verilen ücretsiz ürün)
+   gibi metrikler (mevcut tek-endpoint-çoklu-sorgu desenine eklenir).
+
+**Hâlâ yapılmamış eski öneriler:** Servis Ücreti + Bahşiş
+(PaymentDrawer), Otomatik Yedekleme, Para Birimi.
+
+**Durum:** Sadece fikir/tespit — henüz uygulanmadı, kullanıcı hangisini
+önceliklendireceğine karar verecek.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
