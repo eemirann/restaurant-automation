@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import client, { imageUrl } from '../api/client';
 import OptionRow from './OptionRow';
 import { calculateLineTotal, money } from '../utils/priceCalculator';
+import { useLanguage } from '../i18n';
 
 // Ürün kartına tıklanınca açılan özelleştirme pop-up'ı — restoran-panel'deki
 // ProductDetailModal'ın (kompakt, scroll'suz) müşteri tarafı karşılığı.
 export default function ProductDetailModal({ qrToken, product, initialLine, onClose, onConfirm, onRemove, onOptionsLoaded }) {
+  const { t } = useLanguage();
   const [quantity, setQuantity] = useState(initialLine?.quantity || 1);
   const [extras, setExtras] = useState(initialLine?.extras || {});
   const [syrups, setSyrups] = useState(initialLine?.syrups || {});
@@ -80,7 +82,7 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
 
         <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
           <div className="flex items-center justify-between px-1">
-            <span className="font-mono text-[11px] uppercase tracking-wide text-slate">Adet</span>
+            <span className="font-mono text-[11px] uppercase tracking-wide text-slate">{t('qty')}</span>
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -103,12 +105,12 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
           </div>
 
           {loadingOptions ? (
-            <p className="font-mono text-xs text-slate">Seçenekler yükleniyor...</p>
+            <p className="font-mono text-xs text-slate">{t('loadingOptions')}</p>
           ) : (
             <>
               {extrasCatalog.length > 0 && (
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1">Ekstralar</p>
+                  <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1">{t('extras')}</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {extrasCatalog.map((extra) => (
                       <div key={extra.ProductId} className="border border-hairline rounded-lg">
@@ -125,7 +127,7 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
               )}
               {syrupsCatalog.length > 0 && (
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1">Şuruplar</p>
+                  <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1">{t('syrups')}</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {syrupsCatalog.map((syrup) => (
                       <div key={syrup.ProductId} className="border border-hairline rounded-lg">
@@ -146,7 +148,7 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
 
         <div className="shrink-0 border-t border-hairline p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <div className="flex items-center justify-between mb-2">
-            <span className="font-mono text-xs uppercase tracking-wide text-slate">Toplam</span>
+            <span className="font-mono text-xs uppercase tracking-wide text-slate">{t('total')}</span>
             <span className="font-mono text-lg text-paper font-semibold">{money(total)}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -156,7 +158,7 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
                 onClick={onRemove}
                 className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember px-4 py-3 min-h-[2.75rem]"
               >
-                Sepetten Çıkar
+                {t('removeFromCart')}
               </button>
             )}
             <button
@@ -165,7 +167,7 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
               className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-ember
                          hover:bg-ember/90 active:bg-ember/80 rounded-full px-6 py-3 min-h-[2.75rem] transition-colors"
             >
-              {initialLine ? 'Sepeti Güncelle' : 'Sepete Ekle'}
+              {initialLine ? t('updateCart') : t('addToCart')}
             </button>
           </div>
         </div>

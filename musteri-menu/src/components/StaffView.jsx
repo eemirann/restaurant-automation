@@ -1,29 +1,31 @@
 import { useState } from 'react';
+import { useLanguage } from '../i18n';
 
-const QUICK_REQUESTS = [
-  { type: 'RequestBill', label: 'Hesap İste', icon: '🧾' },
-  { type: 'AskForWater', label: 'Su İste', icon: '💧' },
-  { type: 'NeedNapkins', label: 'Peçete İste', icon: '🧻' },
-  { type: 'ExtraCutlery', label: 'Çatal-Bıçak', icon: '🍴' },
+const QUICK_REQUEST_TYPES = [
+  { type: 'RequestBill', labelKey: 'requestBill', icon: '🧾' },
+  { type: 'AskForWater', labelKey: 'askForWater', icon: '💧' },
+  { type: 'NeedNapkins', labelKey: 'needNapkins', icon: '🧻' },
+  { type: 'ExtraCutlery', labelKey: 'extraCutlery', icon: '🍴' },
 ];
 
-const ORDER_STATUS_LABELS = {
-  Pending: { label: 'Onay Bekliyor', color: 'text-amber-400' },
-  Approved: { label: 'Onaylandı — Hazırlanıyor', color: 'text-moss' },
-  Rejected: { label: 'Reddedildi', color: 'text-ember' },
+const ORDER_STATUS_KEYS = {
+  Pending: { labelKey: 'statusPending', color: 'text-amber-400' },
+  Approved: { labelKey: 'statusApproved', color: 'text-moss' },
+  Rejected: { labelKey: 'statusRejected', color: 'text-ember' },
 };
 
-const SERVICE_TYPE_LABELS = {
-  CallWaiter: 'Garson çağrıldı',
-  RequestBill: 'Hesap istendi',
-  AskForWater: 'Su istendi',
-  NeedNapkins: 'Peçete istendi',
-  ExtraCutlery: 'Çatal-bıçak istendi',
+const SERVICE_TYPE_KEYS = {
+  CallWaiter: 'serviceCallWaiter',
+  RequestBill: 'serviceRequestBill',
+  AskForWater: 'serviceAskForWater',
+  NeedNapkins: 'serviceNeedNapkins',
+  ExtraCutlery: 'serviceExtraCutlery',
 };
 
 // Personel çağırma + hızlı istekler + sipariş/istek durumu — mockup'taki
 // "At your service" ekranının karşılığı.
 export default function StaffView({ tableNumber, status, onSendRequest, sending }) {
+  const { t } = useLanguage();
   const [justSent, setJustSent] = useState(null);
 
   const send = async (type) => {
@@ -32,12 +34,12 @@ export default function StaffView({ tableNumber, status, onSendRequest, sending 
     setTimeout(() => setJustSent(null), 2000);
   };
 
-  const orderCfg = status?.lastOrderRequest ? ORDER_STATUS_LABELS[status.lastOrderRequest.Status] : null;
+  const orderCfg = status?.lastOrderRequest ? ORDER_STATUS_KEYS[status.lastOrderRequest.Status] : null;
 
   return (
     <div className="px-4 pt-4 pb-4">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-ember mb-1">Masa {tableNumber}</p>
-      <h1 className="font-display text-2xl font-semibold text-paper mb-4">Yardım İster misiniz?</h1>
+      <p className="font-mono text-[10px] uppercase tracking-widest text-ember mb-1">{t('table', { n: tableNumber })}</p>
+      <h1 className="font-display text-2xl font-semibold text-paper mb-4">{t('needAHand')}</h1>
 
       <button
         type="button"
@@ -48,14 +50,14 @@ export default function StaffView({ tableNumber, status, onSendRequest, sending 
       >
         <span className="text-4xl">🔔</span>
         <span className="font-mono text-sm uppercase tracking-wide text-ember font-semibold">
-          {justSent === 'CallWaiter' ? 'Garson Çağrıldı ✓' : 'Garson Çağır'}
+          {justSent === 'CallWaiter' ? t('waiterCalled') : t('callWaiter')}
         </span>
-        <span className="font-mono text-[10px] text-slate">Personel size doğru geliyor</span>
+        <span className="font-mono text-[10px] text-slate">{t('staffComing')}</span>
       </button>
 
-      <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Hızlı İstekler</p>
+      <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">{t('quickRequests')}</p>
       <div className="grid grid-cols-2 gap-2 mb-6">
-        {QUICK_REQUESTS.map((q) => (
+        {QUICK_REQUEST_TYPES.map((q) => (
           <button
             key={q.type}
             type="button"
@@ -66,7 +68,7 @@ export default function StaffView({ tableNumber, status, onSendRequest, sending 
           >
             <span className="text-xl">{q.icon}</span>
             <span className="font-mono text-xs text-paper text-left">
-              {justSent === q.type ? 'İletildi ✓' : q.label}
+              {justSent === q.type ? t('sent') : t(q.labelKey)}
             </span>
           </button>
         ))}
@@ -74,12 +76,12 @@ export default function StaffView({ tableNumber, status, onSendRequest, sending 
 
       {(status?.lastOrderRequest || status?.pendingServiceRequests?.length > 0) && (
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Sipariş Durumu</p>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">{t('orderStatus')}</p>
           <div className="space-y-2">
             {status?.lastOrderRequest && (
               <div className="border border-hairline rounded-xl bg-panel p-3">
                 <p className={`font-mono text-sm font-semibold ${orderCfg?.color || 'text-paper'}`}>
-                  {orderCfg?.label || status.lastOrderRequest.Status}
+                  {orderCfg ? t(orderCfg.labelKey) : status.lastOrderRequest.Status}
                 </p>
                 {status.lastOrderRequest.Status === 'Rejected' && status.lastOrderRequest.RejectionReason && (
                   <p className="text-xs text-slate mt-1">{status.lastOrderRequest.RejectionReason}</p>
@@ -88,8 +90,8 @@ export default function StaffView({ tableNumber, status, onSendRequest, sending 
             )}
             {(status?.pendingServiceRequests || []).map((r) => (
               <div key={r.ServiceRequestId} className="border border-hairline rounded-xl bg-panel p-3 flex items-center justify-between">
-                <span className="font-mono text-xs text-slate">{SERVICE_TYPE_LABELS[r.Type] || r.Type}</span>
-                <span className="font-mono text-[10px] uppercase text-amber-400">Bekleniyor</span>
+                <span className="font-mono text-xs text-slate">{SERVICE_TYPE_KEYS[r.Type] ? t(SERVICE_TYPE_KEYS[r.Type]) : r.Type}</span>
+                <span className="font-mono text-[10px] uppercase text-amber-400">{t('waitingStatus')}</span>
               </div>
             ))}
           </div>

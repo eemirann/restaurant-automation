@@ -1,10 +1,14 @@
+import { useLanguage } from '../i18n';
+
 const TABS = [
-  { key: 'menu', label: 'Menü', icon: '🍽️' },
-  { key: 'cart', label: 'Sepet', icon: '🛒' },
-  { key: 'staff', label: 'Çağır', icon: '🔔' },
+  { key: 'menu', labelKey: 'navMenu', icon: '🍽️' },
+  { key: 'cart', labelKey: 'navCart', icon: '🛒' },
+  { key: 'staff', labelKey: 'navCall', icon: '🔔' },
 ];
 
 export default function BottomNav({ active, onChange, cartCount, hasAlert }) {
+  const { t } = useLanguage();
+
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 bg-panel border-t border-hairline flex z-40
@@ -30,7 +34,7 @@ export default function BottomNav({ active, onChange, cartCount, hasAlert }) {
               <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-ember" />
             )}
           </span>
-          <span className="font-mono text-[10px] uppercase tracking-wide">{tab.label}</span>
+          <span className="font-mono text-[10px] uppercase tracking-wide">{t(tab.labelKey)}</span>
         </button>
       ))}
     </nav>

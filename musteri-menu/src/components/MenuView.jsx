@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { imageUrl } from '../api/client';
 import { money } from '../utils/priceCalculator';
+import { useLanguage } from '../i18n';
 
 // Menü listeleme: kategori filtresi + arama + ürün ızgarası.
 // Mockup'taki "Popular Right Now" / kategori sekmeleri ekranının karşılığı.
 export default function MenuView({ tableNumber, categories, products, cart, onOpenProduct }) {
+  const { t } = useLanguage();
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -19,14 +21,14 @@ export default function MenuView({ tableNumber, categories, products, cart, onOp
   return (
     <div className="pb-4">
       <div className="px-4 pt-4">
-        <p className="font-mono text-[10px] uppercase tracking-widest text-ember mb-1">Masa {tableNumber}</p>
-        <h1 className="font-display text-2xl font-semibold text-paper mb-3">Menü</h1>
+        <p className="font-mono text-[10px] uppercase tracking-widest text-ember mb-1">{t('table', { n: tableNumber })}</p>
+        <h1 className="font-display text-2xl font-semibold text-paper mb-3">{t('menuTitle')}</h1>
 
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Menüde ara..."
+          placeholder={t('searchPlaceholder')}
           className="w-full border border-hairline rounded-full px-4 py-2.5 bg-panel text-paper text-sm mb-4
                      focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
         />
@@ -34,7 +36,7 @@ export default function MenuView({ tableNumber, categories, products, cart, onOp
 
       {!normalizedSearch && popular.length > 0 && (
         <div className="mb-5">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-slate px-4 mb-2">Şu An Popüler</p>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-slate px-4 mb-2">{t('popularNow')}</p>
           <div className="flex gap-3 overflow-x-auto px-4 pb-1 snap-x">
             {popular.map((p) => (
               <button
@@ -66,7 +68,7 @@ export default function MenuView({ tableNumber, categories, products, cart, onOp
             activeCategory === 'all' ? 'bg-ember text-cream border-ember' : 'border-hairline text-slate'
           }`}
         >
-          Tümü
+          {t('all')}
         </button>
         {categories.map((c) => (
           <button
@@ -84,7 +86,7 @@ export default function MenuView({ tableNumber, categories, products, cart, onOp
 
       <div className="grid grid-cols-2 gap-3 px-4">
         {visibleProducts.length === 0 ? (
-          <p className="col-span-2 text-center text-slate font-mono text-sm py-10">Ürün bulunamadı.</p>
+          <p className="col-span-2 text-center text-slate font-mono text-sm py-10">{t('noProducts')}</p>
         ) : (
           visibleProducts.map((p) => {
             const qty = cart[p.ProductId]?.quantity || 0;

@@ -6,12 +6,15 @@ import MenuView from '../components/MenuView';
 import CartView from '../components/CartView';
 import StaffView from '../components/StaffView';
 import ProductDetailModal from '../components/ProductDetailModal';
+import LanguageToggle from '../components/LanguageToggle';
+import { useLanguage } from '../i18n';
 
 // Ana orkestratör: menüyü yükler, sepeti ve görünüm (Menü/Sepet/Çağır)
 // durumunu yönetir. Kimlik doğrulaması yok — erişim tamamen URL'deki
 // QR token'a bağlı (bkz. backend: controllers/publicMenuController.js).
 export default function MenuApp() {
   const { qrToken } = useParams();
+  const { t } = useLanguage();
 
   const [menu, setMenu] = useState(null); // { table, categories, products }
   const [loading, setLoading] = useState(true);
@@ -37,7 +40,7 @@ export default function MenuApp() {
     setError('');
     client.get(`/public/menu/${qrToken}`)
       .then((res) => { if (active) setMenu(res.data); })
-      .catch((err) => { if (active) setError(err.response?.data?.error || 'Menü getirilemedi. QR kodu tekrar okutmayı deneyin.'); })
+      .catch((err) => { if (active) setError(err.response?.data?.error || t('errorDefault')); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [qrToken]);
@@ -94,7 +97,7 @@ export default function MenuApp() {
       fetchStatus();
       setView('staff');
     } catch (err) {
-      setSubmitError(err.response?.data?.error || 'Sipariş gönderilemedi.');
+      setSubmitError(err.response?.data?.error || t('orderSendError'));
     } finally {
       setSubmitting(false);
     }
@@ -116,7 +119,8 @@ export default function MenuApp() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-charcoal font-body">
-        <p className="text-slate font-mono text-sm">Menü yükleniyor...</p>
+        <LanguageToggle />
+        <p className="text-slate font-mono text-sm">{t('loadingMenu')}</p>
       </div>
     );
   }
@@ -124,9 +128,10 @@ export default function MenuApp() {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6 text-center bg-charcoal font-body">
+        <LanguageToggle />
         <div>
           <p className="text-5xl mb-4">😕</p>
-          <p className="font-display text-lg font-semibold text-paper mb-2">Bir şeyler ters gitti</p>
+          <p className="font-display text-lg font-semibold text-paper mb-2">{t('errorTitle')}</p>
           <p className="text-slate text-sm">{error}</p>
         </div>
       </div>
@@ -135,6 +140,7 @@ export default function MenuApp() {
 
   return (
     <div className="min-h-screen bg-charcoal font-body pb-20">
+      <LanguageToggle />
       {view === 'menu' && (
         <MenuView
           tableNumber={menu.table.TableNumber}
