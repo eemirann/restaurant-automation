@@ -13,7 +13,7 @@ const { HttpError } = require('../utils/httpError');
 // Fiyat sunucuda Products.Price (+ ProductVariants.Price varsa) üzerinden hesaplanır.
 // ============================================================
 async function createOrder(req, res) {
-    const { TableId, UserId, Items, Note } = req.body;
+    const { TableId, UserId, Items, Note, Combos } = req.body;
 
     let pool;
     try {
@@ -28,7 +28,7 @@ async function createOrder(req, res) {
     try {
         await transaction.begin();
 
-        const { order, totalAmount, lowStockWarnings } = await buildOrderInTransaction(transaction, { TableId, UserId, Items, Note });
+        const { order, totalAmount, lowStockWarnings } = await buildOrderInTransaction(transaction, { TableId, UserId, Items, Note, Combos });
 
         await transaction.commit();
         emitTablesChanged();

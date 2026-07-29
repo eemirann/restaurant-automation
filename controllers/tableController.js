@@ -3,8 +3,14 @@ const { emitTablesChanged } = require('../config/socket');
 const { logAudit } = require('../utils/audit');
 const { attachOrderItemOptions } = require('../utils/orderItemOptions');
 
-// Geçerli masa bölgeleri (Tables.Area CHECK kısıtıyla aynı olmalı).
-const ALLOWED_AREAS = ['Salon', 'Terrace', 'Garden', 'VIP', 'Bar'];
+// Geçerli masa bölgeleri artık sabit değil — admin tarafından yönetilen
+// TableAreas tablosundan (bkz. controllers/tableAreaController.js) okunur.
+async function isActiveArea(pool, name) {
+    const result = await pool.request()
+        .input('Name', sql.NVarChar(20), name)
+        .query(`SELECT AreaId FROM TableAreas WHERE Name = @Name AND IsActive = 1`);
+    return result.recordset.length > 0;
+}
 
 // ============================================================
 // TÜM MASALARI LİSTELE
@@ -445,12 +451,12 @@ async function createTable(req, res) {
         return res.status(400).json({ error: 'TableNumber zorunludur' });
     }
 
-    if (Area !== undefined && Area !== null && !ALLOWED_AREAS.includes(Area)) {
-        return res.status(400).json({ error: `Area şunlardan biri olmalı: ${ALLOWED_AREAS.join(', ')}` });
-    }
-
     try {
         const pool = await connectDB();
+
+        if (Area !== undefined && Area !== null && !(await isActiveArea(pool, Area))) {
+            return res.status(400).json({ error: 'Geçerli (aktif) bir bölüm seçin' });
+        }
 
         const existing = await pool.request()
             .input('TableNumber', sql.Int, TableNumber)
@@ -489,12 +495,12 @@ async function updateTable(req, res) {
         return res.status(400).json({ error: 'Güncellemek için TableNumber, Capacity veya Area gönderin' });
     }
 
-    if (areaProvided && !ALLOWED_AREAS.includes(Area)) {
-        return res.status(400).json({ error: `Area şunlardan biri olmalı: ${ALLOWED_AREAS.join(', ')}` });
-    }
-
     try {
         const pool = await connectDB();
+
+        if (areaProvided && !(await isActiveArea(pool, Area))) {
+            return res.status(400).json({ error: 'Geçerli (aktif) bir bölüm seçin' });
+        }
 
         const tableResult = await pool.request()
             .input('TableId', sql.Int, id)

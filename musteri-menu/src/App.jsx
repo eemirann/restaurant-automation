@@ -18,11 +18,11 @@ export default function App() {
 function InvalidLink() {
   const { t } = useLanguage();
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 text-center bg-charcoal font-body">
+    <div className="min-h-screen flex items-center justify-center px-6 text-center bg-paper font-body">
       <div>
         <p className="text-5xl mb-4">📷</p>
-        <h1 className="font-display text-xl font-semibold text-paper mb-2">{t('invalidLinkTitle')}</h1>
-        <p className="text-slate text-sm">{t('invalidLinkBody')}</p>
+        <h1 className="font-display text-xl font-semibold text-ink mb-2">{t('invalidLinkTitle')}</h1>
+        <p className="text-muted text-sm">{t('invalidLinkBody')}</p>
       </div>
     </div>
   );

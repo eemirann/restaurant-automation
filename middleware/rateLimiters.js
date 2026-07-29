@@ -30,11 +30,23 @@ const apiLimiter = rateLimit({
 // Menü görüntüleme (GET) daha rahat; sipariş/hizmet isteği gönderme
 // (POST) spam'i (ör. "garson çağır"a defalarca basmak) önlemek için
 // daha sıkı. İkisi de tek bir masanın (QrToken ile) trafiğini değil,
-// IP başına genel bir tavanı sınırlar.
+// IP başına genel bir tavanı sınırlar — restoranın Wi-Fi'ında TÜM
+// müşteriler aynı genel (public) IP'yi paylaşabildiği için (NAT), limit
+// kişi başına değil, o an o restorandaki HERKESİN toplamına uygulanır.
+//
+// Kapasite hesabı: 40 masa × 4 kişi = 160 eşzamanlı müşteri (dolu
+// işletme, en kötü senaryo — hepsi aynı IP'den).
+//   - Görüntüleme: MenuApp.jsx her 8sn'de bir durum sorguluyor
+//     (5dk'da ~37 istek/kişi) + menü/seçenek yüklemeleri (~13 istek/kişi
+//     pay) ≈ 50 istek/kişi/5dk → 160 × 50 = 8000
+//   - Eylem (sipariş gönder / garson çağır / hesap iste): kişi başına
+//     yoğun bir 5dk'da birkaç eylem varsayımıyla ~3 istek/kişi/5dk
+//     → 160 × 3 = 480, yuvarlanarak 500 (yine de tek bir spam botunu/
+//     düğmeye basılı tutmayı engeller).
 // ============================================================
 const publicMenuViewLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
-    max: 120,
+    max: 8000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Çok fazla istek gönderildi. Lütfen biraz bekleyin.' },
@@ -42,7 +54,7 @@ const publicMenuViewLimiter = rateLimit({
 
 const publicMenuActionLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
-    max: 20,
+    max: 500,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Çok fazla istek gönderildi. Lütfen biraz bekleyin.' },

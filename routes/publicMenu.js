@@ -3,6 +3,7 @@ const router = express.Router();
 const { publicMenuViewLimiter, publicMenuActionLimiter } = require('../middleware/rateLimiters');
 const {
     getPublicMenu,
+    getPublicMenuCampaigns,
     getPublicMenuProductOptions,
     createCustomerOrderRequest,
     createServiceRequest,
@@ -12,6 +13,7 @@ const {
 // KİMLİK DOĞRULAMASIZ — anonim müşteri QR menüsü. Erişim tamamen
 // Tables.QrToken'a bağlı (bkz. controllers/publicMenuController.js).
 router.get('/:qrToken', publicMenuViewLimiter, getPublicMenu);
+router.get('/:qrToken/campaigns', publicMenuViewLimiter, getPublicMenuCampaigns);
 router.get('/:qrToken/options/:productId', publicMenuViewLimiter, getPublicMenuProductOptions);
 router.get('/:qrToken/status', publicMenuViewLimiter, getPublicMenuStatus);
 router.post('/:qrToken/order', publicMenuActionLimiter, createCustomerOrderRequest);

@@ -4,8 +4,8 @@ import OptionRow from './OptionRow';
 import { calculateLineTotal, money } from '../utils/priceCalculator';
 import { useLanguage } from '../i18n';
 
-// Ürün kartına tıklanınca açılan özelleştirme pop-up'ı — restoran-panel'deki
-// ProductDetailModal'ın (kompakt, scroll'suz) müşteri tarafı karşılığı.
+// Ürün kartına tıklanınca açılan özelleştirme pop-up'ı — beyaz/premium
+// tasarım dili, restoran-panel'in koyu POS temasından bağımsız.
 export default function ProductDetailModal({ qrToken, product, initialLine, onClose, onConfirm, onRemove, onOptionsLoaded }) {
   const { t } = useLanguage();
   const [quantity, setQuantity] = useState(initialLine?.quantity || 1);
@@ -52,14 +52,14 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
   };
 
   return (
-    <div className="fixed inset-0 bg-ink/70 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-panel rounded-t-2xl sm:rounded-2xl border border-hairline w-full sm:max-w-lg max-h-[88vh] shadow-2xl
+        className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[88vh] shadow-lift
                    flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative flex items-center gap-3 p-3 border-b border-hairline shrink-0">
-          <div className="relative w-16 h-16 rounded-lg bg-hairline/40 overflow-hidden shrink-0">
+        <div className="relative flex items-center gap-3 p-4 border-b border-line shrink-0">
+          <div className="relative w-16 h-16 rounded-xl bg-cream overflow-hidden shrink-0">
             {product.ImageUrl ? (
               <img src={imageUrl(product.ImageUrl)} alt={product.Name} className="w-full h-full object-cover" />
             ) : (
@@ -67,37 +67,37 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="font-display text-base font-semibold text-paper leading-tight truncate">{product.Name}</h3>
-            {product.Description && <p className="text-xs text-slate leading-snug line-clamp-1">{product.Description}</p>}
-            <span className="font-mono text-sm text-ember font-semibold">{money(product.Price)}</span>
+            <h3 className="font-display text-base font-semibold text-ink leading-tight truncate">{product.Name}</h3>
+            {product.Description && <p className="text-xs text-muted leading-snug line-clamp-1">{product.Description}</p>}
+            <span className="text-sm text-gold font-semibold">{money(product.Price)}</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full shrink-0 bg-hairline/60 text-slate hover:text-paper transition-colors text-sm"
+            className="w-8 h-8 flex items-center justify-center rounded-full shrink-0 bg-cream text-muted hover:text-ink transition-colors text-sm"
           >
             ✕
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
           <div className="flex items-center justify-between px-1">
-            <span className="font-mono text-[11px] uppercase tracking-wide text-slate">{t('qty')}</span>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-muted font-semibold">{t('qty')}</span>
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                className="w-9 h-9 flex items-center justify-center font-mono text-base text-slate hover:text-ember
-                           border border-hairline rounded-full select-none"
+                className="w-9 h-9 flex items-center justify-center text-base text-muted hover:text-ink
+                           border border-line rounded-full select-none"
               >
                 −
               </button>
-              <span className="font-mono text-base text-paper w-6 text-center">{quantity}</span>
+              <span className="text-base text-ink font-medium w-6 text-center">{quantity}</span>
               <button
                 type="button"
                 onClick={() => setQuantity((q) => q + 1)}
-                className="w-9 h-9 flex items-center justify-center font-mono text-base text-cream bg-ember
-                           hover:bg-ember/90 rounded-full select-none"
+                className="w-9 h-9 flex items-center justify-center text-base text-paper bg-ink
+                           hover:bg-ink/85 rounded-full select-none"
               >
                 +
               </button>
@@ -105,15 +105,15 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
           </div>
 
           {loadingOptions ? (
-            <p className="font-mono text-xs text-slate">{t('loadingOptions')}</p>
+            <p className="text-xs text-muted">{t('loadingOptions')}</p>
           ) : (
             <>
               {extrasCatalog.length > 0 && (
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1">{t('extras')}</p>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-muted font-semibold mb-1.5">{t('extras')}</p>
+                  <div className="grid grid-cols-2 gap-2">
                     {extrasCatalog.map((extra) => (
-                      <div key={extra.ProductId} className="border border-hairline rounded-lg">
+                      <div key={extra.ProductId} className="border border-line rounded-xl bg-cream/60">
                         <OptionRow
                           option={extra}
                           quantity={extras[extra.ProductId] || 0}
@@ -127,10 +127,10 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
               )}
               {syrupsCatalog.length > 0 && (
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1">{t('syrups')}</p>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-muted font-semibold mb-1.5">{t('syrups')}</p>
+                  <div className="grid grid-cols-2 gap-2">
                     {syrupsCatalog.map((syrup) => (
-                      <div key={syrup.ProductId} className="border border-hairline rounded-lg">
+                      <div key={syrup.ProductId} className="border border-line rounded-xl bg-cream/60">
                         <OptionRow
                           option={syrup}
                           quantity={syrups[syrup.ProductId] || 0}
@@ -146,17 +146,17 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
           )}
         </div>
 
-        <div className="shrink-0 border-t border-hairline p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-mono text-xs uppercase tracking-wide text-slate">{t('total')}</span>
-            <span className="font-mono text-lg text-paper font-semibold">{money(total)}</span>
+        <div className="shrink-0 border-t border-line p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs uppercase tracking-[0.2em] text-muted font-semibold">{t('total')}</span>
+            <span className="text-lg text-ink font-semibold">{money(total)}</span>
           </div>
           <div className="flex items-center gap-2">
             {initialLine && (
               <button
                 type="button"
                 onClick={onRemove}
-                className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember px-4 py-3 min-h-[2.75rem]"
+                className="text-xs uppercase tracking-[0.15em] font-semibold text-muted hover:text-danger px-4 py-3 min-h-[2.75rem]"
               >
                 {t('removeFromCart')}
               </button>
@@ -164,8 +164,8 @@ export default function ProductDetailModal({ qrToken, product, initialLine, onCl
             <button
               type="button"
               onClick={() => onConfirm({ quantity, extras, syrups })}
-              className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-ember
-                         hover:bg-ember/90 active:bg-ember/80 rounded-full px-6 py-3 min-h-[2.75rem] transition-colors"
+              className="flex-1 text-sm uppercase tracking-[0.15em] font-semibold text-paper bg-ink
+                         hover:bg-ink/90 active:bg-ink/80 rounded-full px-6 py-3.5 min-h-[2.75rem] transition-colors"
             >
               {initialLine ? t('updateCart') : t('addToCart')}
             </button>

@@ -27,7 +27,7 @@ async function getCustomerOrderRequests(req, res) {
 
         let query = `
             SELECT r.CustomerOrderRequestId, r.TableId, t.TableNumber, r.Note, r.Status,
-                   r.RejectionReason, r.ApprovedOrderId, r.CreatedAt, r.ResolvedAt
+                   r.RejectionReason, r.ApprovedOrderId, r.CreatedAt, r.ResolvedAt, r.Username, r.CombosJson
             FROM CustomerOrderRequests r
             JOIN Tables t ON t.TableId = r.TableId
         `;
@@ -66,7 +66,11 @@ async function getCustomerOrderRequests(req, res) {
         }
 
         return res.status(200).json(
-            requests.map((r) => ({ ...r, items: itemsByRequestId.get(r.CustomerOrderRequestId) || [] }))
+            requests.map((r) => ({
+                ...r,
+                items: itemsByRequestId.get(r.CustomerOrderRequestId) || [],
+                Combos: r.CombosJson ? JSON.parse(r.CombosJson) : [],
+            }))
         );
     } catch (err) {
         console.error('Müşteri sipariş istekleri getirilirken hata:', err);
@@ -97,7 +101,7 @@ async function approveCustomerOrderRequest(req, res) {
 
         const requestResult = await new sql.Request(transaction)
             .input('Id', sql.Int, id)
-            .query(`SELECT CustomerOrderRequestId, TableId, Note, Status FROM CustomerOrderRequests WITH (UPDLOCK, ROWLOCK) WHERE CustomerOrderRequestId = @Id`);
+            .query(`SELECT CustomerOrderRequestId, TableId, Note, Status, Username, CombosJson FROM CustomerOrderRequests WITH (UPDLOCK, ROWLOCK) WHERE CustomerOrderRequestId = @Id`);
 
         if (requestResult.recordset.length === 0) {
             await transaction.rollback();
@@ -124,11 +128,14 @@ async function approveCustomerOrderRequest(req, res) {
             Syrups: item.SyrupsJson ? JSON.parse(item.SyrupsJson) : undefined,
         }));
 
+        const combos = orderRequest.CombosJson ? JSON.parse(orderRequest.CombosJson) : undefined;
+
         const { order, totalAmount, lowStockWarnings } = await buildOrderInTransaction(transaction, {
             TableId: orderRequest.TableId,
             UserId: req.user.userId,
             Items: items,
             Note: orderRequest.Note,
+            Combos: combos,
         });
 
         await new sql.Request(transaction)
@@ -141,12 +148,45 @@ async function approveCustomerOrderRequest(req, res) {
                 WHERE CustomerOrderRequestId = @Id
             `);
 
+        // Sadaklık puanı — müşteri checkout'ta kullanıcı adı girdiyse
+        // (opsiyonel), aynı transaction içinde puan işlenir. Kullanıcı adı
+        // case-insensitive karşılaştırılır (Customers.Username collation'ı,
+        // bkz. migrations/2026_08_01_campaigns_and_loyalty.sql) — "Ahmet" ve
+        // "ahmet" aynı müşteridir, LOWER() gerekmez.
+        let loyaltyPointsAwarded = 0;
+        if (orderRequest.Username && orderRequest.Username.trim()) {
+            const username = orderRequest.Username.trim();
+
+            const rateResult = await new sql.Request(transaction)
+                .query(`SELECT TOP 1 LoyaltyPointsRate FROM AppSettings ORDER BY AppSettingsId ASC`);
+            const loyaltyRate = rateResult.recordset.length > 0 ? Number(rateResult.recordset[0].LoyaltyPointsRate) : 10;
+            loyaltyPointsAwarded = Math.floor((totalAmount * loyaltyRate) / 100);
+
+            if (loyaltyPointsAwarded > 0) {
+                const customerResult = await new sql.Request(transaction)
+                    .input('Username', sql.NVarChar(50), username)
+                    .query(`SELECT CustomerId FROM Customers WHERE Username = @Username`);
+
+                if (customerResult.recordset.length > 0) {
+                    await new sql.Request(transaction)
+                        .input('CustomerId', sql.Int, customerResult.recordset[0].CustomerId)
+                        .input('Points', sql.Int, loyaltyPointsAwarded)
+                        .query(`UPDATE Customers SET LoyaltyPoints = LoyaltyPoints + @Points WHERE CustomerId = @CustomerId`);
+                } else {
+                    await new sql.Request(transaction)
+                        .input('Username', sql.NVarChar(50), username)
+                        .input('Points', sql.Int, loyaltyPointsAwarded)
+                        .query(`INSERT INTO Customers (Username, LoyaltyPoints) VALUES (@Username, @Points)`);
+                }
+            }
+        }
+
         await transaction.commit();
         emitTablesChanged();
         emitKitchen('kds:new', { orderId: order.OrderId, tableId: orderRequest.TableId });
-        logAudit(pool, { userId: req.user?.userId, action: 'CUSTOMER_ORDER_APPROVE', entityType: 'CustomerOrderRequest', entityId: Number(id), details: { orderId: order.OrderId, totalAmount } });
+        logAudit(pool, { userId: req.user?.userId, action: 'CUSTOMER_ORDER_APPROVE', entityType: 'CustomerOrderRequest', entityId: Number(id), details: { orderId: order.OrderId, totalAmount, loyaltyPointsAwarded } });
 
-        return res.status(201).json({ message: 'Sipariş onaylandı ve oluşturuldu.', order, totalAmount, lowStockWarnings });
+        return res.status(201).json({ message: 'Sipariş onaylandı ve oluşturuldu.', order, totalAmount, lowStockWarnings, loyaltyPointsAwarded });
     } catch (err) {
         try {
             await transaction.rollback();

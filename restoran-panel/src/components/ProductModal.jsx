@@ -17,6 +17,7 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
   const [isPopular, setIsPopular] = useState(initial?.IsPopular === true || initial?.IsPopular === 1);
   const [barcode, setBarcode] = useState(initial?.Barcode ?? '');
   const [stockCount, setStockCount] = useState(initial?.StockCount ?? '');
+  const [loyaltyPointCost, setLoyaltyPointCost] = useState(initial?.LoyaltyPointCost ?? '');
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -80,6 +81,10 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
       setError('Stok adedi negatif olamaz.');
       return;
     }
+    if (loyaltyPointCost !== '' && (!Number.isInteger(Number(loyaltyPointCost)) || Number(loyaltyPointCost) < 0)) {
+      setError('Puan bedeli negatif olmayan bir tam sayı olmalıdır.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -92,6 +97,7 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
         IsPopular: isPopular,
         Barcode: barcode.trim() || null,
         StockCount: stockCount !== '' ? Number(stockCount) : null,
+        LoyaltyPointCost: loyaltyPointCost !== '' ? Number(loyaltyPointCost) : null,
       });
 
       const savedId = saved?.ProductId ?? productId;
@@ -250,6 +256,22 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
             />
             <span className="font-mono text-xs uppercase tracking-wide text-paper">⭐ Popüler olarak işaretle</span>
           </label>
+
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+              Sadaklık Puanı Bedeli <span className="normal-case text-slate/70">(opsiyonel — dolu ise ürün puanla ücretsiz alınabilir)</span>
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={loyaltyPointCost}
+              onChange={(e) => setLoyaltyPointCost(e.target.value)}
+              placeholder="ör. 100"
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+          </div>
 
           <div>
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ürün Fotoğrafı (opsiyonel)</label>

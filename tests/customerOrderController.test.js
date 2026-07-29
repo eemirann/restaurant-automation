@@ -119,6 +119,88 @@ describe('POST /api/customer-orders/:id/approve', () => {
         expect(insertedOrderUserId).toBe(7);
         expect(updatedToApproved).toBe(true);
     });
+
+    test('CombosJson dolu bir istek onaylanınca combo bileşenleri gerçek OrderDetails satırlarına açılır', async () => {
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM CustomerOrderRequests') && queryText.includes('UPDLOCK')) {
+                return {
+                    recordset: [{
+                        CustomerOrderRequestId: 1, TableId: 4, Note: null, Status: 'Pending',
+                        Username: null, CombosJson: JSON.stringify([{ ComboOfferId: 9, Quantity: 2 }]),
+                    }],
+                };
+            }
+            if (queryText.includes('FROM CustomerOrderRequestItems')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('FROM ComboOffers WHERE ComboOfferId')) {
+                return { recordset: [{ ComboOfferId: 9, Name: 'Kahve+Simit', Price: 60, IsActive: true }] };
+            }
+            if (queryText.includes('FROM Campaigns')) {
+                return { recordset: [{ CampaignId: 3 }] };
+            }
+            if (queryText.includes('FROM ComboOfferItems ci')) {
+                return {
+                    recordset: [
+                        { ProductId: 5, Quantity: 1, IsActive: true, IsAvailable: true },
+                        { ProductId: 8, Quantity: 1, IsActive: true, IsAvailable: true },
+                    ],
+                };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                return { recordset: [{ OrderId: 60, TableId: 4, UserId: inputs.UserId, TotalAmount: inputs.TotalAmount, Status: 'Pending', Note: null, CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('FROM Recipes')) return { recordset: [] };
+            if (queryText.includes('UPDATE CustomerOrderRequests')) return { recordset: [] };
+            return { recordset: [] };
+        });
+
+        const res = await request(app).post('/api/customer-orders/1/approve').set('Authorization', `Bearer ${waiterToken}`);
+        expect(res.status).toBe(201);
+        // 2 combo × 60 TL = 120 TL — fiyat tamamen ComboOffers.Price'tan gelir
+        expect(res.body.totalAmount).toBe(120);
+    });
+
+    test('Username dolu bir istek onaylanınca sadaklık puanı işlenir (yeni müşteri oluşturulur)', async () => {
+        let insertedCustomer = null;
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM CustomerOrderRequests') && queryText.includes('UPDLOCK')) {
+                return { recordset: [{ CustomerOrderRequestId: 1, TableId: 4, Note: null, Status: 'Pending', Username: 'ahmet', CombosJson: null }] };
+            }
+            if (queryText.includes('FROM CustomerOrderRequestItems')) {
+                return { recordset: [{ ProductId: 5, Quantity: 2, VariantId: null, Note: null, ExtrasJson: null, SyrupsJson: null }] };
+            }
+            if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
+                return { recordset: [{ ProductId: 5, Price: 50, IsActive: true, IsAvailable: true }] };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                return { recordset: [{ OrderId: 61, TableId: 4, UserId: inputs.UserId, TotalAmount: inputs.TotalAmount, Status: 'Pending', Note: null, CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('INSERT INTO OrderDetails')) {
+                return { recordset: [{ OrderDetailsId: 1 }] };
+            }
+            if (queryText.includes('FROM Recipes')) return { recordset: [] };
+            if (queryText.includes('UPDATE CustomerOrderRequests')) return { recordset: [] };
+            if (queryText.includes('SELECT TOP 1 LoyaltyPointsRate FROM AppSettings')) {
+                return { recordset: [{ LoyaltyPointsRate: 10 }] };
+            }
+            if (queryText.includes('SELECT CustomerId FROM Customers WHERE Username')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('INSERT INTO Customers')) {
+                insertedCustomer = { username: inputs.Username, points: inputs.Points };
+                return { recordset: [] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app).post('/api/customer-orders/1/approve').set('Authorization', `Bearer ${waiterToken}`);
+        expect(res.status).toBe(201);
+        // totalAmount = 50 * 2 = 100 TL; %10 oranla 10 puan
+        expect(res.body.loyaltyPointsAwarded).toBe(10);
+        expect(insertedCustomer).toEqual({ username: 'ahmet', points: 10 });
+    });
 });
 
 describe('POST /api/customer-orders/:id/reject', () => {

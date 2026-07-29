@@ -3,7 +3,12 @@ import client from '../api/client';
 
 const SettingsContext = createContext(null);
 
-const DEFAULTS = { RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true, StockChartEnabled: true, EArsivVatRate: 10 };
+const DEFAULTS = {
+  RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true, StockChartEnabled: true,
+  KitchenAutoPrintEnabled: true, EArsivVatRate: 10, PrinterPaperWidth: 80, LoyaltyPointsRate: 10,
+  CafeNote: null, SocialInstagram: null, SocialFacebook: null, SocialX: null, SocialWhatsapp: null, ContactPhone: null, ContactAddress: null,
+  TaxNumber: null, TaxOffice: null, BillingAddress: null,
+};
 
 // #RRGGBB -> "R G B" (Tailwind'in rgb(var(--x) / <alpha-value>) beklediği format)
 function hexToRgbTriplet(hex) {

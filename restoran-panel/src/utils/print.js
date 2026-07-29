@@ -48,7 +48,8 @@ function openPrintWindow(title, bodyHtml, { paperWidth = 80 } = {}) {
 }
 
 // Müşteri fişi (ödeme ekranı) — ürünler, ekstra/şurup, toplam/ödenen/kalan.
-export function printCustomerReceipt({ restaurantName = 'RESTORAN', orderId, tableLabel, rowsHtml, totalAmount, totalPaid, remaining, money }) {
+// paperWidth: Ayarlar · Donanım sekmesindeki PrinterPaperWidth'ten gelir (58|80, varsayılan 80).
+export function printCustomerReceipt({ restaurantName = 'RESTORAN', orderId, tableLabel, rowsHtml, totalAmount, totalPaid, remaining, money, paperWidth = 80 }) {
   const body = `
     <h2>${restaurantName}</h2>
     <div class="center">Sipariş #${orderId}${tableLabel ? ' · ' + tableLabel : ''}</div>
@@ -59,12 +60,12 @@ export function printCustomerReceipt({ restaurantName = 'RESTORAN', orderId, tab
     <div class="tot big"><span>Kalan</span><span>${money(remaining)}</span></div>
     <div class="hr"></div><div class="center">Teşekkür ederiz!</div>
   `;
-  return openPrintWindow(`Fiş #${orderId}`, body, { paperWidth: 80 });
+  return openPrintWindow(`Fiş #${orderId}`, body, { paperWidth });
 }
 
 // Mutfak/bar fişi — fiyat YOK, sadece adet + ürün adı + ekstra/şurup + not.
 // Büyük fontla basılır ki mutfak/bar personeli uzaktan rahat okuyabilsin.
-export function printKitchenTicket({ orderId, tableLabel, items, note }) {
+export function printKitchenTicket({ orderId, tableLabel, items, note, paperWidth = 80 }) {
   const rows = items
     .map((it) => {
       const optionLines = [
@@ -81,5 +82,5 @@ export function printKitchenTicket({ orderId, tableLabel, items, note }) {
     <div class="hr"></div><table>${rows}</table><div class="hr"></div>
     ${note ? `<div><strong>Not:</strong> ${note}</div><div class="hr"></div>` : ''}
   `;
-  return openPrintWindow(`Mutfak Fişi #${orderId}`, body, { paperWidth: 80 });
+  return openPrintWindow(`Mutfak Fişi #${orderId}`, body, { paperWidth });
 }

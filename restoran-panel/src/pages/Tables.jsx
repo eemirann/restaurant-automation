@@ -14,6 +14,17 @@ import EmptyState from '../components/EmptyState';
 import { calculateLineTotal } from '../components/PriceCalculator';
 import { isProductAvailable } from '../utils/productAvailability';
 import { printKitchenTicket } from '../utils/print';
+import { DEFAULT_AREA, areaLabelOf } from '../utils/tableAreas';
+import TableAreasManager from '../components/TableAreasManager';
+
+// Sipariş ekranındaki ürün ızgarasının sol dikey rayı — kategoriler yukarı
+// yatay bara taşındığı için hızlı filtreler (Popüler vb.) buraya alındı.
+const QUICK_FILTERS = [
+  { value: 'all', label: 'Tümü' },
+  { value: 'popular', label: '⭐ Popüler' },
+  { value: 'available', label: 'Mevcut' },
+  { value: 'outOfStock', label: 'Tükenen' },
+];
 
 const STATUS_CONFIG = {
   Empty: { label: 'Boş', dot: 'bg-moss', border: 'border-hairline', bg: 'bg-panel' },
@@ -36,21 +47,6 @@ const FILTERS = [
   { value: 'Reserved', label: 'Rezerve' },
   { value: 'NeedsPayment', label: 'Ödeme Bekliyor' },
 ];
-
-// ============================================================
-// Restoran bölgeleri (alanlar). Backend'de Tables.Area kolonunda
-// kalıcı tutulur (GET /tables döndürür, POST/PATCH /tables kaydeder).
-// Her masa bir alana aittir; atanmamışsa varsayılan Salon.
-// ============================================================
-const AREAS = [
-  { key: 'Salon', label: 'Salon' },
-  { key: 'Terrace', label: 'Teras' },
-  { key: 'Garden', label: 'Bahçe' },
-  { key: 'VIP', label: 'VIP' },
-  { key: 'Bar', label: 'Bar' },
-];
-const DEFAULT_AREA = 'Salon';
-const areaLabelOf = (key) => AREAS.find((a) => a.key === key)?.label || key;
 
 const money = (n) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(n) || 0);
@@ -315,6 +311,8 @@ export default function Tables() {
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [areas, setAreas] = useState([]);
+  const [showAreaManager, setShowAreaManager] = useState(false);
   const [reservations, setReservations] = useState([]);
   const [now, setNow] = useState(Date.now());
 
@@ -420,10 +418,15 @@ export default function Tables() {
     return () => clearInterval(interval);
   }, [fetchTables]);
 
+  const fetchAreas = useCallback(async () => {
+    try { const res = await client.get('/table-areas'); setAreas(res.data); } catch { /* sessiz */ }
+  }, []);
+
   useEffect(() => {
     client.get('/products').then((res) => setProducts(res.data)).catch(() => {});
     client.get('/categories').then((res) => setCategories(res.data)).catch(() => {});
-  }, []);
+    fetchAreas();
+  }, [fetchAreas]);
 
   // Oturma süresi (OrderCreatedAt) ve "ödeme bekliyor" (OrderStatus) artık
   // getAllTables yanıtında geliyor — ayrı per-masa zenginleştirme çağrısı yok.
@@ -555,6 +558,15 @@ export default function Tables() {
           </button>
           {isAdmin && (
             <button
+              onClick={() => setShowAreaManager(true)}
+              title="Salon/Teras/Bahçe gibi bölümleri yönet"
+              className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2.5 transition-colors"
+            >
+              ⚙ Bölümler
+            </button>
+          )}
+          {isAdmin && (
+            <button
               onClick={() => setShowCreateModal(true)}
               className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 rounded-lg px-4 py-2.5 transition-colors shadow-sm"
             >
@@ -566,7 +578,7 @@ export default function Tables() {
 
       {/* ============ Bölge (alan) sekmeleri ============ */}
       <div className="flex gap-1.5 mb-4 overflow-x-auto pb-2 border-b border-hairline">
-        {[{ key: '', label: 'Tümü' }, ...AREAS].map((a) => {
+        {[{ key: '', label: 'Tümü' }, ...areas.map((a) => ({ key: a.Name, label: areaLabelOf(a.Name) }))].map((a) => {
           const active = selectedArea === a.key;
           const c = a.key ? (areaCounts[a.key] || 0) : tables.length;
           return (
@@ -732,6 +744,7 @@ export default function Tables() {
       {showCreateModal && (
         <TableFormModal
           title="Yeni Masa"
+          areas={areas}
           onClose={() => setShowCreateModal(false)}
           onSubmit={async (values) => {
             await client.post('/tables', { TableNumber: values.TableNumber, Capacity: values.Capacity, Area: values.Area || DEFAULT_AREA });
@@ -761,12 +774,21 @@ export default function Tables() {
           title={`Masa ${editingTable.TableNumber} — Düzenle`}
           initial={editingTable}
           initialArea={editingTable.Area || DEFAULT_AREA}
+          areas={areas}
           onClose={() => setEditingTable(null)}
           onSubmit={async (values) => {
             await client.patch(`/tables/${editingTable.TableId}`, { TableNumber: values.TableNumber, Capacity: values.Capacity, Area: values.Area || DEFAULT_AREA });
             setEditingTable(null);
             fetchTables({ silent: true });
           }}
+        />
+      )}
+
+      {showAreaManager && (
+        <AreaManagerDrawer
+          areas={areas}
+          onClose={() => setShowAreaManager(false)}
+          onChanged={fetchAreas}
         />
       )}
     </div>
@@ -812,19 +834,6 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
     socket.on('tables:changed', handleChanged);
     return () => socket.off('tables:changed', handleChanged);
   }, [load]);
-
-  const markStatus = async (status) => {
-    setActionError('');
-    setActionMessage('');
-    try {
-      await client.patch(`/tables/${tableId}/status`, { Status: status });
-      setActionMessage(`Masa "${STATUS_CONFIG[status].label}" olarak işaretlendi.`);
-      await load();
-      onChanged();
-    } catch (err) {
-      setActionError(err.response?.data?.error || 'Durum güncellenemedi.');
-    }
-  };
 
   if (loading) {
     return (
@@ -947,44 +956,27 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
           )}
         </>
       ) : (
-        <>
-          <TableOrderCart
-            tableId={detail.TableId}
-            userId={userId}
-            products={products}
-            categories={categories}
-            tableLabel={`Masa ${detail.TableNumber}`}
-            onOrdered={async (msg, meta) => {
-              // Yeni sipariş oluşturulunca: modalı otomatik kapat, panoya dön,
-              // sadece etkilenen masayı tazele (kasiyer manuel kapatmaz).
-              if (meta?.created) {
-                onOrderCreated?.(detail.TableId);
-                onClose();
-                return;
-              }
-              setActionMessage(msg);
-              setActionError('');
-              await load();
-              onChanged();
-            }}
-            onError={(msg) => setActionError(msg)}
-          />
-
-          <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2 mt-6">Durumu elle değiştir</p>
-          <div className="flex gap-2 flex-wrap">
-            {Object.entries(STATUS_CONFIG).map(([key, c]) => (
-              <button
-                key={key}
-                disabled={detail.Status === key}
-                onClick={() => markStatus(key)}
-                className="font-mono text-[11px] uppercase tracking-wide border rounded-sm px-3 py-2 transition-colors
-                           disabled:opacity-40 disabled:cursor-not-allowed text-paper border-hairline hover:border-ember hover:text-ember"
-              >
-                {c.label} olarak işaretle
-              </button>
-            ))}
-          </div>
-        </>
+        <TableOrderCart
+          tableId={detail.TableId}
+          userId={userId}
+          products={products}
+          categories={categories}
+          tableLabel={`Masa ${detail.TableNumber}`}
+          onOrdered={async (msg, meta) => {
+            // Yeni sipariş oluşturulunca: modalı otomatik kapat, panoya dön,
+            // sadece etkilenen masayı tazele (kasiyer manuel kapatmaz).
+            if (meta?.created) {
+              onOrderCreated?.(detail.TableId);
+              onClose();
+              return;
+            }
+            setActionMessage(msg);
+            setActionError('');
+            await load();
+            onChanged();
+          }}
+          onError={(msg) => setActionError(msg)}
+        />
       )}
     </ModalShell>
   );
@@ -995,7 +987,7 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 // "Sipariş Ver" ile POST /api/orders çağır.
 // ============================================================
 function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, products, categories, tableLabel, onOrdered, onError }) {
-  const { ProductOptionsPopupEnabled } = useSettings();
+  const { ProductOptionsPopupEnabled, KitchenAutoPrintEnabled, PrinterPaperWidth } = useSettings();
   // { [ProductId]: { quantity, extras: { [ExtraProductId]: quantity }, syrups: { [SyrupProductId]: quantity } } }
   const [cart, setCart] = useState({});
   const [activeCategoryId, setActiveCategoryId] = useState('all');
@@ -1014,6 +1006,16 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
   // olanlar dışında hiçbir şey sipariş ekranında gösterilmez.
   const [optionsByProduct, setOptionsByProduct] = useState({});
   const [extraPickerFor, setExtraPickerFor] = useState(null); // hangi kalem için opsiyon seçici açık
+
+  // Sadaklık puanı ile ücretsiz ürün ekleme (SADECE mevcut bir siparişe —
+  // henüz oluşturulmamış bir siparişe eklenecek OrderId yok). Bkz. backend:
+  // controllers/loyaltyController.js.
+  const [showLoyaltyPanel, setShowLoyaltyPanel] = useState(false);
+  const [loyaltyUsername, setLoyaltyUsername] = useState('');
+  const [loyaltyCustomer, setLoyaltyCustomer] = useState(null);
+  const [loyaltyLookupBusy, setLoyaltyLookupBusy] = useState(false);
+  const [loyaltyError, setLoyaltyError] = useState('');
+  const [redeemBusy, setRedeemBusy] = useState(null);
 
   useEffect(() => {
     if (!extraPickerFor || optionsByProduct[extraPickerFor]) return;
@@ -1070,6 +1072,39 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
       onError?.(msg);
     } finally {
       setItemActionBusy(null);
+    }
+  };
+
+  const lookupLoyaltyCustomer = async () => {
+    setLoyaltyError('');
+    setLoyaltyCustomer(null);
+    if (!loyaltyUsername.trim()) return;
+    setLoyaltyLookupBusy(true);
+    try {
+      const res = await client.get(`/loyalty/${encodeURIComponent(loyaltyUsername.trim())}`);
+      setLoyaltyCustomer(res.data);
+    } catch (err) {
+      setLoyaltyError(err.response?.data?.error || 'Müşteri bulunamadı.');
+    } finally {
+      setLoyaltyLookupBusy(false);
+    }
+  };
+
+  const redeemLoyaltyItem = async (product) => {
+    setLoyaltyError('');
+    setRedeemBusy(product.ProductId);
+    try {
+      const res = await client.post('/loyalty/redeem', {
+        Username: loyaltyCustomer.Username,
+        ProductId: product.ProductId,
+        OrderId: existingOrderId,
+      });
+      setLoyaltyCustomer((prev) => ({ ...prev, LoyaltyPoints: res.data.remainingPoints }));
+      await onOrdered?.('Ürün puanla eklendi.');
+    } catch (err) {
+      setLoyaltyError(err.response?.data?.error || 'Ürün puanla eklenemedi.');
+    } finally {
+      setRedeemBusy(null);
     }
   };
 
@@ -1235,10 +1270,14 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
             .map(([syrupId, qty]) => ({ quantity: qty, name: findOption(productId, 'syrups', syrupId)?.Name || 'Şurup' })),
         };
       });
-      try {
-        printKitchenTicket({ orderId: newOrderId, tableLabel, items: kitchenItems, note: note.trim() });
-      } catch {
-        // Yazdırma başarısız olsa bile (ör. pop-up engellendi) sipariş akışı durmamalı
+      // Ayarlar · Donanım sekmesinden kapatılabilir (KitchenAutoPrintEnabled) —
+      // bazı işletmeler mutfak fişini manuel/başka bir yoldan basmak isteyebilir.
+      if (KitchenAutoPrintEnabled !== false) {
+        try {
+          printKitchenTicket({ orderId: newOrderId, tableLabel, items: kitchenItems, note: note.trim(), paperWidth: PrinterPaperWidth || 80 });
+        } catch {
+          // Yazdırma başarısız olsa bile (ör. pop-up engellendi) sipariş akışı durmamalı
+        }
       }
 
       setCart({});
@@ -1260,90 +1299,112 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
     <div>
       <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Sipariş Oluştur</p>
 
-      <div className="flex gap-4 items-start">
-        {/* SOL: kategori + arama + ürün ızgarası (~%70) */}
-        <div className="flex-[7] min-w-0">
-          <MenuFilterBar
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            quickFilter={quickFilter}
-            onQuickFilterChange={setQuickFilter}
-            cartFilter={cartFilter}
-            onCartFilterChange={setCartFilter}
-            itemCount={itemCount}
-          />
-
-          <div className="flex gap-4">
-            {categoriesWithProducts.length > 0 && (
-              <div className="w-32 shrink-0 flex flex-col gap-1.5 border-r border-hairline pr-3">
-                <button
-                  type="button"
-                  onClick={() => setActiveCategoryId('all')}
-                  className={`text-left font-mono text-xs uppercase tracking-wide px-3 min-h-[2.75rem] rounded-sm transition-colors ${
-                    activeCategoryId === 'all'
-                      ? 'bg-ember/10 text-ember font-semibold'
-                      : 'text-slate hover:bg-hairline/60 hover:text-paper'
-                  }`}
-                >
-                  Tümü
-                </button>
-                {categoriesWithProducts.map((c) => (
-                  <button
-                    key={c.CategoryId}
-                    type="button"
-                    onClick={() => setActiveCategoryId(c.CategoryId)}
-                    className={`text-left font-mono text-xs uppercase tracking-wide px-3 min-h-[2.75rem] rounded-sm transition-colors ${
-                      String(activeCategoryId) === String(c.CategoryId)
-                        ? 'bg-ember/10 text-ember font-semibold'
-                        : 'text-slate hover:bg-hairline/60 hover:text-paper'
-                    }`}
-                  >
-                    {c.Name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="flex-1 min-w-0">
-              {products.length === 0 ? (
-                <ProductGridSkeleton />
-              ) : visibleProducts.length === 0 ? (
-                <EmptyState
-                  title="Ürün bulunamadı"
-                  message={
-                    cartFilter === 'inCart'
-                      ? 'Sepette ürün yok.'
-                      : normalizedSearch
-                      ? 'Aramanızla eşleşen bir ürün yok. Farklı bir anahtar kelime deneyin.'
-                      : 'Bu filtrede/kategoride ürün yok.'
-                  }
-                />
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[30rem] overflow-auto pr-1">
-                  <AnimatePresence initial={false}>
-                    {visibleProducts.map((p) => (
-                      <ProductCard
-                        key={p.ProductId}
-                        product={p}
-                        quantity={cart[p.ProductId]?.quantity || 0}
-                        onOpen={(product) => {
-                          if (ProductOptionsPopupEnabled === false) {
-                            addToCart(product.ProductId);
-                          } else {
-                            setSelectedProductId(product.ProductId);
-                          }
-                        }}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </div>
-              )}
-            </div>
+      {/* Üst sabit alan: arama + kategoriler (yatay bar) — sayfa kaydırılmadan
+          her zaman görünür, sadece aşağıdaki ürün ızgarası kendi içinde kayar. */}
+      <div className="mb-3 space-y-2">
+        <MenuFilterBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+        {categoriesWithProducts.length > 0 && (
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+            <button
+              type="button"
+              onClick={() => setActiveCategoryId('all')}
+              className={`shrink-0 font-mono text-[11px] uppercase tracking-wide px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap ${
+                activeCategoryId === 'all'
+                  ? 'border-ember bg-ember/10 text-ember font-semibold'
+                  : 'border-hairline text-slate hover:text-paper hover:border-paper/30'
+              }`}
+            >
+              Tümü
+            </button>
+            {categoriesWithProducts.map((c) => (
+              <button
+                key={c.CategoryId}
+                type="button"
+                onClick={() => setActiveCategoryId(c.CategoryId)}
+                className={`shrink-0 font-mono text-[11px] uppercase tracking-wide px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap ${
+                  String(activeCategoryId) === String(c.CategoryId)
+                    ? 'border-ember bg-ember/10 text-ember font-semibold'
+                    : 'border-hairline text-slate hover:text-paper hover:border-paper/30'
+                }`}
+              >
+                {c.Name}
+              </button>
+            ))}
           </div>
+        )}
+      </div>
+
+      <div className="flex gap-4 items-start">
+        {/* SOL: hızlı filtre rayı (dikey, dar) — Popüler/Mevcut/Tükenen + Sepettekiler */}
+        <div className="w-28 shrink-0 flex flex-col gap-1.5">
+          {QUICK_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setQuickFilter(f.value)}
+              className={`text-left font-mono text-[11px] uppercase tracking-wide px-3 min-h-[2.5rem] rounded-sm transition-colors ${
+                quickFilter === f.value
+                  ? 'bg-ember/10 text-ember font-semibold'
+                  : 'text-slate hover:bg-hairline/60 hover:text-paper'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+          <span className="h-px bg-hairline my-1" />
+          <button
+            type="button"
+            onClick={() => setCartFilter(cartFilter === 'inCart' ? 'all' : 'inCart')}
+            className={`text-left font-mono text-[11px] uppercase tracking-wide px-3 min-h-[2.5rem] rounded-sm transition-colors ${
+              cartFilter === 'inCart'
+                ? 'bg-ember/10 text-ember font-semibold'
+                : 'text-slate hover:bg-hairline/60 hover:text-paper'
+            }`}
+          >
+            Sepettekiler{itemCount > 0 ? ` (${itemCount})` : ''}
+          </button>
+        </div>
+
+        {/* ORTA: ürün ızgarası — TEK kaydırılabilir alan (overscroll-contain,
+            kaydırma sınıra ulaşınca arka plana/modala sıçramasın diye) */}
+        <div className="flex-1 min-w-0">
+          {products.length === 0 ? (
+            <ProductGridSkeleton />
+          ) : visibleProducts.length === 0 ? (
+            <EmptyState
+              title="Ürün bulunamadı"
+              message={
+                cartFilter === 'inCart'
+                  ? 'Sepette ürün yok.'
+                  : normalizedSearch
+                  ? 'Aramanızla eşleşen bir ürün yok. Farklı bir anahtar kelime deneyin.'
+                  : 'Bu filtrede/kategoride ürün yok.'
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[55vh] overflow-y-auto overscroll-contain pr-1">
+              <AnimatePresence initial={false}>
+                {visibleProducts.map((p) => (
+                  <ProductCard
+                    key={p.ProductId}
+                    product={p}
+                    quantity={cart[p.ProductId]?.quantity || 0}
+                    onOpen={(product) => {
+                      if (ProductOptionsPopupEnabled === false) {
+                        addToCart(product.ProductId);
+                      } else {
+                        setSelectedProductId(product.ProductId);
+                      }
+                    }}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
 
         {/* SAĞ: sabit sepet paneli (~%30) */}
-        <div className="flex-[3] shrink-0 border border-hairline rounded-sm bg-hairline/20 flex flex-col max-h-[32rem]">
+        <div className="w-80 shrink-0 border border-hairline rounded-sm bg-hairline/20 flex flex-col max-h-[55vh]">
           <div className="px-4 pt-4 pb-2">
             <p className="font-mono text-[10px] uppercase tracking-widest text-slate">
               Sepet {itemCount > 0 ? `(${itemCount})` : ''}
@@ -1353,9 +1414,80 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 Sipariş #{existingOrder.OrderId} · {ORDER_STATUS_LABEL[existingOrder.Status] || existingOrder.Status}
               </p>
             )}
+            {existingOrderId && (
+              <button
+                type="button"
+                onClick={() => setShowLoyaltyPanel((v) => !v)}
+                className="mt-2 w-full font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+              >
+                🎁 Puanla Ürün Ekle
+              </button>
+            )}
           </div>
 
-          <div className="flex-1 overflow-auto px-4 space-y-2 min-h-[4rem]">
+          {existingOrderId && showLoyaltyPanel && (
+            <div className="px-4 pb-3 border-b border-hairline space-y-2">
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={loyaltyUsername}
+                  onChange={(e) => setLoyaltyUsername(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupLoyaltyCustomer(); } }}
+                  placeholder="Kullanıcı adı"
+                  className="flex-1 border border-hairline rounded-sm px-2.5 py-2 font-body text-sm text-paper bg-panel
+                             focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                />
+                <button
+                  type="button"
+                  onClick={lookupLoyaltyCustomer}
+                  disabled={loyaltyLookupBusy || !loyaltyUsername.trim()}
+                  className="font-mono text-[11px] uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 disabled:opacity-40 rounded-sm px-3 py-2 transition-colors shrink-0"
+                >
+                  {loyaltyLookupBusy ? '...' : 'Sorgula'}
+                </button>
+              </div>
+
+              {loyaltyError && (
+                <p className="text-ember text-xs font-medium border-l-2 border-ember pl-2">{loyaltyError}</p>
+              )}
+
+              {loyaltyCustomer && (
+                <div className="space-y-1.5">
+                  <p className="font-mono text-[11px] text-slate">
+                    <span className="text-paper font-semibold">{loyaltyCustomer.Username}</span> · Bakiye: <span className="text-ember font-semibold">{loyaltyCustomer.LoyaltyPoints} puan</span>
+                  </p>
+                  {(() => {
+                    const redeemable = products.filter((p) =>
+                      p.LoyaltyPointCost != null && p.LoyaltyPointCost <= loyaltyCustomer.LoyaltyPoints &&
+                      p.IsActive !== false && p.IsActive !== 0
+                    );
+                    if (redeemable.length === 0) {
+                      return <p className="font-mono text-[11px] text-slate">Bu bakiyeyle alınabilecek ürün yok.</p>;
+                    }
+                    return (
+                      <div className="space-y-1 max-h-32 overflow-y-auto overscroll-contain">
+                        {redeemable.map((p) => (
+                          <button
+                            key={p.ProductId}
+                            type="button"
+                            disabled={redeemBusy === p.ProductId}
+                            onClick={() => redeemLoyaltyItem(p)}
+                            className="w-full flex items-center justify-between font-mono text-[11px] text-paper border border-hairline rounded-sm px-2.5 py-1.5
+                                       hover:border-ember hover:text-ember transition-colors disabled:opacity-40"
+                          >
+                            <span className="truncate">{p.Name}</span>
+                            <span className="shrink-0 ml-2 text-slate">{p.LoyaltyPointCost} puan</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto overscroll-contain px-4 space-y-2 min-h-[4rem]">
             {existingOrder && existingOrder.items?.length > 0 && (
               <div className="mb-3">
                 <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Sipariş Edilenler</p>
@@ -1782,7 +1914,7 @@ function TransferForm({ fromTableId, orderId, otherTables, onCancel, onDone, onE
 // ============================================================
 // Masa oluşturma / düzenleme formu (Admin)
 // ============================================================
-function TableFormModal({ title, initial, initialArea = DEFAULT_AREA, onClose, onSubmit }) {
+function TableFormModal({ title, initial, initialArea = DEFAULT_AREA, areas = [], onClose, onSubmit }) {
   const [tableNumber, setTableNumber] = useState(initial?.TableNumber ?? '');
   const [capacity, setCapacity] = useState(initial?.Capacity ?? '');
   const [area, setArea] = useState(initialArea);
@@ -1837,16 +1969,16 @@ function TableFormModal({ title, initial, initialArea = DEFAULT_AREA, onClose, o
         <div>
           <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Bölge (Alan)</label>
           <div className="flex flex-wrap gap-1.5">
-            {AREAS.map((a) => (
+            {areas.map((a) => (
               <button
-                key={a.key}
+                key={a.AreaId}
                 type="button"
-                onClick={() => setArea(a.key)}
+                onClick={() => setArea(a.Name)}
                 className={`font-mono text-xs uppercase tracking-wide px-3 py-2 rounded-sm border transition-colors ${
-                  area === a.key ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper'
+                  area === a.Name ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper'
                 }`}
               >
-                {a.label}
+                {areaLabelOf(a.Name)}
               </button>
             ))}
           </div>
@@ -1875,6 +2007,23 @@ function TableFormModal({ title, initial, initialArea = DEFAULT_AREA, onClose, o
           </button>
         </div>
       </form>
+    </ModalShell>
+  );
+}
+
+// ============================================================
+// Masa Bölümleri Yönetimi (Salon/Teras/Bahçe/VIP/Bar vb.) — Admin.
+// Ekleme, yeniden adlandırma (masalardaki Area değeri de otomatik
+// taşınır, bkz. backend: controllers/tableAreaController.js) ve
+// sıralama (↑/↓ ile DisplayOrder değişimi) ve silme (soft-delete).
+// ============================================================
+// İçerik artık paylaşılan components/TableAreasManager.jsx'te (Settings.jsx
+// "Masa Alanları" sekmesiyle aynı bileşeni kullanır) — burada sadece
+// masalar sayfasının kendi ModalShell'i içine yerleştiriliyor.
+function AreaManagerDrawer({ areas, onClose, onChanged }) {
+  return (
+    <ModalShell onClose={onClose} title="Masa Bölümleri" eyebrow="Masalar">
+      <TableAreasManager areas={areas} onChanged={onChanged} />
     </ModalShell>
   );
 }
@@ -2152,7 +2301,7 @@ function ModalShell({ title, eyebrow, meta, actions, onClose, children, size = '
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className={`bg-panel rounded-sm border border-hairline w-full ${widthClass} ${heightClass} overflow-auto shadow-lg`}
+        className={`bg-panel rounded-sm border border-hairline w-full ${widthClass} ${heightClass} overflow-auto overscroll-contain shadow-lg`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-hairline flex items-center justify-between gap-4">

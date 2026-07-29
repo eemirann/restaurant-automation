@@ -9,12 +9,14 @@ const { HttpError } = require('./httpError');
 // de müşteri QR siparişi onaylanırken (customerOrderController)
 // kullanılır.
 // ============================================================
-function validateOrderItemsShape(TableId, UserId, Items) {
-    if (!TableId || !UserId || !Items || Items.length === 0) {
-        throw new HttpError(400, 'Masa, kullanıcı ve en az bir ürün zorunludur');
+function validateOrderItemsShape(TableId, UserId, Items, Combos) {
+    const hasItems = Items && Items.length > 0;
+    const hasCombos = Combos && Combos.length > 0;
+    if (!TableId || !UserId || (!hasItems && !hasCombos)) {
+        throw new HttpError(400, 'Masa, kullanıcı ve en az bir ürün veya combo zorunludur');
     }
 
-    for (const item of Items) {
+    for (const item of (Items || [])) {
         if (typeof item.ProductId !== 'number' || !Number.isInteger(item.Quantity) || item.Quantity <= 0) {
             throw new HttpError(400, 'Her ürün için geçerli ProductId ve Quantity giriniz');
         }
@@ -43,6 +45,88 @@ function validateOrderItemsShape(TableId, UserId, Items) {
         }
         // NOT: Client UnitPrice gönderse bile burada hiç okunmuyor, tamamen yok sayılıyor.
     }
+
+    validateCombosShape(Combos);
+}
+
+// ============================================================
+// Combos şekil doğrulaması ([{ComboOfferId, Quantity}]) — Items ile
+// aynı ilke: sadece gövde biçimi kontrol edilir, DB'ye bağlı doğrulama
+// (aktif mi, tarih aralığında mı, bileşen ürünler satılabilir mi)
+// resolveCombo() içinde, transaction açıkken yapılır.
+// ============================================================
+function validateCombosShape(Combos) {
+    if (Combos === undefined || Combos === null) return;
+    if (!Array.isArray(Combos)) {
+        throw new HttpError(400, 'Combos gönderiliyorsa bir dizi olmalıdır');
+    }
+    for (const combo of Combos) {
+        if (typeof combo.ComboOfferId !== 'number' || !Number.isInteger(combo.Quantity) || combo.Quantity <= 0) {
+            throw new HttpError(400, 'Her combo için geçerli ComboOfferId ve pozitif tam sayı Quantity giriniz');
+        }
+    }
+}
+
+// ============================================================
+// Bir combo siparişini (ComboOfferId + istenen adet) doğrular ve
+// bileşenlerini (her biri gerçek bir ürün) döner. GÜVENLİK: fiyat
+// TAMAMEN ComboOffers.Price'tan gelir, client'tan asla kabul edilmez
+// (Items'taki UnitPrice gibi).
+// ============================================================
+async function resolveCombo(transaction, combo) {
+    const comboResult = await new sql.Request(transaction)
+        .input('ComboOfferId', sql.Int, combo.ComboOfferId)
+        .query(`SELECT ComboOfferId, Name, Price, IsActive FROM ComboOffers WHERE ComboOfferId = @ComboOfferId`);
+
+    if (comboResult.recordset.length === 0) {
+        throw new HttpError(404, `Combo bulunamadı (ComboOfferId: ${combo.ComboOfferId})`);
+    }
+    const comboOffer = comboResult.recordset[0];
+    if (!comboOffer.IsActive) {
+        throw new HttpError(400, `Combo artık aktif değil (ComboOfferId: ${combo.ComboOfferId})`);
+    }
+
+    // Combo'nun en az bir AKTİF kampanya tarafından (tarih aralığı
+    // dahilinde) sunuluyor olması şart — kampanya süresi dolmuşsa
+    // (sepette kalmış bile olsa) sipariş onayında artık geçerli değildir.
+    const activeCampaignResult = await new sql.Request(transaction)
+        .input('ComboOfferId', sql.Int, combo.ComboOfferId)
+        .query(`
+            SELECT TOP 1 CampaignId FROM Campaigns
+            WHERE ComboOfferId = @ComboOfferId AND IsActive = 1 AND StartAt <= GETDATE() AND EndAt >= GETDATE()
+        `);
+    if (activeCampaignResult.recordset.length === 0) {
+        throw new HttpError(400, `Bu kampanya artık geçerli değil (ComboOfferId: ${combo.ComboOfferId})`);
+    }
+
+    const itemsResult = await new sql.Request(transaction)
+        .input('ComboOfferId', sql.Int, combo.ComboOfferId)
+        .query(`
+            SELECT ci.ProductId, ci.Quantity, p.IsActive, p.IsAvailable
+            FROM ComboOfferItems ci
+            JOIN Products p ON p.ProductId = ci.ProductId
+            WHERE ci.ComboOfferId = @ComboOfferId
+        `);
+
+    if (itemsResult.recordset.length === 0) {
+        throw new HttpError(400, `Combo'nun hiç bileşeni yok (ComboOfferId: ${combo.ComboOfferId})`);
+    }
+
+    for (const row of itemsResult.recordset) {
+        if (!row.IsActive) {
+            throw new HttpError(400, `Combo bileşeni artık aktif değil (ProductId: ${row.ProductId})`);
+        }
+        if (!row.IsAvailable) {
+            throw new HttpError(400, `Combo bileşeni şu anda tükendi/satışta değil (ProductId: ${row.ProductId})`);
+        }
+    }
+
+    return {
+        comboOfferId: comboOffer.ComboOfferId,
+        comboQuantity: combo.Quantity,
+        price: Number(comboOffer.Price),
+        components: itemsResult.recordset.map((row) => ({ productId: row.ProductId, quantityPerCombo: row.Quantity })),
+    };
 }
 
 // ============================================================
@@ -62,13 +146,13 @@ function validateOrderItemsShape(TableId, UserId, Items) {
 // yapmaz — çağıran taraf catch bloğunda rollback + err.statusCode'a göre
 // cevap üretir).
 // ============================================================
-async function buildOrderInTransaction(transaction, { TableId, UserId, Items, Note }) {
-    validateOrderItemsShape(TableId, UserId, Items);
+async function buildOrderInTransaction(transaction, { TableId, UserId, Items, Note, Combos }) {
+    validateOrderItemsShape(TableId, UserId, Items, Combos);
 
     const validatedItems = [];
     let totalAmount = 0;
 
-    for (const item of Items) {
+    for (const item of (Items || [])) {
         const productResult = await new sql.Request(transaction)
             .input('ProductId', sql.Int, item.ProductId)
             .query(`SELECT ProductId, Price, IsActive, IsAvailable FROM Products WHERE ProductId = @ProductId`);
@@ -175,6 +259,16 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
         totalAmount += unitPrice * item.Quantity;
     }
 
+    // Combo'lar — her biri ComboOffers.Price (sabit) üzerinden, kendi
+    // bileşenleri (gerçek ürünler) çözülerek doğrulanır. Fiyatın kendisi
+    // Items'taki gibi client'tan asla kabul edilmez.
+    const validatedCombos = [];
+    for (const combo of (Combos || [])) {
+        const resolved = await resolveCombo(transaction, combo);
+        validatedCombos.push(resolved);
+        totalAmount += resolved.price * resolved.comboQuantity;
+    }
+
     const orderResult = await new sql.Request(transaction)
         .input('TableId', sql.Int, TableId)
         .input('UserId', sql.Int, UserId)
@@ -246,6 +340,36 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
 
             const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
             lowStockWarnings.push(...syrupWarnings);
+        }
+    }
+
+    // Combo bileşenleri — her biri KENDİ OrderDetail satırı (KDS/mutfak
+    // gerçek ürünleri görsün, stok/BOM normal düşsün). Fiyat satırlara
+    // değil combo'nun sabit Price'ına eşitlenecek şekilde dağıtılır: ilk
+    // bileşen satırı toplam combo gelirini (price * comboQuantity) taşır,
+    // diğer bileşen satırları UnitPrice=0'dır — böylece Quantity*UnitPrice
+    // toplamı satır bazında her zaman tam olarak combo.Price * comboQuantity
+    // eder, çift sayım olmaz.
+    for (const combo of validatedCombos) {
+        const totalComboRevenue = combo.price * combo.comboQuantity;
+
+        for (let i = 0; i < combo.components.length; i++) {
+            const component = combo.components[i];
+            const quantity = component.quantityPerCombo * combo.comboQuantity;
+            const unitPrice = i === 0 ? totalComboRevenue / quantity : 0;
+
+            // Combo bileşenlerinde ekstra/şurup desteklenmiyor (kapsam dışı),
+            // bu yüzden OUTPUT edilen OrderDetailsId'ye burada ihtiyaç yok.
+            await new sql.Request(transaction)
+                .input('OrderId', sql.Int, newOrderId)
+                .input('ProductId', sql.Int, component.productId)
+                .input('Quantity', sql.Int, quantity)
+                .input('UnitPrice', sql.Decimal(10, 2), unitPrice)
+                .input('ComboOfferId', sql.Int, combo.comboOfferId)
+                .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, ComboOfferId) VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @ComboOfferId)');
+
+            const warnings = await deductStockForItem(transaction, component.productId, quantity);
+            lowStockWarnings.push(...warnings);
         }
     }
 

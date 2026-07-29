@@ -59,6 +59,58 @@ async function getPublicMenu(req, res) {
 }
 
 // ============================================================
+// GET /api/public/menu/:qrToken/campaigns — QR menü üstündeki karüselde
+// gösterilecek AKTİF kampanyalar (IsActive=1 VE StartAt<=şimdi<=EndAt).
+// CampaignType='Combo' olanlarda ComboItems (bileşen ürün adı/adedi) de
+// döner ki müşteri combo detay modalında görebilsin (bkz. musteri-menu:
+// CampaignCarousel.jsx).
+// ============================================================
+async function getPublicMenuCampaigns(req, res) {
+    const { qrToken } = req.params;
+
+    try {
+        const pool = await connectDB();
+        const table = await resolveTableByToken(pool, qrToken);
+        if (!table) {
+            return res.status(404).json({ error: 'Masa bulunamadı. QR kodu tekrar okutmayı deneyin.' });
+        }
+
+        const campaignsResult = await pool.request().query(`
+            SELECT c.CampaignId, c.Title, c.Description, c.ImageUrl, c.CampaignType, c.ComboOfferId,
+                   co.Name AS ComboName, co.Price AS ComboPrice
+            FROM Campaigns c
+            LEFT JOIN ComboOffers co ON co.ComboOfferId = c.ComboOfferId
+            WHERE c.IsActive = 1 AND c.StartAt <= GETDATE() AND c.EndAt >= GETDATE()
+            ORDER BY c.DisplayOrder ASC, c.CampaignId DESC
+        `);
+
+        const campaigns = campaignsResult.recordset;
+        const comboIds = campaigns.filter((c) => c.ComboOfferId).map((c) => c.ComboOfferId);
+
+        let itemsByComboId = new Map();
+        if (comboIds.length > 0) {
+            const itemsResult = await pool.request().query(`
+                SELECT ci.ComboOfferId, ci.ProductId, p.Name AS ProductName, ci.Quantity
+                FROM ComboOfferItems ci
+                JOIN Products p ON p.ProductId = ci.ProductId
+                WHERE ci.ComboOfferId IN (${comboIds.join(',')})
+            `);
+            for (const row of itemsResult.recordset) {
+                if (!itemsByComboId.has(row.ComboOfferId)) itemsByComboId.set(row.ComboOfferId, []);
+                itemsByComboId.get(row.ComboOfferId).push(row);
+            }
+        }
+
+        return res.status(200).json(
+            campaigns.map((c) => ({ ...c, ComboItems: c.ComboOfferId ? (itemsByComboId.get(c.ComboOfferId) || []) : [] }))
+        );
+    } catch (err) {
+        console.error('Müşteri menüsü kampanyaları getirilirken hata:', err);
+        return res.status(500).json({ error: 'Kampanyalar getirilemedi' });
+    }
+}
+
+// ============================================================
 // GET /api/public/menu/:qrToken/options/:productId — bir ürüne bağlı
 // ekstra/şurup seçenekleri (mevcut personel akışıyla aynı endpoint
 // mantığı: productController.getProductOrderOptions ile birebir aynı
@@ -108,13 +160,15 @@ async function getPublicMenuProductOptions(req, res) {
 // ============================================================
 async function createCustomerOrderRequest(req, res) {
     const { qrToken } = req.params;
-    const { Items, Note } = req.body || {};
+    const { Items, Note, Combos, Username } = req.body || {};
 
-    if (!Items || !Array.isArray(Items) || Items.length === 0) {
-        return res.status(400).json({ error: 'En az bir ürün içeren Items dizisi zorunludur' });
+    const hasItems = Items && Array.isArray(Items) && Items.length > 0;
+    const hasCombos = Combos && Array.isArray(Combos) && Combos.length > 0;
+    if (!hasItems && !hasCombos) {
+        return res.status(400).json({ error: 'En az bir ürün (Items) veya combo (Combos) zorunludur' });
     }
 
-    for (const item of Items) {
+    for (const item of (Items || [])) {
         if (typeof item.ProductId !== 'number' || !Number.isInteger(item.Quantity) || item.Quantity <= 0) {
             return res.status(400).json({ error: 'Her ürün için geçerli ProductId ve pozitif tam sayı Quantity giriniz' });
         }
@@ -124,6 +178,14 @@ async function createCustomerOrderRequest(req, res) {
         if (item.Syrups !== undefined && !Array.isArray(item.Syrups)) {
             return res.status(400).json({ error: 'Syrups gönderiliyorsa bir dizi olmalıdır' });
         }
+    }
+    for (const combo of (Combos || [])) {
+        if (typeof combo.ComboOfferId !== 'number' || !Number.isInteger(combo.Quantity) || combo.Quantity <= 0) {
+            return res.status(400).json({ error: 'Her combo için geçerli ComboOfferId ve pozitif tam sayı Quantity giriniz' });
+        }
+    }
+    if (Username !== undefined && Username !== null && (typeof Username !== 'string' || Username.trim().length > 50)) {
+        return res.status(400).json({ error: 'Username en fazla 50 karakter olabilen bir metin olmalıdır' });
     }
 
     try {
@@ -138,12 +200,22 @@ async function createCustomerOrderRequest(req, res) {
         // gibi asıl (yetkili) doğrulama personel onayladığında, mevcut sipariş
         // oluşturma akışıyla YENİDEN yapılır — burada sadece hızlı geri bildirim
         // için kontrol ediyoruz (bkz. dosya başındaki güvenlik notu).
-        for (const item of Items) {
+        for (const item of (Items || [])) {
             const productResult = await pool.request()
                 .input('ProductId', sql.Int, item.ProductId)
                 .query(`SELECT ProductId FROM Products WHERE ProductId = @ProductId AND IsActive = 1 AND IsRawMaterial = 0 AND IsExtra = 0 AND IsSyrup = 0`);
             if (productResult.recordset.length === 0) {
                 return res.status(404).json({ error: `Ürün bulunamadı veya artık satılmıyor (ProductId: ${item.ProductId})` });
+            }
+        }
+        // Aynı hafif ön-doğrulama combo'lar için — asıl doğrulama (tarih
+        // aralığı dahil) onay anında utils/orderBuilder.js'te tekrar yapılır.
+        for (const combo of (Combos || [])) {
+            const comboResult = await pool.request()
+                .input('ComboOfferId', sql.Int, combo.ComboOfferId)
+                .query(`SELECT ComboOfferId FROM ComboOffers WHERE ComboOfferId = @ComboOfferId AND IsActive = 1`);
+            if (comboResult.recordset.length === 0) {
+                return res.status(404).json({ error: `Combo bulunamadı veya artık aktif değil (ComboOfferId: ${combo.ComboOfferId})` });
             }
         }
 
@@ -154,15 +226,17 @@ async function createCustomerOrderRequest(req, res) {
             const requestResult = await new sql.Request(transaction)
                 .input('TableId', sql.Int, table.TableId)
                 .input('Note', sql.NVarChar(500), Note || null)
+                .input('Username', sql.NVarChar(50), Username?.trim() || null)
+                .input('CombosJson', sql.NVarChar(sql.MAX), hasCombos ? JSON.stringify(Combos) : null)
                 .query(`
-                    INSERT INTO CustomerOrderRequests (TableId, Note)
+                    INSERT INTO CustomerOrderRequests (TableId, Note, Username, CombosJson)
                     OUTPUT INSERTED.CustomerOrderRequestId, INSERTED.CreatedAt
-                    VALUES (@TableId, @Note)
+                    VALUES (@TableId, @Note, @Username, @CombosJson)
                 `);
 
             const requestId = requestResult.recordset[0].CustomerOrderRequestId;
 
-            for (const item of Items) {
+            for (const item of (Items || [])) {
                 await new sql.Request(transaction)
                     .input('CustomerOrderRequestId', sql.Int, requestId)
                     .input('ProductId', sql.Int, item.ProductId)
@@ -289,6 +363,7 @@ async function getPublicMenuStatus(req, res) {
 
 module.exports = {
     getPublicMenu,
+    getPublicMenuCampaigns,
     getPublicMenuProductOptions,
     createCustomerOrderRequest,
     createServiceRequest,

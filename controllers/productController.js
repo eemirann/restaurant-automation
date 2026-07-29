@@ -44,7 +44,7 @@ async function getProductById(req, res) {
 
 async function createProduct(req, res) {
     try {
-        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount } = req.body;
+        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost } = req.body;
 
         if (!Name || Price === undefined || Price === null || !CategoryId) {
             return res.status(400).json({ error: 'Ürün adı, fiyat ve kategori zorunludur' });
@@ -60,6 +60,10 @@ async function createProduct(req, res) {
 
         if (StockCount !== undefined && StockCount !== null && (typeof StockCount !== 'number' || StockCount < 0)) {
             return res.status(400).json({ error: 'Stok adedi negatif olmayan bir sayı olmalıdır' });
+        }
+
+        if (LoyaltyPointCost !== undefined && LoyaltyPointCost !== null && (!Number.isInteger(LoyaltyPointCost) || LoyaltyPointCost < 0)) {
+            return res.status(400).json({ error: 'LoyaltyPointCost negatif olmayan bir tam sayı olmalıdır' });
         }
 
         const pool = await connectDB();
@@ -72,9 +76,10 @@ async function createProduct(req, res) {
             .input('IsPopular', sql.Bit, IsPopular ? 1 : 0)
             .input('Barcode', sql.NVarChar(64), Barcode || null)
             .input('StockCount', sql.Int, StockCount ?? null)
-            .query(`INSERT INTO Products (Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount)
+            .input('LoyaltyPointCost', sql.Int, LoyaltyPointCost ?? null)
+            .query(`INSERT INTO Products (Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost)
                     OUTPUT INSERTED.*
-                    VALUES (@Name, @Description, @Price, @CategoryId, @Cost, @IsPopular, @Barcode, @StockCount)`);
+                    VALUES (@Name, @Description, @Price, @CategoryId, @Cost, @IsPopular, @Barcode, @StockCount, @LoyaltyPointCost)`);
 
         res.status(201).json(result.recordset[0]);
     } catch (err) {
@@ -86,7 +91,7 @@ async function createProduct(req, res) {
 async function updateProduct(req, res) {
     try {
         const { id } = req.params;
-        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount } = req.body;
+        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost } = req.body;
 
         if (!Name || Price === undefined || Price === null || !CategoryId) {
             return res.status(400).json({ error: 'Ürün adı, fiyat ve kategori zorunludur' });
@@ -102,6 +107,10 @@ async function updateProduct(req, res) {
 
         if (StockCount !== undefined && StockCount !== null && (typeof StockCount !== 'number' || StockCount < 0)) {
             return res.status(400).json({ error: 'Stok adedi negatif olmayan bir sayı olmalıdır' });
+        }
+
+        if (LoyaltyPointCost !== undefined && LoyaltyPointCost !== null && (!Number.isInteger(LoyaltyPointCost) || LoyaltyPointCost < 0)) {
+            return res.status(400).json({ error: 'LoyaltyPointCost negatif olmayan bir tam sayı olmalıdır' });
         }
 
         const pool = await connectDB();
@@ -115,8 +124,9 @@ async function updateProduct(req, res) {
             .input('IsPopular', sql.Bit, IsPopular ? 1 : 0)
             .input('Barcode', sql.NVarChar(64), Barcode || null)
             .input('StockCount', sql.Int, StockCount ?? null)
+            .input('LoyaltyPointCost', sql.Int, LoyaltyPointCost ?? null)
             .query(`UPDATE Products SET Name = @Name, Description = @Description, Price = @Price, CategoryId = @CategoryId,
-                    Cost = @Cost, IsPopular = @IsPopular, Barcode = @Barcode, StockCount = @StockCount
+                    Cost = @Cost, IsPopular = @IsPopular, Barcode = @Barcode, StockCount = @StockCount, LoyaltyPointCost = @LoyaltyPointCost
                     OUTPUT INSERTED.* WHERE ProductId = @Id`);
 
         if (result.recordset.length === 0) {

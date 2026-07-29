@@ -39,9 +39,13 @@ const extraRoutes = require('./routes/extras');
 const syrupRoutes = require('./routes/syrups');
 const settingsRoutes = require('./routes/settings');
 const invoiceRoutes = require('./routes/invoices');
+const tableAreaRoutes = require('./routes/tableAreas');
+const invoiceProviderSettingsRoutes = require('./routes/invoiceProviderSettings');
 const publicMenuRoutes = require('./routes/publicMenu');
 const customerOrderRoutes = require('./routes/customerOrders');
 const serviceRequestRoutes = require('./routes/serviceRequests');
+const campaignRoutes = require('./routes/campaigns');
+const loyaltyRoutes = require('./routes/loyalty');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -83,9 +87,13 @@ app.use('/api/extras', extraRoutes);
 app.use('/api/syrups', syrupRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/table-areas', tableAreaRoutes);
+app.use('/api/invoice-provider-settings', invoiceProviderSettingsRoutes);
 app.use('/api/public/menu', publicMenuRoutes);
 app.use('/api/customer-orders', customerOrderRoutes);
 app.use('/api/service-requests', serviceRequestRoutes);
+app.use('/api/campaigns', campaignRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
 
 // Hata yönetimi (TÜM route'lardan SONRA olmalı)
 app.use(notFoundHandler);

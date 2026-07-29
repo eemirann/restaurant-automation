@@ -8,12 +8,12 @@ export default function LanguageToggle() {
     <button
       type="button"
       onClick={toggleLang}
-      className="fixed top-3 right-3 z-50 flex items-center rounded-full border border-hairline bg-panel/90
-                 backdrop-blur px-1 py-1 font-mono text-[10px] font-semibold tracking-wide shadow-lg"
+      className="fixed top-4 right-4 z-50 flex items-center rounded-full bg-white/90
+                 backdrop-blur px-1 py-1 text-[10px] font-semibold tracking-wide shadow-card"
       aria-label="Dil değiştir / Switch language"
     >
-      <span className={`rounded-full px-2 py-1 transition-colors ${lang === 'tr' ? 'bg-ember text-cream' : 'text-slate'}`}>TR</span>
-      <span className={`rounded-full px-2 py-1 transition-colors ${lang === 'en' ? 'bg-ember text-cream' : 'text-slate'}`}>EN</span>
+      <span className={`rounded-full px-2.5 py-1.5 transition-colors ${lang === 'tr' ? 'bg-ink text-paper' : 'text-muted'}`}>TR</span>
+      <span className={`rounded-full px-2.5 py-1.5 transition-colors ${lang === 'en' ? 'bg-ink text-paper' : 'text-muted'}`}>EN</span>
     </button>
   );
 }

@@ -71,7 +71,7 @@ function AnimatedMoney({ value, className = '' }) {
 // ============================================================
 export default function PaymentDrawer({ order, resolveProductName, tableLabel, onPaid, autoOpen = false, hideTrigger = false, onClose, triggerClassName, triggerLabel }) {
   const { user } = useAuth();
-  const { RestaurantName } = useSettings();
+  const { RestaurantName, PrinterPaperWidth } = useSettings();
   const canDiscount = ['Cashier', 'Admin'].includes(user?.role);
 
   const [open, setOpen] = useState(autoOpen);
@@ -318,6 +318,7 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
       totalPaid,
       remaining,
       money,
+      paperWidth: PrinterPaperWidth || 80,
     });
   };
   const sendWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(receiptLines())}`, '_blank');

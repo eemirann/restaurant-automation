@@ -7,6 +7,8 @@ import CartView from '../components/CartView';
 import StaffView from '../components/StaffView';
 import ProductDetailModal from '../components/ProductDetailModal';
 import LanguageToggle from '../components/LanguageToggle';
+import InfoDrawer from '../components/InfoDrawer';
+import CampaignCarousel from '../components/CampaignCarousel';
 import { useLanguage } from '../i18n';
 
 // Ana orkestratör: menüyü yükler, sepeti ve görünüm (Menü/Sepet/Çağır)
@@ -26,7 +28,14 @@ export default function MenuApp() {
   const [optionsCache, setOptionsCache] = useState({});
   const [selectedProduct, setSelectedProduct] = useState(null);
 
+  // Kampanya/combo karüseli — { [ComboOfferId]: quantity }. Combo bilgisi
+  // (isim/fiyat/içerik) sepette gösterilirken campaigns listesinden bulunur,
+  // ayrıca saklanmaz (tek doğruluk kaynağı: GET .../campaigns).
+  const [campaigns, setCampaigns] = useState([]);
+  const [comboCart, setComboCart] = useState({});
+
   const [orderNote, setOrderNote] = useState('');
+  const [username, setUsername] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
@@ -42,6 +51,16 @@ export default function MenuApp() {
       .then((res) => { if (active) setMenu(res.data); })
       .catch((err) => { if (active) setError(err.response?.data?.error || t('errorDefault')); })
       .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [qrToken]);
+
+  // Kampanya karüseli — menüyle birlikte, ayrı ve sessizce (hata olursa
+  // karüsel sadece hiç render edilmez, ana menüyü etkilemez).
+  useEffect(() => {
+    let active = true;
+    client.get(`/public/menu/${qrToken}/campaigns`)
+      .then((res) => { if (active) setCampaigns(res.data); })
+      .catch(() => {});
     return () => { active = false; };
   }, [qrToken]);
 
@@ -77,7 +96,26 @@ export default function MenuApp() {
     setSelectedProduct({ product, initialLine: initialLine || cart[product.ProductId] || null });
   };
 
-  const cartCount = Object.values(cart).reduce((sum, l) => sum + l.quantity, 0);
+  const addComboToCart = (comboOfferId, delta = 1) => {
+    setComboCart((prev) => {
+      const next = (prev[comboOfferId] || 0) + delta;
+      const clone = { ...prev };
+      if (next <= 0) delete clone[comboOfferId];
+      else clone[comboOfferId] = next;
+      return clone;
+    });
+  };
+
+  const removeComboFromCart = (comboOfferId) => {
+    setComboCart((prev) => {
+      const next = { ...prev };
+      delete next[comboOfferId];
+      return next;
+    });
+  };
+
+  const cartCount = Object.values(cart).reduce((sum, l) => sum + l.quantity, 0)
+    + Object.values(comboCart).reduce((sum, q) => sum + q, 0);
 
   const submitOrder = async () => {
     setSubmitting(true);
@@ -89,10 +127,20 @@ export default function MenuApp() {
         Extras: Object.entries(line.extras || {}).map(([id, qty]) => ({ ExtraProductId: Number(id), Quantity: qty })),
         Syrups: Object.entries(line.syrups || {}).map(([id, qty]) => ({ SyrupProductId: Number(id), Quantity: qty })),
       }));
+      const Combos = Object.entries(comboCart).map(([comboOfferId, quantity]) => ({
+        ComboOfferId: Number(comboOfferId),
+        Quantity: quantity,
+      }));
 
-      await client.post(`/public/menu/${qrToken}/order`, { Items, Note: orderNote || undefined });
+      await client.post(`/public/menu/${qrToken}/order`, {
+        Items: Items.length > 0 ? Items : undefined,
+        Combos: Combos.length > 0 ? Combos : undefined,
+        Note: orderNote || undefined,
+        Username: username.trim() || undefined,
+      });
 
       setCart({});
+      setComboCart({});
       setOrderNote('');
       fetchStatus();
       setView('staff');
@@ -118,45 +166,57 @@ export default function MenuApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-charcoal font-body">
+      <div className="min-h-screen flex items-center justify-center bg-paper font-body">
         <LanguageToggle />
-        <p className="text-slate font-mono text-sm">{t('loadingMenu')}</p>
+        <InfoDrawer />
+        <p className="text-muted text-sm tracking-wide">{t('loadingMenu')}</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-6 text-center bg-charcoal font-body">
+      <div className="min-h-screen flex items-center justify-center px-6 text-center bg-paper font-body">
         <LanguageToggle />
+        <InfoDrawer />
         <div>
           <p className="text-5xl mb-4">😕</p>
-          <p className="font-display text-lg font-semibold text-paper mb-2">{t('errorTitle')}</p>
-          <p className="text-slate text-sm">{error}</p>
+          <p className="font-display text-lg font-semibold text-ink mb-2">{t('errorTitle')}</p>
+          <p className="text-muted text-sm">{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-charcoal font-body pb-20">
+    <div className="min-h-screen bg-paper font-body pb-24">
       <LanguageToggle />
+      <InfoDrawer />
       {view === 'menu' && (
-        <MenuView
-          tableNumber={menu.table.TableNumber}
-          categories={menu.categories}
-          products={menu.products}
-          cart={cart}
-          onOpenProduct={(p) => openProduct(p)}
-        />
+        <>
+          <CampaignCarousel campaigns={campaigns} onAddCombo={(comboOfferId) => addComboToCart(comboOfferId, 1)} />
+          <MenuView
+            tableNumber={menu.table.TableNumber}
+            categories={menu.categories}
+            products={menu.products}
+            cart={cart}
+            onOpenProduct={(p) => openProduct(p)}
+          />
+        </>
       )}
       {view === 'cart' && (
         <CartView
           products={menu.products}
           cart={cart}
           optionsCache={optionsCache}
+          campaigns={campaigns}
+          comboCart={comboCart}
+          onComboQuantityChange={addComboToCart}
+          onRemoveCombo={removeComboFromCart}
           note={orderNote}
           onNoteChange={setOrderNote}
+          username={username}
+          onUsernameChange={setUsername}
           onEditLine={(product, line) => openProduct(product, line)}
           onSubmit={submitOrder}
           submitting={submitting}

@@ -26,6 +26,7 @@ import Shifts from './pages/Shifts';
 import ActiveShifts from './pages/ActiveShifts';
 import Audit from './pages/Audit';
 import Invoices from './pages/Invoices';
+import Campaigns from './pages/Campaigns';
 
 function Page({ children }) {
   return (
@@ -145,6 +146,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['Admin']}>
                 <Layout><Invoices /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/campaigns"
+            element={
+              <ProtectedRoute allowedRoles={['Admin']}>
+                <Layout><Campaigns /></Layout>
               </ProtectedRoute>
             }
           />

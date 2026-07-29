@@ -2,22 +2,59 @@ const { sql, connectDB } = require('../config/db');
 
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
+// Opsiyonel metin alanları — hepsi null'lanabilir, tek tip doğrulama
+// (maks. uzunluk) yeterli. NOT: Bu tablo GET /api/settings ile (kimlik
+// doğrulamasız — musteri-menu de okuyor) HERKESE AÇIKTIR. Bu yüzden
+// buraya asla API anahtarı/şifre gibi gizli bir alan eklenmez — e-Fatura
+// sağlayıcı kimlik bilgileri bilerek ayrı, sadece Admin'in erişebildiği
+// InvoiceProviderSettings tablosunda tutuluyor (bkz.
+// controllers/invoiceProviderSettingsController.js).
+const TEXT_FIELDS = [
+    { key: 'CafeNote', maxLen: 300 },
+    { key: 'SocialInstagram', maxLen: 200 },
+    { key: 'SocialFacebook', maxLen: 200 },
+    { key: 'SocialX', maxLen: 200 },
+    { key: 'SocialWhatsapp', maxLen: 30 },
+    { key: 'ContactPhone', maxLen: 30 },
+    { key: 'ContactAddress', maxLen: 300 },
+    { key: 'TaxNumber', maxLen: 20 },
+    { key: 'TaxOffice', maxLen: 100 },
+    { key: 'BillingAddress', maxLen: 300 },
+];
+
+const BOOL_FIELDS = ['ProductOptionsPopupEnabled', 'StockChartEnabled', 'KitchenAutoPrintEnabled'];
+
+const ALL_COLUMNS = ['RestaurantName', 'ThemeColor', ...BOOL_FIELDS, 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', ...TEXT_FIELDS.map((f) => f.key)];
+
 // ============================================================
-// GENEL GÖRÜNÜM AYARLARI (restoran adı + tema rengi)
-// Tek satırlık AppSettings tablosu — tüm kullanıcılar için ortak.
+// GENEL AYARLAR — tek satırlık AppSettings tablosu, tüm kullanıcılar
+// için ortak. GET kimlik doğrulamasız (bkz. routes/settings.js): hem
+// panelin login ekranı hem de musteri-menu'nün sol bilgi paneli/kapalı
+// banner'ı bunu doğrudan okur.
 // ============================================================
 
 async function getSettings(req, res) {
     try {
         const pool = await connectDB();
-        const result = await pool.request().query(`SELECT TOP 1 RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, EArsivVatRate FROM AppSettings ORDER BY AppSettingsId ASC`);
+        const result = await pool.request().query(`SELECT ${ALL_COLUMNS.join(', ')} FROM AppSettings ORDER BY AppSettingsId ASC`);
 
         if (result.recordset.length === 0) {
-            return res.status(200).json({ RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true, StockChartEnabled: true, EArsivVatRate: 10 });
+            return res.status(200).json({
+                RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true,
+                StockChartEnabled: true, KitchenAutoPrintEnabled: true, EArsivVatRate: 10, PrinterPaperWidth: 80,
+                LoyaltyPointsRate: 10,
+                ...Object.fromEntries(TEXT_FIELDS.map((f) => [f.key, null])),
+            });
         }
 
         const row = result.recordset[0];
-        res.status(200).json({ ...row, ProductOptionsPopupEnabled: Boolean(row.ProductOptionsPopupEnabled), StockChartEnabled: Boolean(row.StockChartEnabled), EArsivVatRate: Number(row.EArsivVatRate) });
+        res.status(200).json({
+            ...row,
+            ...Object.fromEntries(BOOL_FIELDS.map((k) => [k, Boolean(row[k])])),
+            EArsivVatRate: Number(row.EArsivVatRate),
+            PrinterPaperWidth: Number(row.PrinterPaperWidth),
+            LoyaltyPointsRate: Number(row.LoyaltyPointsRate),
+        });
     } catch (err) {
         console.error('Ayarlar getirilirken hata:', err);
         res.status(500).json({ error: 'Ayarlar getirilemedi' });
@@ -29,7 +66,7 @@ async function getSettings(req, res) {
 // ============================================================
 async function updateSettings(req, res) {
     try {
-        const { RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, EArsivVatRate } = req.body;
+        const { RestaurantName, ThemeColor, EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate } = req.body;
 
         if (!RestaurantName || typeof RestaurantName !== 'string' || !RestaurantName.trim()) {
             return res.status(400).json({ error: 'Restoran adı zorunludur' });
@@ -40,63 +77,86 @@ async function updateSettings(req, res) {
         if (!ThemeColor || typeof ThemeColor !== 'string' || !HEX_COLOR_REGEX.test(ThemeColor)) {
             return res.status(400).json({ error: 'Tema rengi #RRGGBB formatında olmalıdır' });
         }
-        if (ProductOptionsPopupEnabled !== undefined && typeof ProductOptionsPopupEnabled !== 'boolean') {
-            return res.status(400).json({ error: 'ProductOptionsPopupEnabled boolean olmalıdır' });
-        }
-        if (StockChartEnabled !== undefined && typeof StockChartEnabled !== 'boolean') {
-            return res.status(400).json({ error: 'StockChartEnabled boolean olmalıdır' });
+        for (const key of BOOL_FIELDS) {
+            if (req.body[key] !== undefined && typeof req.body[key] !== 'boolean') {
+                return res.status(400).json({ error: `${key} boolean olmalıdır` });
+            }
         }
         if (EArsivVatRate !== undefined && (typeof EArsivVatRate !== 'number' || EArsivVatRate < 0 || EArsivVatRate > 100)) {
             return res.status(400).json({ error: 'EArsivVatRate 0-100 arasında bir sayı olmalıdır' });
         }
+        if (PrinterPaperWidth !== undefined && ![58, 80].includes(PrinterPaperWidth)) {
+            return res.status(400).json({ error: 'PrinterPaperWidth 58 veya 80 olmalıdır' });
+        }
+        if (LoyaltyPointsRate !== undefined && (typeof LoyaltyPointsRate !== 'number' || LoyaltyPointsRate < 0 || LoyaltyPointsRate > 100)) {
+            return res.status(400).json({ error: 'LoyaltyPointsRate 0-100 arasında bir sayı olmalıdır' });
+        }
+        for (const f of TEXT_FIELDS) {
+            const v = req.body[f.key];
+            if (v !== undefined && v !== null && (typeof v !== 'string' || v.length > f.maxLen)) {
+                return res.status(400).json({ error: `${f.key} en fazla ${f.maxLen} karakter olabilen bir metin olmalıdır` });
+            }
+        }
 
         const pool = await connectDB();
 
-        const existing = await pool.request().query(`SELECT TOP 1 AppSettingsId, ProductOptionsPopupEnabled, StockChartEnabled, EArsivVatRate FROM AppSettings ORDER BY AppSettingsId ASC`);
+        const existing = await pool.request().query(`SELECT AppSettingsId, ${ALL_COLUMNS.join(', ')} FROM AppSettings ORDER BY AppSettingsId ASC`);
+        const existingRow = existing.recordset[0];
 
-        const popupEnabled = ProductOptionsPopupEnabled !== undefined
-            ? ProductOptionsPopupEnabled
-            : (existing.recordset.length > 0 ? Boolean(existing.recordset[0].ProductOptionsPopupEnabled) : true);
-        const stockChartEnabled = StockChartEnabled !== undefined
-            ? StockChartEnabled
-            : (existing.recordset.length > 0 ? Boolean(existing.recordset[0].StockChartEnabled) : true);
-        const vatRate = EArsivVatRate !== undefined
-            ? EArsivVatRate
-            : (existing.recordset.length > 0 ? Number(existing.recordset[0].EArsivVatRate) : 10);
+        const request = pool.request()
+            .input('RestaurantName', sql.NVarChar(100), RestaurantName.trim())
+            .input('ThemeColor', sql.Char(7), ThemeColor.toUpperCase())
+            .input('EArsivVatRate', sql.Decimal(5, 2), EArsivVatRate !== undefined ? EArsivVatRate : (existingRow ? Number(existingRow.EArsivVatRate) : 10))
+            .input('PrinterPaperWidth', sql.Int, PrinterPaperWidth !== undefined ? PrinterPaperWidth : (existingRow ? Number(existingRow.PrinterPaperWidth) : 80))
+            .input('LoyaltyPointsRate', sql.Decimal(5, 2), LoyaltyPointsRate !== undefined ? LoyaltyPointsRate : (existingRow ? Number(existingRow.LoyaltyPointsRate) : 10));
+
+        for (const key of BOOL_FIELDS) {
+            const value = req.body[key] !== undefined ? req.body[key] : (existingRow ? Boolean(existingRow[key]) : true);
+            request.input(key, sql.Bit, value);
+        }
+
+        for (const f of TEXT_FIELDS) {
+            const raw = req.body[f.key];
+            const value = raw !== undefined ? (raw === null ? null : raw.trim() || null) : (existingRow ? existingRow[f.key] : null);
+            request.input(f.key, sql.NVarChar(f.maxLen), value);
+        }
+
+        const dynamicColumns = [...BOOL_FIELDS, ...TEXT_FIELDS.map((f) => f.key)];
+        const setClause = dynamicColumns.map((k) => `${k} = @${k}`).join(', ');
+        const outputList = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', ...dynamicColumns]
+            .map((k) => `INSERTED.${k}`).join(', ');
 
         let result;
-        if (existing.recordset.length === 0) {
-            result = await pool.request()
-                .input('RestaurantName', sql.NVarChar(100), RestaurantName.trim())
-                .input('ThemeColor', sql.Char(7), ThemeColor.toUpperCase())
-                .input('ProductOptionsPopupEnabled', sql.Bit, popupEnabled)
-                .input('StockChartEnabled', sql.Bit, stockChartEnabled)
-                .input('EArsivVatRate', sql.Decimal(5, 2), vatRate)
-                .query(`
-                    INSERT INTO AppSettings (RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, EArsivVatRate)
-                    OUTPUT INSERTED.RestaurantName, INSERTED.ThemeColor, INSERTED.ProductOptionsPopupEnabled, INSERTED.StockChartEnabled, INSERTED.EArsivVatRate
-                    VALUES (@RestaurantName, @ThemeColor, @ProductOptionsPopupEnabled, @StockChartEnabled, @EArsivVatRate)
-                `);
+        if (!existingRow) {
+            const insertColumns = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', ...dynamicColumns];
+            const insertParams = insertColumns.map((k) => `@${k}`).join(', ');
+            result = await request.query(`
+                INSERT INTO AppSettings (${insertColumns.join(', ')})
+                OUTPUT ${outputList}
+                VALUES (${insertParams})
+            `);
         } else {
-            result = await pool.request()
-                .input('Id', sql.Int, existing.recordset[0].AppSettingsId)
-                .input('RestaurantName', sql.NVarChar(100), RestaurantName.trim())
-                .input('ThemeColor', sql.Char(7), ThemeColor.toUpperCase())
-                .input('ProductOptionsPopupEnabled', sql.Bit, popupEnabled)
-                .input('StockChartEnabled', sql.Bit, stockChartEnabled)
-                .input('EArsivVatRate', sql.Decimal(5, 2), vatRate)
+            result = await request
+                .input('Id', sql.Int, existingRow.AppSettingsId)
                 .query(`
                     UPDATE AppSettings
                     SET RestaurantName = @RestaurantName, ThemeColor = @ThemeColor,
-                        ProductOptionsPopupEnabled = @ProductOptionsPopupEnabled,
-                        StockChartEnabled = @StockChartEnabled, EArsivVatRate = @EArsivVatRate, UpdatedAt = GETDATE()
-                    OUTPUT INSERTED.RestaurantName, INSERTED.ThemeColor, INSERTED.ProductOptionsPopupEnabled, INSERTED.StockChartEnabled, INSERTED.EArsivVatRate
+                        EArsivVatRate = @EArsivVatRate, PrinterPaperWidth = @PrinterPaperWidth,
+                        LoyaltyPointsRate = @LoyaltyPointsRate,
+                        ${setClause}, UpdatedAt = GETDATE()
+                    OUTPUT ${outputList}
                     WHERE AppSettingsId = @Id
                 `);
         }
 
         const row = result.recordset[0];
-        res.status(200).json({ ...row, ProductOptionsPopupEnabled: Boolean(row.ProductOptionsPopupEnabled), StockChartEnabled: Boolean(row.StockChartEnabled), EArsivVatRate: Number(row.EArsivVatRate) });
+        res.status(200).json({
+            ...row,
+            ...Object.fromEntries(BOOL_FIELDS.map((k) => [k, Boolean(row[k])])),
+            EArsivVatRate: Number(row.EArsivVatRate),
+            PrinterPaperWidth: Number(row.PrinterPaperWidth),
+            LoyaltyPointsRate: Number(row.LoyaltyPointsRate),
+        });
     } catch (err) {
         console.error('Ayarlar güncellenirken hata:', err);
         res.status(500).json({ error: 'Ayarlar güncellenemedi' });
