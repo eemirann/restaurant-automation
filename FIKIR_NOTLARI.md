@@ -44,6 +44,67 @@ uyguladı.
 
 ---
 
+## Kampanya + Sadakat Sistemi, QR Menüyle Entegre (2026-07-29)
+
+QR menünün ilk açılış ekranına, sağa-sola kaydırılan bir reklam/kampanya
+karüseli eklenmesi ve buna bağlı bir müşteri sadakat sistemi kurulması
+konuşuldu. Kararlaştırılanlar:
+
+- **Combo motoru gerçek olacak** (basit "vitrin ürünü" değil) — kampanya
+  ürünleri kendi fiyat/bileşen tanımına sahip, backend'de doğrulanan
+  gerçek bir yapı.
+- **Sadakat kimliği: kullanıcı adı** (telefon numarası değil), aynı
+  kullanıcı adı iki kişi tarafından kullanılamaz (UNIQUE, case-insensitive).
+- **Puan kazanma oranı**: varsayılan **100₺ → 10 puan**, Ayarlar'dan
+  değiştirilebilir olacak (`LoyaltyPointsRate`).
+- **Kampanya yönetimi**: sadece Admin.
+- **Karüsel**: hem otomatik kayma hem parmakla kaydırma (ikisi birden).
+
+### Combo Motoru — veri modeli taslağı
+
+- `Campaigns`: `CampaignId`, `Title`, `Description`, `ImageUrl`, `StartAt`,
+  `EndAt`, `DisplayOrder`, `IsActive`, `CampaignType` (`Info` | `Combo`),
+  `ComboOfferId` (nullable)
+- `ComboOffers`: `ComboOfferId`, `Name`, `Price` (sabit kampanya fiyatı),
+  `IsActive`
+- `ComboOfferItems`: `ComboOfferId`, `ProductId`, `Quantity`
+
+**Sipariş akışı**: Müşteri karüselde kampanyaya dokunur → combo detay
+modalı → sepete `{ ComboOfferId, Quantity }` (normal `Items`'tan ayrı,
+`POST /public/menu/:qrToken/order` payload'ına `Combos` alanı eklenir).
+
+**Backend**: `buildOrderInTransaction` genişletilir — her combo için
+`ComboOffers`+`ComboOfferItems` transaction içinde çekilir, `IsActive`/
+tarih aralığı doğrulanır. Mutfağın gerçek ürünleri görmesi için her
+bileşen kendi `OrderDetail` satırı olarak eklenir (KDS'te ayrı ayrı
+görünür, stok her ürünün kendi reçetesinden düşer — mevcut BOM mantığı
+aynen kullanılır). Fiyat satırlara değil **combo toplamına** sabitlenir;
+bunun için `OrderDetails`'e nullable `ComboOfferId` sütunu eklenip
+fiş/rapor tarafında gruplanabilir.
+
+### Sadakat — kullanıcı adı ile
+
+`Customers`: `CustomerId`, `Username` (UNIQUE, case-insensitive),
+`LoyaltyPoints`, `CreatedAt`. Checkout'ta opsiyonel "Kullanıcı adın"
+alanı; sipariş onaylanınca (`approveCustomerOrderRequest`) puan işlenir.
+
+**Açık risk (henüz karara bağlanmadı):** Şifresiz, sadece kullanıcı
+adıyla çalışan sistemde (1) başkası aynı adı bilip puanlara erişebilir,
+(2) yazım hatası yapılırsa puanlar "kaybolur" (yeni kayıt açılır).
+Öneri: opsiyonel 4 haneli PIN eklemek (banka güvenliği değil, sadece
+hafif koruma). Karar kullanıcıya bırakıldı.
+
+### Karüsel UX detayı
+
+Otomatik kayma + parmakla kaydırma birlikte olacaksa, kullanıcı manuel
+kaydırdığında otomatik zamanlayıcı sıfırlanıp bir süre durmalı —
+yoksa otomatik kayma ile kullanıcı hareketi çakışır.
+
+**Durum:** Henüz uygulanmadı — kullanıcı kendi tarafında (yerel Claude
+Code oturumu) uygulayacak.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
