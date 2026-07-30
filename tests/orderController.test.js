@@ -3,6 +3,15 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 jest.mock('../config/db', () => require('./helpers/fakeDb'));
 const fakeDb = require('../config/db');
 
+jest.mock('../config/socket', () => ({
+    initSocket: jest.fn(),
+    emitTablesChanged: jest.fn(),
+    emitKitchen: jest.fn(),
+    emitCustomerRequests: jest.fn(),
+    emitStockAlert: jest.fn(),
+}));
+const socket = require('../config/socket');
+
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../server');
@@ -13,7 +22,10 @@ function tokenFor(role, userId = 1) {
 
 const waiterToken = tokenFor('Waiter');
 
-afterEach(() => fakeDb.__reset());
+afterEach(() => {
+    fakeDb.__reset();
+    socket.emitStockAlert.mockClear();
+});
 
 describe('POST /api/orders - doğrulama', () => {
     test('TableId/UserId/Items eksikse 400 döner', async () => {
@@ -273,5 +285,79 @@ describe('PATCH /api/orders/:id/cancel - yetki', () => {
             .patch('/api/orders/1/cancel')
             .set('Authorization', `Bearer ${waiterToken}`);
         expect(res.status).toBe(403);
+    });
+});
+
+describe('POST /api/orders - düşük stok bildirimi (emitStockAlert)', () => {
+    test('stok minimum seviyenin altına düşerse commit sonrası emitStockAlert ürün adıyla çağrılır', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
+                return { recordset: [{ ProductId: 10, Price: 25, IsActive: true, IsAvailable: true }] };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                return { recordset: [{ OrderId: 1, TableId: 1, UserId: 1, TotalAmount: 25, Status: 'Pending', Note: null, CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('INSERT INTO OrderDetails')) {
+                return { recordset: [{ OrderDetailsId: 1 }] };
+            }
+            if (queryText.includes('FROM Recipes')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('UPDATE Stock')) {
+                // Kalan (1) minimum seviyenin (5) altında -> deductStockForItem uyarı üretir
+                return { recordset: [{ Quantity: 1, MinStockLevel: 5 }] };
+            }
+            if (queryText.includes('SELECT ProductId, Name FROM Products WHERE ProductId IN')) {
+                return { recordset: [{ ProductId: 10, Name: 'Filtre Kahve' }] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders')
+            .set('Authorization', `Bearer ${waiterToken}`)
+            .send({ TableId: 1, UserId: 1, Items: [{ ProductId: 10, Quantity: 1 }] });
+
+        expect(res.status).toBe(201);
+        expect(res.body.lowStockWarnings).toEqual([{ ProductId: 10, RemainingStock: 1, IsNegative: false }]);
+
+        // notifyLowStock best-effort/fire-and-forget çalışır — event loop'un bir turunu bekle.
+        await new Promise((r) => setImmediate(r));
+        expect(socket.emitStockAlert).toHaveBeenCalledTimes(1);
+        expect(socket.emitStockAlert).toHaveBeenCalledWith({
+            warnings: [{ ProductId: 10, Name: 'Filtre Kahve', RemainingStock: 1, IsNegative: false }],
+        });
+    });
+
+    test('stok yeterliyse (uyarı yok) emitStockAlert ÇAĞRILMAZ', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
+                return { recordset: [{ ProductId: 10, Price: 25, IsActive: true, IsAvailable: true }] };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                return { recordset: [{ OrderId: 1, TableId: 1, UserId: 1, TotalAmount: 25, Status: 'Pending', Note: null, CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('INSERT INTO OrderDetails')) {
+                return { recordset: [{ OrderDetailsId: 1 }] };
+            }
+            if (queryText.includes('FROM Recipes')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('UPDATE Stock')) {
+                return { recordset: [{ Quantity: 100, MinStockLevel: 5 }] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders')
+            .set('Authorization', `Bearer ${waiterToken}`)
+            .send({ TableId: 1, UserId: 1, Items: [{ ProductId: 10, Quantity: 1 }] });
+
+        expect(res.status).toBe(201);
+        expect(res.body.lowStockWarnings).toEqual([]);
+
+        await new Promise((r) => setImmediate(r));
+        expect(socket.emitStockAlert).not.toHaveBeenCalled();
     });
 });

@@ -61,4 +61,16 @@ function emitCustomerRequests(payload) {
     ioInstance?.emit('customerRequests:new', payload || {});
 }
 
-module.exports = { initSocket, emitTablesChanged, emitKitchen, emitCustomerRequests };
+// ============================================================
+// Düşük stok uyarısı. Sipariş/puanla-ürün-ekleme akışlarında stok
+// transaction COMMIT edildikten SONRA (utils/stockDeduction.js
+// deductStockForItem'ın döndürdüğü warnings üzerinden) çağrılır — aynı
+// "sadece sinyal" deseni, personel ekranı NotificationCenter üzerinden
+// gösterir, tek doğruluk kaynağı yine Stok sayfasıdır.
+//   event: 'stock:low' -> payload: { warnings: [{ProductId, Name, RemainingStock, IsNegative}] }
+// ============================================================
+function emitStockAlert(payload) {
+    ioInstance?.emit('stock:low', payload || {});
+}
+
+module.exports = { initSocket, emitTablesChanged, emitKitchen, emitCustomerRequests, emitStockAlert };

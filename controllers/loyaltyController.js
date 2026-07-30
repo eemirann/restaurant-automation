@@ -2,6 +2,7 @@ const { sql, connectDB } = require('../config/db');
 const { emitTablesChanged, emitKitchen } = require('../config/socket');
 const { deductStockForItem } = require('../utils/stockDeduction');
 const { logAudit } = require('../utils/audit');
+const { notifyLowStock } = require('../utils/stockAlert');
 
 // ============================================================
 // SADAKLIK PUANI — PERSONEL TARAFI
@@ -175,6 +176,7 @@ async function redeemLoyaltyProduct(req, res) {
         await transaction.commit();
         emitTablesChanged();
         emitKitchen('kds:new', { orderId: OrderId, tableId: order.TableId });
+        if (lowStockWarnings.length > 0) notifyLowStock(pool, lowStockWarnings);
         logAudit(pool, {
             userId: req.user?.userId, action: 'LOYALTY_REDEEM', entityType: 'Order', entityId: OrderId,
             details: { username: customer.Username, productId: ProductId, pointsSpent: product.LoyaltyPointCost },

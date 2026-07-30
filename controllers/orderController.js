@@ -2,6 +2,7 @@ const { sql, connectDB } = require('../config/db');
 const { emitTablesChanged, emitKitchen } = require('../config/socket');
 const { recalculateOrderStatus } = require('./paymentController');
 const { deductStockForItem, restoreStockForItem } = require('../utils/stockDeduction');
+const { notifyLowStock } = require('../utils/stockAlert');
 const { logAudit } = require('../utils/audit');
 const { attachOrderItemOptions } = require('../utils/orderItemOptions');
 const { buildOrderInTransaction } = require('../utils/orderBuilder');
@@ -33,6 +34,7 @@ async function createOrder(req, res) {
         await transaction.commit();
         emitTablesChanged();
         emitKitchen('kds:new', { orderId: order.OrderId, tableId: TableId });
+        if (lowStockWarnings.length > 0) notifyLowStock(pool, lowStockWarnings);
 
         res.status(201).json({
             message: 'Sipariş başarıyla oluşturuldu.',

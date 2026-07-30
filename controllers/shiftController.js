@@ -295,14 +295,20 @@ async function transferShift(req, res) {
     }
 }
 
-// GET /api/shifts — geçmiş vardiyalar (Yönetici), kullanıcı adıyla
+// GET /api/shifts — geçmiş vardiyalar (Yönetici), kullanıcı adıyla + süre (dk).
+// Varsayılan olarak silinmiş (IsDeleted=1) kayıtlar hariç tutulur;
+// ?includeDeleted=1 ile Admin silinmiş kayıtları da görebilir
+// (stockController'daki aktif/pasif filtre deseniyle aynı).
 async function listShifts(req, res) {
     try {
+        const includeDeleted = req.query.includeDeleted === '1';
         const pool = await connectDB();
         const result = await pool.request().query(`
-            SELECT TOP 100 s.*, u.FullName AS UserName
+            SELECT TOP 100 s.*, u.FullName AS UserName,
+                   DATEDIFF(MINUTE, s.OpenedAt, ISNULL(s.ClosedAt, GETDATE())) AS DurationMinutes
             FROM Shifts s
             JOIN Users u ON u.UserId = s.UserId
+            ${includeDeleted ? '' : 'WHERE s.IsDeleted = 0'}
             ORDER BY s.ShiftId DESC
         `);
         return res.status(200).json(result.recordset);
@@ -312,7 +318,54 @@ async function listShifts(req, res) {
     }
 }
 
+// PATCH /api/shifts/:id/delete (Yönetici) — soft-delete, GERÇEK DELETE YOK
+// (stockController.deleteStockItem ile aynı felsefe: IsDeleted=1 yapılır,
+// listShifts varsayılan görünümden gizler, veri hiç kaybolmaz).
+async function deleteShift(req, res) {
+    try {
+        const { id } = req.params;
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('Id', sql.Int, id)
+            .query(`UPDATE Shifts SET IsDeleted = 1 OUTPUT INSERTED.* WHERE ShiftId = @Id`);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Vardiya bulunamadı' });
+        }
+
+        const shift = result.recordset[0];
+        logAudit(pool, { userId: req.user?.userId, action: 'SHIFT_DELETE', entityType: 'Shift', entityId: shift.ShiftId, details: { cashierUserId: shift.UserId } });
+        return res.status(200).json(shift);
+    } catch (err) {
+        console.error('Vardiya silinirken hata:', err);
+        return res.status(500).json({ error: 'Vardiya silinemedi' });
+    }
+}
+
+// PATCH /api/shifts/:id/restore (Yönetici) — soft-delete'i geri alır.
+async function restoreShift(req, res) {
+    try {
+        const { id } = req.params;
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('Id', sql.Int, id)
+            .query(`UPDATE Shifts SET IsDeleted = 0 OUTPUT INSERTED.* WHERE ShiftId = @Id`);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Vardiya bulunamadı' });
+        }
+
+        const shift = result.recordset[0];
+        logAudit(pool, { userId: req.user?.userId, action: 'SHIFT_RESTORE', entityType: 'Shift', entityId: shift.ShiftId, details: { cashierUserId: shift.UserId } });
+        return res.status(200).json(shift);
+    } catch (err) {
+        console.error('Vardiya geri getirilirken hata:', err);
+        return res.status(500).json({ error: 'Vardiya geri getirilemedi' });
+    }
+}
+
 module.exports = {
     getCurrentShift, openShift, openShiftFor, closeShift, listShifts,
     getActiveShifts, forceCloseShift, forceLogoutCashier, transferShift,
+    deleteShift, restoreShift,
 };
