@@ -782,6 +782,155 @@ claude/turkce-yazi-m3dfnh).
 
 ---
 
+## Ürün/Menü Dışa-İçe Aktarma (JSON) + USB'den Sihirbazlı Offline Kurulum (2026-08-06 civarı)
+
+İki ayrı ama ilişkili özellik: (1) ürün/menü verisini bir kurulumdan
+diğerine JSON dosyasıyla taşıma (evde hazırlayıp restorana yükleme),
+(2) restoranda internet olmadan, USB'den çalışan sihirbazlı bir
+kurulum (`.exe`). İkincisi gerçek bir Windows makinede test edilmeli
+(bu oturumdan/uzak ortamdan yapılamaz).
+
+### Prompt 1/2 — Ürün/Menü Dışa-İçe Aktarma
+
+\`\`\`
+Restoran Otomasyonu projesine ürün/menü verisini dışa/içe aktarma
+özelliği ekle. Aşağıdaki spesifikasyonu birebir uygula, varsayımda
+bulunma.
+
+ÖNCE OKU: migrations/2026_07_22_base_schema.sql (Categories, Products,
+ProductVariants, Stock şemaları), migrations/2026_07_27_recipes.sql
+(Recipes), migrations/2026_07_28_extras.sql +
+2026_07_29_product_options.sql (Products.IsExtra/IsSyrup,
+ProductExtras, ProductSyrups), controllers/productController.js
+(mevcut CRUD deseni), restoran-panel/src/pages/Products.jsx (buton
+ekleme yeri).
+
+ÖNEMLİ MİMARİ KARAR: İki farklı veritabanı kurulumunda ID'ler ASLA
+eşleşmez (her biri kendi otomatik-artan ID'sini üretir). Bu yüzden
+içe aktarma ID'lere göre DEĞİL, İSME göre eşleştirme yapmalı (Category
+Name, Product Name case-insensitive) — var olan bir kayıt isimle
+bulunursa GÜNCELLENİR, bulunamazsa YENİ oluşturulur (upsert). Bu,
+aynı JSON'u birden fazla kez içe aktarmayı güvenli/idempotent yapar.
+
+Backend: Yeni controllers/dataTransferController.js:
+- exportMenuData(req,res) — GET /api/products/export (Admin-only).
+  Tek bir JSON döner: { exportedAt, categories: [{Name, IsActive}],
+  products: [{Name, Description, Price, CategoryName, IsExtra,
+  IsSyrup, IsPopular, Barcode, LoyaltyPointCost, ...diğer menü
+  alanları — ImageUrl DAHIL EDİLMEZ, görsel dosyaları JSON'a
+  sığmaz, ayrı not düşülür}], variants: [{ProductName, Name, Price}],
+  productExtras: [{ProductName, ExtraProductName, DisplayOrder,
+  IsEnabled}], productSyrups: [{aynı desen}], recipes:
+  [{ProductName, RawMaterialProductName, Quantity, Unit}] }.
+  Stock.Quantity (canlı stok adedi) KESİNLİKLE dahil edilmez — bu
+  operasyonel veri, menü yapılandırması değil.
+- importMenuData(req,res) — POST /api/products/import (Admin-only),
+  yukarıdaki formatta bir JSON body alır. TEK bir transaction içinde:
+  önce categories upsert edilir (Name'e göre), sonra products (Name +
+  CategoryName ile Category'ye bağlanır), sonra variants/productExtras/
+  productSyrups/recipes (hepsi ProductName üzerinden ilgili
+  ProductId'yi bulur). Sonunda özet döner: { categoriesCreated,
+  categoriesUpdated, productsCreated, productsUpdated, warnings: [...]
+  } (örn. bir recipe'nin RawMaterialProductName'i bulunamazsa warning
+  olarak eklenir, işlem durmaz).
+- routes/products.js'e Admin-only olarak eklenir (export/import
+  route'ları /export ve /import path'lerinde, mevcut /:id route'undan
+  ÖNCE tanımlanmalı — Express route sırası, bkz. routes/tables.js
+  qrcodes deseni).
+
+Frontend (restoran-panel Products.jsx): "Dışa Aktar" butonu (GET
+/products/export çağırıp dönen JSON'u tarayıcıda dosya olarak indirir
+— Blob + <a download>), "İçe Aktar" butonu (dosya seçici, JSON'u okuyup
+POST /products/import, dönen özeti (kaç ürün eklendi/güncellendi,
+uyarılar) bir modal/toast'ta gösterir).
+
+NOT (kullanıcıya iletilecek, koda yazılmayacak): Ürün görselleri
+(uploads/products klasöründeki dosyalar) bu JSON'a dahil değil —
+görselleri taşımak için ayrıca `uploads` klasörünün kendisinin
+kopyalanması gerekir, bu ayrı bir konu.
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle export/import
+için test yaz (özellikle isim-eşleştirme mantığının doğru
+çalıştığını — var olan bir ürünü güncellediğini, yeni bir ürün
+eklediğini, bulunamayan bir recipe referansında warning ürettiğini).
+Mevcut TÜM testler geçmeye devam etmeli — npm test. restoran-panel'de
+npm run build hatasız tamamlanmalı. Bitince commit + push (branch:
+claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+### Prompt 2/2 — USB'den Sihirbazlı Offline Kurulum
+
+\`\`\`
+Restoran Otomasyonu projesi için USB'den çalışan, internetsiz,
+sihirbazlı bir Windows kurulum paketi hazırla. Bu GERÇEK bir Windows
+makinede geliştirilip test edilmeli — Inno Setup kurulu olması
+gerekiyor (https://jrsoftware.org/isinfo.php, ücretsiz).
+
+ÖNCE OKU: docker-compose.yml (4 servis: db, backend, panel,
+customer-menu — hepsinin imajı offline paketlenecek), scripts/
+migrate.js, scripts/createFirstAdmin.js (ikisi de zaten var, sihirbaz
+bunları arka planda kullanacak), .env.example (hangi değişkenlerin
+sorulması gerektiği), README.md Docker kurulum bölümü (adım sırası).
+
+== 1) PAKETLEME SCRIPT'İ (evde, USB'ye koymadan önce BİR KEZ
+çalıştırılır) ==
+Yeni scripts/paketle.ps1 (PowerShell): `docker compose build` (backend/
+panel/customer-menu imajlarını build eder), `docker pull
+mcr.microsoft.com/mssql/server:2022-latest`, sonra 4 imajı da `docker
+save -o images.tar <imaj1> <imaj2> <imaj3> <imaj4>` ile TEK bir .tar
+dosyasına aktarır. Proje dosyalarını (migrations/, scripts/,
+docker-compose.yml — node_modules HARİÇ, imajların içinde zaten var)
++ images.tar + Docker Desktop Installer.exe (kullanıcı bunu ayrıca
+https://www.docker.com/products/docker-desktop adresinden bir kez
+indirip aynı klasöre koyacak, script bunu indirmez) bir `KurulumPaketi/`
+klasöründe toplar — bu klasör USB'ye kopyalanacak.
+
+== 2) INNO SETUP SİHİRBAZI ==
+Yeni installer/RestoranKurulum.iss:
+- Karşılama + bilgi sayfası ("Bu sihirbaz restoran otomasyon
+  sistemini bu bilgisayara kuracak")
+- Docker Desktop kurulu mu kontrolu (registry/PATH kontrolü) —
+  kurulu değilse KurulumPaketi/Docker Desktop Installer.exe'yi
+  çalıştırır, kullanıcıya "Docker kurulumu bitince bilgisayarı
+  yeniden başlatman gerekebilir, sonra bu sihirbazı tekrar çalıştır"
+  uyarısı gösterir (BIOS/sanallaştırma sorunu varsa Docker Desktop
+  kendi hata verir, bu sihirbaz onu OTOMATİK ÇÖZEMEZ — kullanıcıya
+  net bir Türkçe hata mesajıyla "BIOS'ta sanallaştırmayı aç" yönlendirmesi
+  yapılır, daha fazlası yapılamaz).
+- Dosyaları C:\RestoranOtomasyonu'na kopyalar (images.tar dahil)
+- Sihirbaz sayfalarında kullanıcıdan ister: DB şifresi (ya da
+  "Otomatik oluştur" seçeneği — güçlü bir şifre üretilip ekranda
+  gösterilir, not almasını iste), Admin adı/soyadı, Admin kullanıcı
+  adı, Admin PIN'i (4-6 hane).
+- Kurulum sonrası çalıştırılan script (installer/postinstall.ps1):
+  `.env` dosyasını sihirbazdaki girdilerle oluşturur, `docker load -i
+  images.tar`, `docker compose up -d`, db'nin hazır olmasını bekleyen
+  bir retry döngüsü (max ~60sn, `docker compose exec db ... -Q
+  "SELECT 1"` başarılı olana kadar), veritabanını oluşturur
+  (CREATE DATABASE), `docker compose run --rm backend npm run
+  migrate`, `docker compose exec backend node scripts/
+  createFirstAdmin.js "<isim>" "<kullaniciadi>" "<pin>"`.
+- Masaüstüne bir kısayol oluşturur: mevcut Chrome/Edge'i `--app=http://
+  localhost:8080` parametresiyle açan (native app hissi verir).
+- Bitiş sayfası: "Kurulum tamamlandı! Masaüstündeki kısayola tıklayarak
+  paneli açabilirsin."
+
+== TEST ==
+Bu, gerçek bir Windows makinede uçtan uca test edilmeli — sanal/temiz
+bir Windows ortamında (ya da Docker'ı hiç kurmamış bir PC'de) sihirbazı
+çalıştırıp panele başarıyla giriş yapabildiğini doğrula. Bitince
+commit + push (branch: claude/turkce-yazi-m3dfnh) — installer/ klasörü
+ve scripts/paketle.ps1 repoya eklenir, ama images.tar/Docker Desktop
+Installer.exe gibi büyük binary dosyalar .gitignore'a eklenir (repoya
+commitlenmez, her paketlemede yeniden üretilir).
+\`\`\`
+
+**Durum:** Henüz uygulanmadı. Prompt 1 kod tabanında yapılabilir, Prompt
+2 gerçek Windows makinesi + Inno Setup gerektiriyor.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
