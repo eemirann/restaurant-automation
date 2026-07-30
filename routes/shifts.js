@@ -4,6 +4,7 @@ const { verifyToken, requireRole } = require('../middleware/authMiddleware');
 const {
     getCurrentShift, openShift, openShiftFor, closeShift, listShifts,
     getActiveShifts, forceCloseShift, forceLogoutCashier, transferShift,
+    deleteShift, restoreShift,
 } = require('../controllers/shiftController');
 
 // Kendi vardiyası — giriş yapan herkes
@@ -18,5 +19,7 @@ router.post('/:id/force-close', verifyToken, requireRole('Admin'), forceCloseShi
 router.post('/:id/force-logout', verifyToken, requireRole('Admin'), forceLogoutCashier);
 router.post('/:id/transfer', verifyToken, requireRole('Admin'), transferShift);
 router.post('/open-for', verifyToken, requireRole('Admin'), openShiftFor);
+router.patch('/:id/delete', verifyToken, requireRole('Admin'), deleteShift);
+router.patch('/:id/restore', verifyToken, requireRole('Admin'), restoreShift);
 
 module.exports = router;
