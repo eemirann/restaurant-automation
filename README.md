@@ -231,9 +231,14 @@ cp .env.example .env
 docker compose up -d --build
 
 # 3) İlk kurulumda bir kez: veritabanını oluştur + migration'ları uygula
-docker compose exec db /opt/mssql-tools/bin/sqlcmd -S localhost -U sa \
-  -P "$DB_PASSWORD" -Q "IF DB_ID('RestoranDB') IS NULL CREATE DATABASE RestoranDB"
+docker compose exec db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa \
+  -P "$DB_PASSWORD" -C -Q "IF DB_ID('RestoranDB') IS NULL CREATE DATABASE RestoranDB"
 docker compose run --rm backend npm run migrate
+
+# 4) İlk kurulumda bir kez: panele giriş yapabilecek ilk Admin kullanıcısını oluştur
+#    (Users tablosu migration sonrası boştur, /register ucu sadece Admin'e açık —
+#    bu script o döngüyü tek seferlik kırar; bkz. scripts/createFirstAdmin.js)
+docker compose exec backend node scripts/createFirstAdmin.js "Ad Soyad" "kullaniciadi" "1234"
 ```
 
 - **Panel:** http://localhost:8080  ·  **Müşteri Menü:** http://localhost:8081  ·  **Backend:** http://localhost:4091

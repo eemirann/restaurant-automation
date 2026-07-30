@@ -4,9 +4,12 @@
 #   1) Kök dizinde .env oluşturun (JWT_SECRET, DB_PASSWORD zorunlu)
 #   2) docker compose up -d --build
 #   3) Veritabanını ve şemayı hazırlayın (ilk kurulumda bir kez):
-#        docker compose exec db /opt/mssql-tools/bin/sqlcmd -S localhost -U sa \
-#          -P "$DB_PASSWORD" -Q "IF DB_ID('RestoranDB') IS NULL CREATE DATABASE RestoranDB"
+#        docker compose exec db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa \
+#          -P "$DB_PASSWORD" -C -Q "IF DB_ID('RestoranDB') IS NULL CREATE DATABASE RestoranDB"
 #        docker compose run --rm backend npm run migrate
+#      (Not: mssql/server imajı mssql-tools18'e geçti — eski yollarda
+#      kurulu 'mssql-tools' imajlarında hâlâ /opt/mssql-tools/bin/sqlcmd
+#      olabilir, -C bayrağı sertifika güvenini kabul eder.)
 #   Panel:         http://localhost:8080
 #   Müşteri Menü:  http://localhost:8081
 #   Backend:       http://localhost:4091
