@@ -526,6 +526,109 @@ claude/turkce-yazi-m3dfnh).
 
 ---
 
+## Log Sistemi (denetim genişletme + teknik log) + Müşteriler Sayfası (2026-08-05 civarı)
+
+Offline çalışma konusu tartışıldı (tam offline sipariş alma riskleri:
+fiyat/stok güvenliği, çok cihazlı senkronizasyon çakışması, mimari
+değişim büyüklüğü) — kullanıcı henüz karar vermedi, bu prompt'a dahil
+değil. Log sistemi konusunda hem denetim (audit) genişletmesi hem
+teknik/hata günlüğü istendi. Ayrıca müşterilerin sadakat puanlarını
+toplu görebileceği bir sayfa olmadığı tespit edildi (şu an sadece
+Tables.jsx'te tek tek kullanıcı adı arama var).
+
+### Claude Code'a yapıştırılacak prompt
+
+\`\`\`
+Restoran Otomasyonu projesine 3 bağlı iyileştirme ekle. Aşağıdaki
+spesifikasyonu birebir uygula, varsayımda bulunma.
+
+ÖNCE OKU: utils/audit.js (logAudit fonksiyonu), migrations/
+2026_07_27_audit_log.sql (AuditLog şeması), restoran-panel/src/pages/
+Audit.jsx (mevcut log görüntüleyici), controllers/loyaltyController.js
+(Customers tablosu erişim deseni), restoran-panel/src/pages/Tables.jsx
+satır ~1010-1105 (mevcut tek-kullanıcı sadakat arama/redeem paneli —
+YENİ sayfa bunun YERİNE geçmeyecek, onu tamamlayacak/ona ek olacak),
+restoran-panel/src/components/Layout.jsx (nav item + route ekleme
+deseni), package.json (şu an winston/pino gibi bir log kütüphanesi
+YOK, console.log/console.error dağınık kullanılıyor).
+
+== 1) DENETİM (AUDIT) LOGUNU GENİŞLET ==
+
+logAudit şu an SADECE şu 8 controller'da çağrılıyor: paymentController,
+tableController, orderController, productController, authController,
+customerOrderController, shiftController, loyaltyController. Aşağıdaki
+controller'lara da (özellikle güvenlik açısından önemli olanlar
+öncelikli) logAudit çağrıları eklenir, mevcut controller'lardaki
+kullanım deseniyle birebir aynı şekilde (action isimlendirmesi büyük
+harf + alt çizgi, örn. 'USER_ROLE_CHANGE'):
+
+- userController.js: kullanıcı oluşturma, rol değiştirme, pasife
+  alma/aktif etme, PIN/şifre sıfırlama (KİM'in yaptığı + hangi
+  kullanıcıya + ne değiştiği kaydedilmeli — en kritik olan bu)
+- settingsController.js: ayar güncellemesi (hangi alanlar değişti)
+- invoiceProviderSettingsController.js: e-Fatura API key/ortam
+  değişikliği (KİM değiştirdi — API key'in kendisi loglanmaz, sadece
+  "değiştirildi" bilgisi, güvenlik gereği)
+- stockController.js: stok kalemi silme/pasife alma (deleteStockItem,
+  reactivateStockItem)
+- campaignController.js: kampanya oluşturma/silme/aktiflik değişikliği
+- categoryController.js, extraController.js, syrupController.js: silme
+  işlemleri (oluşturma/düzenleme daha az kritik, atlanabilir)
+
+restoran-panel/src/pages/Audit.jsx'e bu yeni action tipleri için filtre
+seçenekleri eklenir (mevcut filtre UI deseni neyse ona göre).
+
+== 2) TEKNİK/HATA GÜNLÜĞÜ (yeni sistem) ==
+
+`npm install winston winston-daily-rotate-file`. Yeni utils/logger.js
+— winston ile hem console'a hem `logs/` klasöründe günlük döndürülen
+(daily rotate, örn. 14 gün saklama) dosyalara yazan bir logger. Mevcut
+`console.error(...)` çağrılarını (controllers/*.js içinde çok sayıda)
+TAMAMEN değiştirmeye gerek yok — ama YENİ bir global Express error
+handler (middleware/errorHandler.js zaten var, ona bak) bu logger'ı
+kullanacak şekilde güncellenir, böylece yakalanmayan/beklenmeyen TÜM
+hatalar en azından dosyaya düşer. server.js'de de process-level
+uncaughtException/unhandledRejection yakalayıcıları eklenip logger'a
+yazdırılır (şu an böyle bir yakalayıcı yok, process sessizce çökebilir).
+
+docker-compose.yml: backend servisine logs klasörü için bir volume
+eklenir (örn. logs:/app/logs) — container silinse bile log dosyaları
+kalıcı olur.
+
+Yeni Admin-only endpoint: GET /api/logs/recent (son N teknik hata
+satırını döner) — restoran-panel Audit.jsx'e "Teknik Loglar" adında
+ikinci bir sekme/görünüm olarak eklenir (aynı sayfa, farklı sekme —
+ayrı bir route açmaya gerek yok).
+
+== 3) MÜŞTERİLER (SADAKAT) SAYFASI ==
+
+Backend: controllers/loyaltyController.js'e yeni fonksiyon
+getAllCustomers(req, res) — GET /api/loyalty (liste, sayfalama/arama
+destekli: ?search=kullaniciadi&sort=points|username|date), Customers
+tablosundan CustomerId/Username/LoyaltyPoints/CreatedAt döner.
+routes/loyalty.js'e Admin+Cashier erişebilecek şekilde eklenir (mevcut
+verifyToken deseniyle).
+
+Frontend: Yeni restoran-panel/src/pages/Customers.jsx — tüm müşterileri
+tablo halinde listeler (kullanıcı adı, puan, kayıt tarihi), arama kutusu,
+puana göre sıralama. Layout.jsx'e nav item ("Müşteriler" / "Sadakat"),
+App.jsx'e route eklenir. Tables.jsx'teki mevcut tek-kullanıcı arama/
+redeem paneli KALDIRILMAZ (aktif sipariş sırasında hâlâ orada lazım),
+bu yeni sayfa sadece genel görünürlük/yönetim içindir.
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle yeni
+controller fonksiyonları (özellikle getAllCustomers, yeni logAudit
+çağrılarının en az birkaçı) için test yaz. Mevcut TÜM testler geçmeye
+devam etmeli — npm test. Her iki frontend'de npm run build hatasız
+tamamlanmalı. Bitince commit + push (branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+**Durum:** Henüz uygulanmadı — kullanıcı kendi tarafında uygulayacak.
+Offline çalışma kararı hâlâ açık, ayrı bir turda ele alınacak.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
