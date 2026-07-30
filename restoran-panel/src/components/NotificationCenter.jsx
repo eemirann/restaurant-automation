@@ -22,6 +22,16 @@ function describeEvent(event, payload) {
     }
     return `Müşteriden yeni sipariş isteği · Masa ${payload.tableNumber ?? payload.tableId ?? '—'}`;
   }
+  if (event === 'stock:low') {
+    const warnings = payload?.warnings || [];
+    if (warnings.length === 0) return 'Düşük stok uyarısı';
+    if (warnings.length === 1) {
+      const w = warnings[0];
+      return w.IsNegative ? `Stok tükendi: ${w.Name ?? '—'}` : `Düşük stok: ${w.Name ?? '—'} (kalan: ${w.RemainingStock})`;
+    }
+    const anyNegative = warnings.some((w) => w.IsNegative);
+    return anyNegative ? `Stok tükendi: ${warnings.length} ürün kritik seviyede` : `Düşük stok: ${warnings.length} ürün kritik seviyede`;
+  }
   return event;
 }
 
@@ -37,7 +47,7 @@ export default function NotificationCenter() {
 
     // 'tables:changed' bilerek dışarıda bırakılır — çok sık tetiklenir ve
     // bildirim listesini anlamsız şekilde doldurur (bkz. görev spesifikasyonu).
-    const watched = ['kds:new', 'kds:updated', 'customerRequests:new'];
+    const watched = ['kds:new', 'kds:updated', 'customerRequests:new', 'stock:low'];
 
     const handlers = watched.map((event) => {
       const handler = (payload) => {

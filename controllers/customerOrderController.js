@@ -3,6 +3,7 @@ const { emitTablesChanged, emitKitchen } = require('../config/socket');
 const { buildOrderInTransaction } = require('../utils/orderBuilder');
 const { HttpError } = require('../utils/httpError');
 const { logAudit } = require('../utils/audit');
+const { notifyLowStock } = require('../utils/stockAlert');
 
 // ============================================================
 // MÜŞTERİ QR SİPARİŞ İSTEKLERİ — PERSONEL TARAFI
@@ -185,6 +186,7 @@ async function approveCustomerOrderRequest(req, res) {
         await transaction.commit();
         emitTablesChanged();
         emitKitchen('kds:new', { orderId: order.OrderId, tableId: orderRequest.TableId });
+        if (lowStockWarnings.length > 0) notifyLowStock(pool, lowStockWarnings);
         logAudit(pool, { userId: req.user?.userId, action: 'CUSTOMER_ORDER_APPROVE', entityType: 'CustomerOrderRequest', entityId: Number(id), details: { orderId: order.OrderId, totalAmount, loyaltyPointsAwarded } });
 
         return res.status(201).json({ message: 'Sipariş onaylandı ve oluşturuldu.', order, totalAmount, lowStockWarnings, loyaltyPointsAwarded });
