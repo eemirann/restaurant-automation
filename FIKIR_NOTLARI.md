@@ -720,6 +720,68 @@ commit + push (branch: claude/turkce-yazi-m3dfnh).
 
 ---
 
+## Bildirim Merkezine Düşük Stok Uyarısı Ekle (2026-08-06 civarı)
+
+`NotificationCenter.jsx` şu an 'kds:new', 'kds:updated',
+'customerRequests:new' dinliyor. Düşük stok ('Quantity <=
+MinStockLevel' — utils/stockDeduction.js'te zaten hesaplanıyor,
+Dashboard'daki "Düşük Stok" sayacıyla aynı eşik) hiç bildirim olarak
+yayınlanmıyor, sadece sipariş response'unda dönüyor.
+
+### Claude Code'a yapıştırılacak prompt
+
+\`\`\`
+Restoran Otomasyonu projesine düşük stok bildirimi ekle. Aşağıdaki
+spesifikasyonu birebir uygula, varsayımda bulunma.
+
+ÖNCE OKU: utils/stockDeduction.js (deductStockForItem — warnings
+[{ProductId, RemainingStock, IsNegative}] döndürüyor ama transaction
+henüz commit edilmemiş olabilir, BURADAN emit ETME), controllers/
+orderController.js + controllers/customerOrderController.js +
+controllers/loyaltyController.js (üçü de transaction.commit()'ten
+SONRA emitTablesChanged()/emitKitchen() çağırıyor — lowStockWarnings
+zaten ellerinde, aynı yere yeni emit eklenecek), config/socket.js
+(emitTablesChanged/emitKitchen/emitCustomerRequests deseni — yeni
+emitStockAlert bunlarla aynı şekilde eklenecek), restoran-panel/src/
+components/NotificationCenter.jsx (watched dizisi + describeEvent
+fonksiyonu — yeni event tipi buraya eklenecek).
+
+Backend:
+- config/socket.js'e emitStockAlert(payload) eklenir (event:
+  'stock:low'), mevcut emitKitchen ile birebir aynı desen.
+- orderController.js (createOrder), customerOrderController.js
+  (approveCustomerOrderRequest), loyaltyController.js
+  (redeemLoyaltyProduct) — transaction.commit() sonrası, eğer
+  lowStockWarnings.length > 0 ise emitStockAlert(...) çağrılır.
+  Payload'a ürün adı da eklensin diye commit sonrası (artık açık
+  transaction gerekmiyor, pool.request() yeterli) warnings'teki
+  ProductId'lerle küçük bir `SELECT ProductId, Name FROM Products
+  WHERE ProductId IN (...)` sorgusu yapılıp isimler payload'a eklenir:
+  emitStockAlert({ warnings: [{ProductId, Name, RemainingStock,
+  IsNegative}] }).
+
+Frontend (restoran-panel):
+- NotificationCenter.jsx: watched dizisine 'stock:low' eklenir.
+  describeEvent'e yeni case: warnings tek ürünse "Düşük stok: <Name>
+  (kalan: <RemainingStock>)", birden fazlaysa "Düşük stok: N ürün
+  kritik seviyede". IsNegative true olan varsa (stok eksiye düşmüş)
+  daha vurgulu bir ifade (örn. "Stok tükendi: <Name>"). Ses ÇALINMAZ
+  (mevcut kds:new/customerRequests:new'den farklı olarak sessiz kalır
+  — düşük stok aciliyeti müşteri bekliyor durumuyla aynı değil).
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle emitStockAlert
+çağrısının doğru koşulda tetiklendiğini test et (örn. mevcut
+orderController.test.js'e bir senaryo eklenebilir). Mevcut TÜM testler
+geçmeye devam etmeli — npm test. restoran-panel'de npm run build
+hatasız tamamlanmalı. Bitince commit + push (branch:
+claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+**Durum:** Henüz uygulanmadı — kullanıcı kendi tarafında uygulayacak.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
