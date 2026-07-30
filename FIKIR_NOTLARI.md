@@ -407,6 +407,125 @@ musteri-menu) npm run build hatasız tamamlanmalı. Bitince commit + push
 
 ---
 
+## Dashboard Canlı/Ayarlanabilir Widget'lar + Panel Premium + Otomatik Yedekleme (2026-08-04/05 civarı)
+
+**Not:** "Anket sonuçlarının Dashboard'da görünürlüğü" maddesi kontrol
+edildi — zaten uygulanmış (`dashboardController.js`'de Feedback
+ortalamaları, `Dashboard.jsx`'te `FeedbackScoreRow` satır 427-434).
+Aşağıdaki prompt kalan 3 maddeyi kapsıyor.
+
+### Claude Code'a yapıştırılacak prompt
+
+\`\`\`
+Restoran Otomasyonu projesine 3 bağlı iyileştirme ekle. Aşağıdaki
+spesifikasyonu birebir uygula, varsayımda bulunma.
+
+ÖNCE OKU: restoran-panel/src/pages/Dashboard.jsx (fetchData sadece
+mount'ta bir kez çalışıyor, hiç socket/polling yok; stats dizisi sabit
+6 kart; StatCard/Panel/FeedbackScoreRow bileşenleri), restoran-panel/
+src/api/socket.js (getSocket() — paylaşılan tek bağlantı), config/
+socket.js (backend event'leri: 'tables:changed', 'kds:new',
+'kds:updated', 'customerRequests:new' — hepsi "sadece sinyal, REST ile
+tazelen" deseni), restoran-panel/src/components/Layout.jsx (SIDEBAR_
+COLLAPSED_KEY localStorage deseni — widget tercihi için aynısını
+kullan), controllers/dashboardController.js (mevcut çoklu-sorgu
+deseni), controllers/settingsController.js + restoran-panel Settings.jsx
+(EArsivVatRate alanı deseni — Otomatik Yedekleme için aynısını izle,
+ComingSoonNote'u değiştirecek), package.json (framer-motion zaten
+kurulu — Reorder.Group ile sürükle-bırak widget sıralaması için yeni
+paket gerekmiyor).
+
+== 1) DASHBOARD: CANLI VERİ + PREMIUM HİS + AYARLANABİLİR WIDGET'LAR ==
+
+**Canlı veri:** Dashboard.jsx'e getSocket() ile bağlanıp 'tables:changed',
+'kds:new', 'kds:updated', 'customerRequests:new' event'lerini dinle;
+herhangi biri gelince (debounce ile, örn. 1-2 sn, art arda gelen
+event'ler tek fetchData() çağrısına düşsün) fetchData()'yı tekrar
+çağır. Mevcut manuel yenile butonunu (IconRefresh) koru.
+
+**Premium his:** Mevcut revenueTrend deseni (dünle karşılaştırma oku)
+sadece Günlük Ciro'da var — backend'in zaten döndürdüğü weeklyRevenue
+dizisini kullanarak Bugünkü Sipariş ve Doluluk Oranı kartlarına da
+benzer trend okları eklenebilir (dashboardController.js'nin döndürdüğü
+veriye bak, gerekirse dünkü karşılık gelen değerleri de ekle).
+
+**Ayarlanabilir widget'lar:** Kullanıcı stat kartlarını gizleyip/
+gösterebilsin ve sürükleyerek sıralayabilsin. framer-motion'ın
+Reorder.Group/Reorder.Item'ı kullan (yeni paket gerekmiyor). Tercih
+(görünür widget'lar + sıra) SIDEBAR_COLLAPSED_KEY ile aynı desende
+localStorage'a yazılır (örn. DASHBOARD_WIDGETS_KEY, JSON dizi). Küçük
+bir "Widget'ları Düzenle" butonu/paneli ekle (aç/kapa checkbox'ları +
+sürükle-bırak sıralama).
+
+== 2) PANEL PREMİUM ÖZELLİKLERİ ==
+
+**Komut paleti:** Yeni restoran-panel/src/components/CommandPalette.jsx
+— global Ctrl/Cmd+K dinleyicisi (Layout.jsx'e eklenir), Layout.jsx'teki
+mevcut nav item listesini (route+label+icon) kaynak alıp fuzzy-filter
+yapan bir arama kutusu + sonuç listesi, Enter'da react-router ile
+navigate. framer-motion ile açılış animasyonu.
+
+**Bildirim merkezi:** Yeni restoran-panel/src/components/
+NotificationCenter.jsx — Layout.jsx header'ına bir zil ikonu, getSocket()
+ile AYNI event'leri ('tables:changed' hariç tutulabilir çok sık tetikler,
+'kds:new'/'kds:updated'/'customerRequests:new' odaklan) dinleyip
+bellekte son ~20 event'i (zaman damgası + kısa açıklama) tutan bir
+liste, okunmamış sayısı badge'i, tıklayınca açılan dropdown.
+
+**Sesli bildirim:** Yeni restoran-panel/src/utils/notificationSound.js
+— gerçek bir ses dosyası gerektirmeden Web Audio API (AudioContext +
+oscillator) ile kısa bir "ding" üretir. 'kds:new' ve
+'customerRequests:new' event'lerinde çalınır (mute/aç-kapa tercihi de
+localStorage'da tutulabilir, opsiyonel).
+
+== 3) OTOMATİK YEDEKLEME ==
+
+Yeni migration migrations/2026_08_05_auto_backup.sql: AppSettings'e
+AutoBackupEnabled BIT NOT NULL DEFAULT 0, AutoBackupRetentionDays INT
+NOT NULL DEFAULT 7 eklenir (EArsivVatRate'in ALTER TABLE deseniyle
+aynı). Yeni BackupHistory tablosu: Id, FileName, CreatedAt, SizeBytes
+NULL.
+
+docker-compose.yml: yeni bir named volume (örn. db-backups) hem `db`
+servisine (örn. /var/opt/mssql/backup) HEM `backend` servisine (örn.
+/app/db-backups) mount edilir — SQL Server T-SQL ile o path'e .bak
+yazar, backend Node fs ile aynı volume'daki eski dosyaları
+retention'a göre silebilir (aynı named volume, farklı mount noktaları
+— ikisi de aynı fiziksel veriye erişir).
+
+Backend: `npm install node-cron`. Yeni utils/backupScheduler.js —
+node-cron ile günde bir kez (örn. gece 03:00) AppSettings.
+AutoBackupEnabled=1 ise mevcut config/db.js bağlantısı üzerinden
+`BACKUP DATABASE RestoranDB TO DISK = '/var/opt/mssql/backup/
+RestoranDB_<ISO-tarih>.bak'` T-SQL'i çalıştırır, BackupHistory'ye
+kayıt ekler, sonra AutoBackupRetentionDays'ten eski dosyaları
+/app/db-backups üzerinden (fs.readdir + fs.unlink) siler. server.js'de
+scheduler başlatılır (require + init).
+
+Yeni endpoint'ler (controllers/settingsController.js'e eklenir,
+Admin-only): POST /api/settings/backup-now (anlık yedek tetikler, aynı
+backup fonksiyonunu senkron çağırır), GET /api/settings/backups (son
+N BackupHistory kaydını listeler).
+
+restoran-panel Settings.jsx: mevcut ComingSoonNote (Otomatik Yedekleme)
+kaldırılıp yerine gerçek bir bölüm — aç/kapa switch (AutoBackupEnabled),
+saklama süresi input (AutoBackupRetentionDays), "Şimdi Yedekle" butonu,
+son yedeklerin küçük bir listesi (tarih + boyut).
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle yeni
+controller fonksiyonları için test yaz (backupScheduler'ın node-cron
+kısmı gerçek zamanlayıcı olduğu için test edilmeyebilir, ama
+backup-now endpoint'i ve settings GET/PUT genişlemesi test edilebilir).
+Mevcut TÜM testler geçmeye devam etmeli — npm test. Her iki frontend'de
+npm run build hatasız tamamlanmalı. Bitince commit + push (branch:
+claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+**Durum:** Henüz uygulanmadı — kullanıcı kendi tarafında uygulayacak.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
