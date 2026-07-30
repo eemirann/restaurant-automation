@@ -629,6 +629,97 @@ Offline çalışma kararı hâlâ açık, ayrı bir turda ele alınacak.
 
 ---
 
+## Vardiya Sistemi Genişletme: Canlı Süre + Çalışma Saati + Silme (2026-08-05/06 civarı)
+
+Kullanıcı 3 şikayet iletti: "loglar tutulmuyor", "saat ilerlemiyor",
+"hangi kullanıcı ne kadar çalıştığına dair veri tutulsun, silinebilir
+olsun". Kod tabanı incelendi:
+
+- **Loglar**: `AuditLog` zaten vardiya işlemlerini (SHIFT_OPEN/CLOSE/
+  FORCED_CLOSE/FORCED_LOGOUT/TRANSFER) kaydediyor ve `Audit.jsx`'te
+  filtrelenebiliyor — bir kod boşluğu bulunamadı. Bu prompt'a dahil
+  edilmedi (kullanıcı canlıda somut bir eksik görürse ayrıca ele
+  alınacak).
+- **Saat ilerlemiyor**: `Shifts.jsx`, `ActiveShifts.jsx`/
+  `ShiftWorkflow.jsx`'in aksine hiç canlı sayaç (setInterval) kullanmıyor
+  — sadece statik açılış zamanı gösteriyor. Gerçek bug, doğrulandı.
+- **Çalışma saati + silme**: `Shifts.jsx`'teki "Vardiya Geçmişi"
+  tablosunda (Admin görünümü) süre/saat sütunu hiç yok, silme özelliği
+  de hiç yok (`listShifts` TOP 100, ham alanlar, soft-delete kolonu yok).
+
+### Claude Code'a yapıştırılacak prompt
+
+\`\`\`
+Restoran Otomasyonu projesinde vardiya sistemini genişlet. Aşağıdaki
+spesifikasyonu birebir uygula, varsayımda bulunma.
+
+ÖNCE OKU: restoran-panel/src/pages/Shifts.jsx (mevcut current-shift
+kartı + "Vardiya Geçmişi" tablosu, satır ~150-195), restoran-panel/src/
+pages/ActiveShifts.jsx (canlı süre deseni: `now`/setInterval + `dur()`
+fonksiyonu, satır ~7-11 ve ~17-36 — AYNI DESENİ Shifts.jsx'e de uygula),
+restoran-panel/src/components/ShiftWorkflow.jsx (aynı canlı saat
+deseni, başka bir örnek), controllers/shiftController.js (listShifts
+fonksiyonu satır ~299-313 — ham veri dönüyor, süre hesaplamıyor;
+forceCloseById'deki logAudit deseni — SHIFT_DELETE için aynısı
+kullanılacak), controllers/stockController.js (deleteStockItem/
+reactivateStockItem — soft-delete deseni, ASLA hard DELETE yapılmıyor,
+IsTracked=0 gibi bir flag kullanılıyor — Shifts için de AYNI FELSEFE
+uygulanacak, gerçek DELETE değil).
+
+== 1) CANLI SÜRE (Shifts.jsx bug fix) ==
+Shifts.jsx'e ActiveShifts.jsx'teki `now` (useState + setInterval 1000ms)
+ve `dur(from, now)` fonksiyonunu aynen ekle/kopyala. Açık vardiya
+kartında ("Beklenen" kartının içine ya da yakınına) "Açık Süre: 02sa
+15dk" gibi canlı, saniye saniye ilerleyen bir süre göstergesi ekle
+(shift.OpenedAt'tan şu ana kadar).
+
+== 2) VARDİYA GEÇMİŞİ: SÜRE SÜTUNU + KULLANICI BAZLI TOPLAM ==
+Backend: controllers/shiftController.js'teki listShifts SQL sorgusuna
+`DATEDIFF(MINUTE, s.OpenedAt, ISNULL(s.ClosedAt, GETDATE())) AS
+DurationMinutes` eklenir (açıksa şu ana kadar, kapalıysa ClosedAt'a
+kadar).
+
+Frontend: Shifts.jsx'teki "Vardiya Geçmişi" tablosuna yeni bir "Süre"
+sütunu eklenir (DurationMinutes'ı "Xsa Ydk" formatına çeviren küçük bir
+yardımcı fonksiyon — dur()'a benzer ama dakika inputlu). Tablonun
+ÜSTÜNE (ya da altına), kullanıcı bazında gruplanmış küçük bir özet:
+her kullanıcının bu 100 kayıt içindeki toplam çalışma süresi (basit bir
+reduce/groupBy, ekstra backend sorgusu gerekmez — mevcut history
+verisinden client-side hesaplanır).
+
+== 3) VARDİYA KAYDI SİLME (soft-delete, Admin-only) ==
+Yeni migration migrations/2026_08_06_shift_soft_delete.sql:
+Shifts tablosuna nullable IsDeleted BIT NOT NULL DEFAULT 0 eklenir
+(stockController'daki IsTracked deseniyle birebir aynı felsefe — GERÇEK
+DELETE YOK, sadece gizleme/geri getirme).
+
+Backend: controllers/shiftController.js'e yeni fonksiyonlar:
+deleteShift(req, res) — PATCH /api/shifts/:id/delete, IsDeleted=1 yapar,
+logAudit çağırır (action: 'SHIFT_DELETE'). restoreShift(req, res) — PATCH
+/api/shifts/:id/restore, IsDeleted=0 yapar, logAudit ('SHIFT_RESTORE').
+listShifts'in WHERE'ine varsayılan olarak `IsDeleted = 0` eklenir, ama
+`?includeDeleted=1` query param'ıyla admin silinmiş kayıtları da
+görebilir (stockController'daki aktif/pasif filtre deseniyle aynı).
+routes/shifts.js'e Admin-only olarak eklenir.
+
+Frontend: Shifts.jsx'teki geçmiş tablosunda her satıra (Admin için)
+küçük bir "Sil" butonu (window.confirm ile onay istenir — mevcut
+ActiveShifts.jsx'teki forceLogout'un confirm deseni gibi), silinmiş
+kayıtlar varsayılan listede görünmez ama "Silinenleri Göster" gibi bir
+toggle ile (includeDeleted=1) görülüp "Geri Getir" ile geri alınabilir.
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle
+deleteShift/restoreShift ve listShifts'in DurationMinutes/IsDeleted
+filtresi için test yaz. Mevcut TÜM testler geçmeye devam etmeli — npm
+test. restoran-panel'de npm run build hatasız tamamlanmalı. Bitince
+commit + push (branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+**Durum:** Henüz uygulanmadı — kullanıcı kendi tarafında uygulayacak.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
