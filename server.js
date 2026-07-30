@@ -26,6 +26,7 @@ const authRoutes = require('./routes/auth');
 const { connectDB } = require('./config/db');
 const { initSocket } = require('./config/socket');
 const { initBackupScheduler } = require('./utils/backupScheduler');
+const logger = require('./utils/logger');
 const tableRoutes = require('./routes/tables');
 const reservationRoutes = require('./routes/reservations');
 const userRoutes = require('./routes/users');
@@ -47,6 +48,23 @@ const customerOrderRoutes = require('./routes/customerOrders');
 const serviceRequestRoutes = require('./routes/serviceRequests');
 const campaignRoutes = require('./routes/campaigns');
 const loyaltyRoutes = require('./routes/loyalty');
+const logsRoutes = require('./routes/logs');
+
+// ============================================================
+// Süreç seviyesinde yakalanmayan hatalar — bunlar olmadan Node.js
+// sessizce çökebilir (unhandledRejection) veya stack trace'i sadece
+// stdout'a basıp süreci sonlandırabilir (uncaughtException). İkisi de
+// en azından logs/ klasörüne düşsün diye burada yakalanır.
+// ============================================================
+process.on('uncaughtException', (err) => {
+    logger.error('uncaughtException — yakalanmayan istisna', { message: err?.message, stack: err?.stack });
+});
+process.on('unhandledRejection', (reason) => {
+    logger.error('unhandledRejection — işlenmeyen promise reddi', {
+        message: reason?.message || String(reason),
+        stack: reason?.stack,
+    });
+});
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -95,6 +113,7 @@ app.use('/api/customer-orders', customerOrderRoutes);
 app.use('/api/service-requests', serviceRequestRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/logs', logsRoutes);
 
 // Hata yönetimi (TÜM route'lardan SONRA olmalı)
 app.use(notFoundHandler);

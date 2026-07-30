@@ -1,4 +1,5 @@
 const { sql, connectDB } = require('../config/db');
+const { logAudit } = require('../utils/audit');
 
 // ============================================================
 // TÜM STOK KALEMLERİNİ LİSTELE (ürün adıyla birlikte)
@@ -191,6 +192,11 @@ async function deleteStockItem(req, res) {
             return res.status(404).json({ error: 'Stok kalemi bulunamadı' });
         }
 
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'STOCK_ITEM_DELETE', entityType: 'Stock', entityId: Number(id),
+            details: { productId: result.recordset[0].ProductId },
+        });
+
         res.status(200).json({ message: 'Stok kalemi pasifleştirildi.', stock: result.recordset[0] });
     } catch (err) {
         console.error('Stok kalemi pasifleştirilirken hata:', err);
@@ -217,6 +223,11 @@ async function reactivateStockItem(req, res) {
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Stok kalemi bulunamadı' });
         }
+
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'STOCK_ITEM_REACTIVATE', entityType: 'Stock', entityId: Number(id),
+            details: { productId: result.recordset[0].ProductId },
+        });
 
         res.status(200).json(result.recordset[0]);
     } catch (err) {

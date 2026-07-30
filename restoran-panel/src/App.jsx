@@ -10,6 +10,7 @@ import Orders from './pages/Orders';
 import Tables from './pages/Tables';
 import Reservations from './pages/Reservations';
 import CustomerRequests from './pages/CustomerRequests';
+import Customers from './pages/Customers';
 import Kds from './pages/Kds';
 import Payments from './pages/Payments';
 import Products from './pages/Products';
@@ -49,6 +50,14 @@ export default function App() {
           <Route path="/tables" element={<Page><Tables /></Page>} />
           <Route path="/reservations" element={<Page><Reservations /></Page>} />
           <Route path="/customer-requests" element={<Page><CustomerRequests /></Page>} />
+          <Route
+            path="/customers"
+            element={
+              <ProtectedRoute allowedRoles={['Admin', 'Cashier']}>
+                <Layout><Customers /></Layout>
+              </ProtectedRoute>
+            }
+          />
           <Route path="/kds" element={<Page><Kds /></Page>} />
           <Route path="/shifts" element={<Page><Shifts /></Page>} />
           <Route

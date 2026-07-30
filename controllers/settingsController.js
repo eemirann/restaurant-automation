@@ -1,5 +1,6 @@
 const { sql, connectDB } = require('../config/db');
 const { runBackup } = require('../utils/backupScheduler');
+const { logAudit } = require('../utils/audit');
 
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -153,6 +154,17 @@ async function updateSettings(req, res) {
                     OUTPUT ${outputList}
                     WHERE AppSettingsId = @Id
                 `);
+        }
+
+        // Ne değişti — sadece alan ADLARI loglanır, değerleri Audit'e taşımaya gerek yok.
+        const changedFields = existingRow
+            ? ALL_COLUMNS.filter((k) => req.body[k] !== undefined && String(req.body[k]) !== String(existingRow[k]))
+            : Object.keys(req.body).filter((k) => ALL_COLUMNS.includes(k));
+        if (changedFields.length > 0) {
+            logAudit(pool, {
+                userId: req.user?.userId, action: 'SETTINGS_UPDATE', entityType: 'AppSettings',
+                entityId: existingRow?.AppSettingsId ?? null, details: { changedFields },
+            });
         }
 
         const row = result.recordset[0];

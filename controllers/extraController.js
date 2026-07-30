@@ -1,4 +1,5 @@
 const { sql, connectDB } = require('../config/db');
+const { logAudit } = require('../utils/audit');
 
 // ============================================================
 // EKSTRALAR (ekstra shot, ekstra çikolata, şurup vb.)
@@ -124,6 +125,12 @@ async function deleteExtra(req, res) {
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Ekstra bulunamadı' });
         }
+
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'EXTRA_DELETE', entityType: 'Extra', entityId: Number(id),
+            details: { name: result.recordset[0].Name },
+        });
+
         res.status(200).json(result.recordset[0]);
     } catch (err) {
         console.error('Ekstra silinirken hata:', err);

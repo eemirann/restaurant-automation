@@ -1,4 +1,5 @@
 const { sql, connectDB } = require('../config/db');
+const { logAudit } = require('../utils/audit');
 
 async function getAllCategories(req, res) {
     try {
@@ -94,7 +95,12 @@ async function deleteCategory(req, res) {
     if (result.recordset.length === 0) {
         return res.status(404).json({ error: 'Kategori bulunamadı'});
     }
-    
+
+    logAudit(pool, {
+        userId: req.user?.userId, action: 'CATEGORY_DELETE', entityType: 'Category', entityId: Number(id),
+        details: { name: result.recordset[0].Name },
+    });
+
     res.status(200).json(result.recordset[0]);
 }  catch (err) {
     console.error('Kategori silinirken hata', err);
