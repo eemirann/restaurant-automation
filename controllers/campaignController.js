@@ -1,5 +1,6 @@
 const { sql, connectDB } = require('../config/db');
 const { HttpError } = require('../utils/httpError');
+const { logAudit } = require('../utils/audit');
 
 const CAMPAIGN_TYPES = ['Info', 'Combo'];
 
@@ -167,6 +168,10 @@ async function createCampaign(req, res) {
             `);
 
         await transaction.commit();
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'CAMPAIGN_CREATE', entityType: 'Campaign', entityId: result.recordset[0].CampaignId,
+            details: { title: result.recordset[0].Title, campaignType: CampaignType },
+        });
         res.status(201).json(mapCampaignRow(result.recordset[0]));
     } catch (err) {
         try { await transaction.rollback(); } catch { /* rollback best-effort */ }
@@ -280,6 +285,12 @@ async function updateCampaign(req, res) {
             `);
 
         await transaction.commit();
+        if (IsActive !== undefined && Boolean(IsActive) !== Boolean(existing.IsActive)) {
+            logAudit(pool, {
+                userId: req.user?.userId, action: 'CAMPAIGN_ACTIVITY_CHANGE', entityType: 'Campaign', entityId: Number(id),
+                details: { title: existing.Title, isActive: Boolean(IsActive) },
+            });
+        }
         res.status(200).json(mapCampaignRow(result.recordset[0]));
     } catch (err) {
         try { await transaction.rollback(); } catch { /* rollback best-effort */ }
@@ -307,6 +318,12 @@ async function deleteCampaign(req, res) {
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Kampanya bulunamadı' });
         }
+
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'CAMPAIGN_DELETE', entityType: 'Campaign', entityId: Number(req.params.id),
+            details: { title: result.recordset[0].Title },
+        });
+
         res.status(200).json(mapCampaignRow(result.recordset[0]));
     } catch (err) {
         console.error('Kampanya silinirken hata:', err);

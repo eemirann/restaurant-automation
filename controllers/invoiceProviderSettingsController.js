@@ -1,4 +1,5 @@
 const { sql, connectDB } = require('../config/db');
+const { logAudit } = require('../utils/audit');
 
 // ============================================================
 // e-FATURA SAĞLAYICI AYARLARI — SADECE ADMIN.
@@ -78,6 +79,16 @@ async function updateInvoiceProviderSettings(req, res) {
                     WHERE Id = @Id
                 `);
         }
+
+        // API key'in KENDİSİ asla loglanmaz — sadece kim, hangi alanları değiştirdi bilgisi.
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'INVOICE_PROVIDER_SETTINGS_UPDATE', entityType: 'InvoiceProviderSettings',
+            details: {
+                providerNameChanged: ProviderName !== undefined,
+                apiKeyChanged: ApiKey !== undefined,
+                environmentChanged: Environment !== undefined,
+            },
+        });
 
         res.status(200).json(result.recordset[0]);
     } catch (err) {

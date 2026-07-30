@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken } = require('../middleware/authMiddleware');
-const { getCustomerByUsername, redeemLoyaltyProduct } = require('../controllers/loyaltyController');
+const { verifyToken, requireRole } = require('../middleware/authMiddleware');
+const { getAllCustomers, getCustomerByUsername, redeemLoyaltyProduct } = require('../controllers/loyaltyController');
+
+// Müşteri listesi (Customers.jsx) — Admin+Cashier, genel görünürlük/yönetim.
+router.get('/', verifyToken, requireRole('Admin', 'Cashier'), getAllCustomers);
 
 // Giriş yapmış herkes (Garson/Kasiyer/Admin) — ödeme/sipariş ekranında
 // puanla ürün ekleme akışı için (bkz. Tables.jsx).

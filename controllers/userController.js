@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { sql, connectDB } = require('../config/db');
+const { logAudit } = require('../utils/audit');
 
 const VALID_ROLES = ['Waiter', 'Cashier', 'Admin'];
 
@@ -67,7 +68,7 @@ async function updateUserRole(req, res) {
 
         const existing = await pool.request()
             .input('UserId', sql.Int, id)
-            .query(`SELECT UserId FROM Users WHERE UserId = @UserId`);
+            .query(`SELECT UserId, UserName, Role FROM Users WHERE UserId = @UserId`);
 
         if (existing.recordset.length === 0) {
             return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -77,6 +78,11 @@ async function updateUserRole(req, res) {
             .input('UserId', sql.Int, id)
             .input('Role', sql.NVarChar(20), Role)
             .query(`UPDATE Users SET Role = @Role WHERE UserId = @UserId`);
+
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'USER_ROLE_CHANGE', entityType: 'User', entityId: Number(id),
+            details: { userName: existing.recordset[0].UserName, oldRole: existing.recordset[0].Role, newRole: Role },
+        });
 
         return res.status(200).json({ message: 'Kullanıcı rolü güncellendi.', role: Role });
     } catch (err) {
@@ -101,7 +107,7 @@ async function resetPassword(req, res) {
 
         const existing = await pool.request()
             .input('UserId', sql.Int, id)
-            .query(`SELECT UserId FROM Users WHERE UserId = @UserId`);
+            .query(`SELECT UserId, UserName FROM Users WHERE UserId = @UserId`);
 
         if (existing.recordset.length === 0) {
             return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -113,6 +119,12 @@ async function resetPassword(req, res) {
             .input('UserId', sql.Int, id)
             .input('PasswordHash', sql.NVarChar(255), passwordHash)
             .query(`UPDATE Users SET PasswordHash = @PasswordHash WHERE UserId = @UserId`);
+
+        // Şifrenin kendisi ASLA loglanmaz — sadece "sıfırlandı" bilgisi + kim yaptı + kime.
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'USER_PASSWORD_RESET', entityType: 'User', entityId: Number(id),
+            details: { userName: existing.recordset[0].UserName },
+        });
 
         return res.status(200).json({ message: 'Şifre sıfırlandı.' });
     } catch (err) {
@@ -138,7 +150,7 @@ async function deactivateUser(req, res) {
 
         const existing = await pool.request()
             .input('UserId', sql.Int, id)
-            .query(`SELECT UserId, IsActive FROM Users WHERE UserId = @UserId`);
+            .query(`SELECT UserId, UserName, IsActive FROM Users WHERE UserId = @UserId`);
 
         if (existing.recordset.length === 0) {
             return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -151,6 +163,11 @@ async function deactivateUser(req, res) {
         await pool.request()
             .input('UserId', sql.Int, id)
             .query(`UPDATE Users SET IsActive = 0 WHERE UserId = @UserId`);
+
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'USER_DEACTIVATE', entityType: 'User', entityId: Number(id),
+            details: { userName: existing.recordset[0].UserName },
+        });
 
         return res.status(200).json({ message: 'Kullanıcı deaktive edildi.' });
     } catch (err) {
@@ -170,7 +187,7 @@ async function reactivateUser(req, res) {
 
         const existing = await pool.request()
             .input('UserId', sql.Int, id)
-            .query(`SELECT UserId, IsActive FROM Users WHERE UserId = @UserId`);
+            .query(`SELECT UserId, UserName, IsActive FROM Users WHERE UserId = @UserId`);
 
         if (existing.recordset.length === 0) {
             return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -183,6 +200,11 @@ async function reactivateUser(req, res) {
         await pool.request()
             .input('UserId', sql.Int, id)
             .query(`UPDATE Users SET IsActive = 1 WHERE UserId = @UserId`);
+
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'USER_REACTIVATE', entityType: 'User', entityId: Number(id),
+            details: { userName: existing.recordset[0].UserName },
+        });
 
         return res.status(200).json({ message: 'Kullanıcı tekrar aktifleştirildi.' });
     } catch (err) {
@@ -207,7 +229,7 @@ async function setPin(req, res) {
 
         const existing = await pool.request()
             .input('UserId', sql.Int, id)
-            .query(`SELECT UserId FROM Users WHERE UserId = @UserId`);
+            .query(`SELECT UserId, UserName FROM Users WHERE UserId = @UserId`);
 
         if (existing.recordset.length === 0) {
             return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -219,6 +241,12 @@ async function setPin(req, res) {
             .input('UserId', sql.Int, id)
             .input('PinHash', sql.NVarChar(255), pinHash)
             .query(`UPDATE Users SET PinHash = @PinHash WHERE UserId = @UserId`);
+
+        // PIN'in kendisi ASLA loglanmaz — sadece "değiştirildi" bilgisi + kim yaptı + kime.
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'USER_PIN_RESET', entityType: 'User', entityId: Number(id),
+            details: { userName: existing.recordset[0].UserName },
+        });
 
         return res.status(200).json({ message: 'PIN güncellendi.' });
     } catch (err) {

@@ -7,3 +7,5 @@ dist/
 log.txt
 restoran-panel-new/
 uploads/
+logs/
+db-backups/

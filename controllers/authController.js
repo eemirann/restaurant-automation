@@ -53,6 +53,11 @@ const register = async (req, res) => {
                 VALUES (@FullName, @UserName, @PasswordHash, @Role, 1, GETDATE())
             `);
 
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'USER_CREATE', entityType: 'User', entityId: result.recordset[0].UserId,
+            details: { userName: UserName, role: Role },
+        });
+
         return res.status(201).json({
             message: 'Kullanıcı oluşturuldu.',
             userId: result.recordset[0].UserId

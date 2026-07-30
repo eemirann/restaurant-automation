@@ -19,6 +19,43 @@ const { logAudit } = require('../utils/audit');
 // ============================================================
 
 // ============================================================
+// GET /api/loyalty — TÜM müşterileri listele (Admin+Cashier).
+// Query: ?search=kullaniciadi&sort=points|username|date
+// Tables.jsx'teki tek-kullanıcı arama/redeem panelinin YERİNE geçmez —
+// bu genel görünürlük/yönetim için ayrı bir Customers.jsx sayfasıdır.
+// ============================================================
+async function getAllCustomers(req, res) {
+    const { search, sort } = req.query;
+
+    try {
+        const pool = await connectDB();
+        const request = pool.request();
+
+        let where = '';
+        if (search && typeof search === 'string' && search.trim()) {
+            request.input('Search', sql.NVarChar(50), `%${search.trim()}%`);
+            where = 'WHERE Username LIKE @Search';
+        }
+
+        const orderBy = sort === 'points' ? 'LoyaltyPoints DESC'
+            : sort === 'username' ? 'Username ASC'
+            : 'CreatedAt DESC'; // 'date' veya belirtilmemişse: en yeni önce
+
+        const result = await request.query(`
+            SELECT CustomerId, Username, LoyaltyPoints, CreatedAt
+            FROM Customers
+            ${where}
+            ORDER BY ${orderBy}
+        `);
+
+        res.status(200).json(result.recordset);
+    } catch (err) {
+        console.error('Müşteriler getirilirken hata:', err);
+        res.status(500).json({ error: 'Müşteriler getirilemedi' });
+    }
+}
+
+// ============================================================
 // GET /api/loyalty/:username — bakiye sorgula (bulunamazsa 404,
 // personel "bu kullanıcı adında kayıt yok" diyebilsin diye).
 // ============================================================
@@ -155,4 +192,4 @@ async function redeemLoyaltyProduct(req, res) {
     }
 }
 
-module.exports = { getCustomerByUsername, redeemLoyaltyProduct };
+module.exports = { getAllCustomers, getCustomerByUsername, redeemLoyaltyProduct };

@@ -45,6 +45,7 @@ services:
     volumes:
       - uploads:/app/uploads
       - db-backups:/app/db-backups
+      - logs:/app/logs
     depends_on:
       - db
     restart: unless-stopped
@@ -76,3 +77,4 @@ volumes:
   mssql-data:
   uploads:
   db-backups:
+  logs:
