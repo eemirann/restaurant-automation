@@ -9,3 +9,11 @@ restoran-panel-new/
 uploads/
 logs/
 db-backups/
+
+# Offline USB kurulum paketi (scripts/paketle.ps1 ile HER SEFERİNDE yeniden
+# üretilir) — images.tar (GB'larca Docker imajı), Docker Desktop Installer.exe
+# ve derlenmiş Inno Setup çıktısı (installer/RestoranKurulum.iss OutputDir'i
+# bu klasörü hedefler) repoya ASLA commitlenmez.
+/KurulumPaketi/
+*.tar
+Docker Desktop Installer.exe

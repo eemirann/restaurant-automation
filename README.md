@@ -248,6 +248,8 @@ docker compose exec backend node scripts/createFirstAdmin.js "Ad Soyad" "kullani
 - Ürün görselleri `uploads` volume'unda kalıcıdır; MSSQL verisi `mssql-data` volume'unda.
 - Panel'i/müşteri menüsünü Docker'sız çalıştırmak için ilgili klasörde `.env` içinde
   `VITE_API_URL` (ve panel için `VITE_CUSTOMER_MENU_URL`) ayarlayıp `npm run build`/`npm run dev` kullanın.
+- **İnternetsiz (USB'den) kurulum:** internet bağlantısı olmayan bir kasa/POS bilgisayarına tek bir
+  çift-tıklamalı Türkçe sihirbazla kurmak için bkz. [`installer/README.md`](installer/README.md).
 
 ## Proje Yapısı
 

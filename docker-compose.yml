@@ -14,6 +14,13 @@
 #   Müşteri Menü:  http://localhost:8081
 #   Backend:       http://localhost:4091
 # ============================================================
+# 'name' SABİT tutulur (klasör adına göre otomatik türetilmez): scripts/
+# paketle.ps1 ile offline paketlenen imaj etiketleri (<name>-backend vb.)
+# bu sabit isme göre üretilir. installer/postinstall.ps1 dosyaları
+# C:\RestoranOtomasyonu gibi FARKLI bir klasöre kopyaladığı için, isim
+# klasöre göre türetilseydi 'docker compose up -d' yüklenen imajları
+# bulamaz, offline kurulum bozulurdu (bkz. installer/RestoranKurulum.iss).
+name: restoran-otomasyonu
 services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
