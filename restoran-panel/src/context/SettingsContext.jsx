@@ -6,6 +6,7 @@ const SettingsContext = createContext(null);
 const DEFAULTS = {
   RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true, StockChartEnabled: true,
   KitchenAutoPrintEnabled: true, EArsivVatRate: 10, PrinterPaperWidth: 80, LoyaltyPointsRate: 10,
+  AutoBackupEnabled: false, AutoBackupRetentionDays: 7,
   CafeNote: null, SocialInstagram: null, SocialFacebook: null, SocialX: null, SocialWhatsapp: null, ContactPhone: null, ContactAddress: null,
   TaxNumber: null, TaxOffice: null, BillingAddress: null,
 };

@@ -49,6 +49,8 @@ const sql = {
     Int: typeTag('Int'),
     Decimal: typeTag('Decimal'),
     NVarChar: typeTag('NVarChar'),
+    Char: typeTag('Char'),
+    Bit: typeTag('Bit'),
     MAX: -1,
     Transaction: FakeTransaction,
     Request: function (_transaction) {

@@ -35,6 +35,7 @@ export default function Settings() {
     RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, KitchenAutoPrintEnabled,
     EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, CafeNote, SocialInstagram, SocialFacebook, SocialX, SocialWhatsapp,
     ContactPhone, ContactAddress, TaxNumber, TaxOffice, BillingAddress,
+    AutoBackupEnabled, AutoBackupRetentionDays,
     updateLocalSettings,
   } = useSettings();
   const { theme, toggleTheme } = useTheme();
@@ -49,6 +50,8 @@ export default function Settings() {
   const [vatRate, setVatRate] = useState(EArsivVatRate ?? 10);
   const [printerPaperWidth, setPrinterPaperWidth] = useState(PrinterPaperWidth ?? 80);
   const [loyaltyRate, setLoyaltyRate] = useState(LoyaltyPointsRate ?? 10);
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(AutoBackupEnabled === true);
+  const [autoBackupRetentionDays, setAutoBackupRetentionDays] = useState(AutoBackupRetentionDays ?? 7);
 
   const [cafeNote, setCafeNote] = useState(CafeNote || '');
   const [instagram, setInstagram] = useState(SocialInstagram || '');
@@ -75,6 +78,8 @@ export default function Settings() {
   useEffect(() => { setVatRate(EArsivVatRate ?? 10); }, [EArsivVatRate]);
   useEffect(() => { setPrinterPaperWidth(PrinterPaperWidth ?? 80); }, [PrinterPaperWidth]);
   useEffect(() => { setLoyaltyRate(LoyaltyPointsRate ?? 10); }, [LoyaltyPointsRate]);
+  useEffect(() => { setAutoBackupEnabled(AutoBackupEnabled === true); }, [AutoBackupEnabled]);
+  useEffect(() => { setAutoBackupRetentionDays(AutoBackupRetentionDays ?? 7); }, [AutoBackupRetentionDays]);
   useEffect(() => { setCafeNote(CafeNote || ''); }, [CafeNote]);
   useEffect(() => { setInstagram(SocialInstagram || ''); }, [SocialInstagram]);
   useEffect(() => { setFacebook(SocialFacebook || ''); }, [SocialFacebook]);
@@ -96,6 +101,10 @@ export default function Settings() {
       setError('KDV oranı 0-100 arasında olmalıdır.');
       return;
     }
+    if (autoBackupRetentionDays === '' || Number(autoBackupRetentionDays) < 1 || Number(autoBackupRetentionDays) > 365) {
+      setError('Saklama süresi 1-365 gün arasında olmalıdır.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -108,6 +117,8 @@ export default function Settings() {
         EArsivVatRate: Number(vatRate),
         PrinterPaperWidth: Number(printerPaperWidth),
         LoyaltyPointsRate: Number(loyaltyRate),
+        AutoBackupEnabled: autoBackupEnabled,
+        AutoBackupRetentionDays: Number(autoBackupRetentionDays),
         CafeNote: cafeNote.trim() || null,
         SocialInstagram: instagram.trim() || null,
         SocialFacebook: facebook.trim() || null,
@@ -171,6 +182,36 @@ export default function Settings() {
       setProviderSubmitting(false);
     }
   };
+
+  // ---- Otomatik Yedekleme sekmesi (son yedekler listesi + anlık yedek tetikleme) ----
+  const [backups, setBackups] = useState([]);
+  const fetchBackups = () => client.get('/settings/backups').then((res) => setBackups(res.data)).catch(() => {});
+  useEffect(() => { fetchBackups(); }, []);
+
+  const [backupNowLoading, setBackupNowLoading] = useState(false);
+  const [backupNowError, setBackupNowError] = useState('');
+
+  const handleBackupNow = async () => {
+    setBackupNowError('');
+    setBackupNowLoading(true);
+    try {
+      await client.post('/settings/backup-now');
+      await fetchBackups();
+    } catch (err) {
+      setBackupNowError(err.response?.data?.error || 'Yedekleme başarısız.');
+    } finally {
+      setBackupNowLoading(false);
+    }
+  };
+
+  const formatBackupSize = (bytes) => {
+    if (bytes === null || bytes === undefined) return '—';
+    const mb = bytes / (1024 * 1024);
+    return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(1)} MB`;
+  };
+
+  const formatBackupDate = (iso) =>
+    iso ? new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
   return (
     <div className="p-10">
@@ -594,10 +635,78 @@ export default function Settings() {
                     </label>
                   </div>
 
-                  <ComingSoonNote>
-                    Otomatik Yedekleme (SQL Server için zamanlanmış yedek — cron + sqlcmd backup komutu
-                    gerekir, orta zahmetli bir sistem işi).
-                  </ComingSoonNote>
+                  <div className="pt-2 border-t border-hairline">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoBackupEnabled}
+                        onChange={(e) => setAutoBackupEnabled(e.target.checked)}
+                        className="accent-ember w-4 h-4 mt-0.5 shrink-0"
+                      />
+                      <span>
+                        <span className="block font-mono text-xs uppercase tracking-wide text-slate">
+                          Otomatik Yedekleme
+                        </span>
+                        <span className="block font-mono text-[11px] text-slate mt-1">
+                          Açıkken, her gece 03:00'te veritabanının tam bir yedeği (.bak) alınır.
+                          Belirtilen saklama süresinden eski yedekler otomatik silinir.
+                        </span>
+                      </span>
+                    </label>
+
+                    <div className="mt-4">
+                      <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                        Saklama Süresi (gün)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="365"
+                        step="1"
+                        value={autoBackupRetentionDays}
+                        onChange={(e) => setAutoBackupRetentionDays(e.target.value)}
+                        className="w-32 border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-charcoal
+                                   focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                      />
+                      <p className="font-mono text-[11px] text-slate mt-1.5">
+                        Bu günden eski .bak dosyaları diskten silinir.
+                      </p>
+                    </div>
+
+                    <div className="mt-4">
+                      {backupNowError && (
+                        <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-3">{backupNowError}</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleBackupNow}
+                        disabled={backupNowLoading}
+                        className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
+                                   hover:bg-ember/90 disabled:opacity-40 rounded-sm px-4 py-2.5 transition-colors"
+                      >
+                        {backupNowLoading ? 'Yedekleniyor...' : 'Şimdi Yedekle'}
+                      </button>
+                    </div>
+
+                    <div className="mt-5">
+                      <p className="font-mono text-xs uppercase tracking-wide text-slate mb-2">Son Yedekler</p>
+                      {backups.length === 0 ? (
+                        <p className="font-mono text-[11px] text-slate border border-dashed border-hairline rounded-sm px-3 py-2.5 bg-charcoal/50">
+                          Henüz yedek alınmamış.
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {backups.map((b) => (
+                            <div key={b.Id} className="flex items-center justify-between font-mono text-[11px] text-slate border border-hairline rounded-sm px-3 py-2">
+                              <span className="text-paper truncate">{b.FileName}</span>
+                              <span className="shrink-0 ml-3">{formatBackupDate(b.CreatedAt)}</span>
+                              <span className="shrink-0 ml-3 w-16 text-right">{formatBackupSize(b.SizeBytes)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </>
               )}
 

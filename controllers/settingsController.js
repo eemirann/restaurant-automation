@@ -1,4 +1,5 @@
 const { sql, connectDB } = require('../config/db');
+const { runBackup } = require('../utils/backupScheduler');
 
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -22,9 +23,9 @@ const TEXT_FIELDS = [
     { key: 'BillingAddress', maxLen: 300 },
 ];
 
-const BOOL_FIELDS = ['ProductOptionsPopupEnabled', 'StockChartEnabled', 'KitchenAutoPrintEnabled'];
+const BOOL_FIELDS = ['ProductOptionsPopupEnabled', 'StockChartEnabled', 'KitchenAutoPrintEnabled', 'AutoBackupEnabled'];
 
-const ALL_COLUMNS = ['RestaurantName', 'ThemeColor', ...BOOL_FIELDS, 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', ...TEXT_FIELDS.map((f) => f.key)];
+const ALL_COLUMNS = ['RestaurantName', 'ThemeColor', ...BOOL_FIELDS, 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays', ...TEXT_FIELDS.map((f) => f.key)];
 
 // ============================================================
 // GENEL AYARLAR — tek satırlık AppSettings tablosu, tüm kullanıcılar
@@ -42,7 +43,7 @@ async function getSettings(req, res) {
             return res.status(200).json({
                 RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true,
                 StockChartEnabled: true, KitchenAutoPrintEnabled: true, EArsivVatRate: 10, PrinterPaperWidth: 80,
-                LoyaltyPointsRate: 10,
+                LoyaltyPointsRate: 10, AutoBackupEnabled: false, AutoBackupRetentionDays: 7,
                 ...Object.fromEntries(TEXT_FIELDS.map((f) => [f.key, null])),
             });
         }
@@ -54,6 +55,7 @@ async function getSettings(req, res) {
             EArsivVatRate: Number(row.EArsivVatRate),
             PrinterPaperWidth: Number(row.PrinterPaperWidth),
             LoyaltyPointsRate: Number(row.LoyaltyPointsRate),
+            AutoBackupRetentionDays: Number(row.AutoBackupRetentionDays),
         });
     } catch (err) {
         console.error('Ayarlar getirilirken hata:', err);
@@ -66,7 +68,7 @@ async function getSettings(req, res) {
 // ============================================================
 async function updateSettings(req, res) {
     try {
-        const { RestaurantName, ThemeColor, EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate } = req.body;
+        const { RestaurantName, ThemeColor, EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, AutoBackupRetentionDays } = req.body;
 
         if (!RestaurantName || typeof RestaurantName !== 'string' || !RestaurantName.trim()) {
             return res.status(400).json({ error: 'Restoran adı zorunludur' });
@@ -91,6 +93,9 @@ async function updateSettings(req, res) {
         if (LoyaltyPointsRate !== undefined && (typeof LoyaltyPointsRate !== 'number' || LoyaltyPointsRate < 0 || LoyaltyPointsRate > 100)) {
             return res.status(400).json({ error: 'LoyaltyPointsRate 0-100 arasında bir sayı olmalıdır' });
         }
+        if (AutoBackupRetentionDays !== undefined && (typeof AutoBackupRetentionDays !== 'number' || AutoBackupRetentionDays < 1 || AutoBackupRetentionDays > 365)) {
+            return res.status(400).json({ error: 'AutoBackupRetentionDays 1-365 arasında bir sayı olmalıdır' });
+        }
         for (const f of TEXT_FIELDS) {
             const v = req.body[f.key];
             if (v !== undefined && v !== null && (typeof v !== 'string' || v.length > f.maxLen)) {
@@ -108,7 +113,8 @@ async function updateSettings(req, res) {
             .input('ThemeColor', sql.Char(7), ThemeColor.toUpperCase())
             .input('EArsivVatRate', sql.Decimal(5, 2), EArsivVatRate !== undefined ? EArsivVatRate : (existingRow ? Number(existingRow.EArsivVatRate) : 10))
             .input('PrinterPaperWidth', sql.Int, PrinterPaperWidth !== undefined ? PrinterPaperWidth : (existingRow ? Number(existingRow.PrinterPaperWidth) : 80))
-            .input('LoyaltyPointsRate', sql.Decimal(5, 2), LoyaltyPointsRate !== undefined ? LoyaltyPointsRate : (existingRow ? Number(existingRow.LoyaltyPointsRate) : 10));
+            .input('LoyaltyPointsRate', sql.Decimal(5, 2), LoyaltyPointsRate !== undefined ? LoyaltyPointsRate : (existingRow ? Number(existingRow.LoyaltyPointsRate) : 10))
+            .input('AutoBackupRetentionDays', sql.Int, AutoBackupRetentionDays !== undefined ? AutoBackupRetentionDays : (existingRow ? Number(existingRow.AutoBackupRetentionDays) : 7));
 
         for (const key of BOOL_FIELDS) {
             const value = req.body[key] !== undefined ? req.body[key] : (existingRow ? Boolean(existingRow[key]) : true);
@@ -123,12 +129,12 @@ async function updateSettings(req, res) {
 
         const dynamicColumns = [...BOOL_FIELDS, ...TEXT_FIELDS.map((f) => f.key)];
         const setClause = dynamicColumns.map((k) => `${k} = @${k}`).join(', ');
-        const outputList = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', ...dynamicColumns]
+        const outputList = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays', ...dynamicColumns]
             .map((k) => `INSERTED.${k}`).join(', ');
 
         let result;
         if (!existingRow) {
-            const insertColumns = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', ...dynamicColumns];
+            const insertColumns = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays', ...dynamicColumns];
             const insertParams = insertColumns.map((k) => `@${k}`).join(', ');
             result = await request.query(`
                 INSERT INTO AppSettings (${insertColumns.join(', ')})
@@ -142,7 +148,7 @@ async function updateSettings(req, res) {
                     UPDATE AppSettings
                     SET RestaurantName = @RestaurantName, ThemeColor = @ThemeColor,
                         EArsivVatRate = @EArsivVatRate, PrinterPaperWidth = @PrinterPaperWidth,
-                        LoyaltyPointsRate = @LoyaltyPointsRate,
+                        LoyaltyPointsRate = @LoyaltyPointsRate, AutoBackupRetentionDays = @AutoBackupRetentionDays,
                         ${setClause}, UpdatedAt = GETDATE()
                     OUTPUT ${outputList}
                     WHERE AppSettingsId = @Id
@@ -156,6 +162,7 @@ async function updateSettings(req, res) {
             EArsivVatRate: Number(row.EArsivVatRate),
             PrinterPaperWidth: Number(row.PrinterPaperWidth),
             LoyaltyPointsRate: Number(row.LoyaltyPointsRate),
+            AutoBackupRetentionDays: Number(row.AutoBackupRetentionDays),
         });
     } catch (err) {
         console.error('Ayarlar güncellenirken hata:', err);
@@ -163,4 +170,31 @@ async function updateSettings(req, res) {
     }
 }
 
-module.exports = { getSettings, updateSettings };
+// ============================================================
+// ANLIK YEDEK (SADECE ADMIN) — utils/backupScheduler.js'deki AYNI
+// runBackup() fonksiyonunu senkron çağırır (gece zamanlayıcısıyla ortak).
+// ============================================================
+async function backupNow(req, res) {
+    try {
+        const result = await runBackup();
+        res.status(200).json(result);
+    } catch (err) {
+        console.error('Anlık yedekleme başarısız:', err);
+        res.status(500).json({ error: 'Yedekleme başarısız' });
+    }
+}
+
+// Son N yedek kaydını listeler (SADECE ADMIN) — Settings sayfasındaki
+// küçük yedek listesi için.
+async function getBackups(req, res) {
+    try {
+        const pool = await connectDB();
+        const result = await pool.request().query(`SELECT TOP 20 Id, FileName, CreatedAt, SizeBytes FROM BackupHistory ORDER BY CreatedAt DESC`);
+        res.status(200).json(result.recordset);
+    } catch (err) {
+        console.error('Yedek geçmişi getirilirken hata:', err);
+        res.status(500).json({ error: 'Yedek geçmişi getirilemedi' });
+    }
+}
+
+module.exports = { getSettings, updateSettings, backupNow, getBackups };

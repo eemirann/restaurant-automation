@@ -25,6 +25,7 @@ const paymentRoutes = require('./routes/payment');
 const authRoutes = require('./routes/auth');
 const { connectDB } = require('./config/db');
 const { initSocket } = require('./config/socket');
+const { initBackupScheduler } = require('./utils/backupScheduler');
 const tableRoutes = require('./routes/tables');
 const reservationRoutes = require('./routes/reservations');
 const userRoutes = require('./routes/users');
@@ -104,6 +105,7 @@ async function startServer() {
     try {
         await connectDB();
         initSocket(httpServer);
+        initBackupScheduler();
         httpServer.listen(PORT, () => {
             console.log(`Sunucu http://localhost:${PORT} adresinde calisiyor`);
         });

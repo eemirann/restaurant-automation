@@ -24,6 +24,7 @@ services:
       - "1433:1433"
     volumes:
       - mssql-data:/var/opt/mssql
+      - db-backups:/var/opt/mssql/backup
     restart: unless-stopped
 
   backend:
@@ -38,10 +39,12 @@ services:
       PORT: "4091"
       NODE_ENV: production
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:8080,http://localhost:8081}"
+      BACKUP_FS_DIR: "/app/db-backups"
     ports:
       - "4091:4091"
     volumes:
       - uploads:/app/uploads
+      - db-backups:/app/db-backups
     depends_on:
       - db
     restart: unless-stopped
@@ -72,3 +75,4 @@ services:
 volumes:
   mssql-data:
   uploads:
+  db-backups:
