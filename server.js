@@ -77,7 +77,10 @@ app.use(helmet({
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(cors({ origin: corsOrigin }));
-app.use(express.json());
+// Varsayılan 100kb limiti, menü içe aktarma JSON'u (POST /api/products/import
+// — tüm kategoriler/ürünler/varyantlar/reçeteler tek body'de) için yetersiz
+// kalabilir; diğer route'lar bundan etkilenmez, sadece tavan yükseltilir.
+app.use(express.json({ limit: '5mb' }));
 app.use('/api', apiLimiter); // tüm API trafiğine geniş kötüye-kullanım tavanı
 app.use('/uploads', express.static('uploads')); // ürün resimleri buradan servis edilir
 

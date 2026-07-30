@@ -7,8 +7,13 @@ const {
     reactivateProduct, uploadProductImage, setProductAvailability,
     getProductOptions, saveProductOptions, getProductOrderOptions,
 } = require('../controllers/productController');
+const { exportMenuData, importMenuData } = require('../controllers/dataTransferController');
 
 router.get('/', verifyToken, getAllProducts);
+// '/:id'den ÖNCE tanımlanmalı — aksi halde Express 'export'/'import'ı bir
+// ProductId sanıp getProductById'a yönlendirir (bkz. routes/tables.js qrcodes deseni).
+router.get('/export', verifyToken, requireRole('Admin'), exportMenuData);
+router.post('/import', verifyToken, requireRole('Admin'), importMenuData);
 router.get('/:id', verifyToken, getProductById);
 router.post('/', verifyToken, requireRole('Admin'), createProduct);
 router.put('/:id', verifyToken, requireRole('Admin'), updateProduct);

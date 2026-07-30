@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import client, { imageUrl } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import ProductModal from '../components/ProductModal';
@@ -36,6 +36,13 @@ export default function Products() {
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+
+  // Menü verisi dışa/içe aktarma (bkz. controllers/dataTransferController.js)
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState(null);
+  const [importError, setImportError] = useState('');
+  const fileInputRef = useRef(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -94,6 +101,55 @@ const reactivateProduct = async (productId) => {
     }
   };
 
+  // ---- Dışa Aktar: GET /products/export -> tarayıcıda JSON dosya indirir ----
+  const exportMenu = async () => {
+    setExporting(true);
+    setActionError('');
+    try {
+      const res = await client.get('/products/export');
+      const url = URL.createObjectURL(new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `menu-disa-aktarim-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Menü verisi dışa aktarılamadı.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ---- İçe Aktar: dosya seçici -> JSON'u oku -> POST /products/import ----
+  const triggerImport = () => fileInputRef.current?.click();
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // aynı dosyayı tekrar seçebilmek için
+    if (!file) return;
+
+    setImportError('');
+    setImportSummary(null);
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await client.post('/products/import', data);
+      setImportSummary(res.data);
+      await fetchProducts();
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        setImportError('Dosya geçerli bir JSON değil.');
+      } else {
+        setImportError(err.response?.data?.error || 'Menü verisi içe aktarılamadı.');
+      }
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase('tr-TR');
   const visibleProducts = products.filter((p) => {
     if (filter === 'active' && (p.IsActive === false || p.IsActive === 0)) return false;
@@ -141,13 +197,40 @@ const reactivateProduct = async (productId) => {
             ↻ Yenile
           </button>
           {isAdmin && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                         hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
-            >
-              + Yeni Ürün
-            </button>
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportFile}
+                className="hidden"
+              />
+              <button
+                onClick={triggerImport}
+                disabled={importing}
+                title="Bir JSON dosyasından kategori/ürün/varyant/reçete içe aktar"
+                className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
+                           border border-hairline rounded-sm px-3 py-2 transition-colors disabled:opacity-50"
+              >
+                {importing ? 'İçe Aktarılıyor…' : '⇧ İçe Aktar'}
+              </button>
+              <button
+                onClick={exportMenu}
+                disabled={exporting}
+                title="Kategori/ürün/varyant/reçete verisini JSON olarak indir"
+                className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
+                           border border-hairline rounded-sm px-3 py-2 transition-colors disabled:opacity-50"
+              >
+                {exporting ? 'İndiriliyor…' : '⇩ Dışa Aktar'}
+              </button>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
+                           hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+              >
+                + Yeni Ürün
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -200,9 +283,9 @@ const reactivateProduct = async (productId) => {
         ))}
       </div>
 
-      {(error || actionError) && (
+      {(error || actionError || importError) && (
         <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-6">
-          {error || actionError}
+          {error || actionError || importError}
         </p>
       )}
 
@@ -369,6 +452,79 @@ const reactivateProduct = async (productId) => {
           }}
         />
       )}
+
+      {importSummary && (
+        <ImportSummaryModal summary={importSummary} onClose={() => setImportSummary(null)} />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// İçe aktarma sonucu — kaç kategori/ürün eklendi/güncellendi + uyarılar
+// (bkz. POST /products/import, controllers/dataTransferController.js).
+// ============================================================
+function ImportSummaryModal({ summary, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
+      <div
+        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
+          <div>
+            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Menü</p>
+            <h2 className="font-display text-xl font-semibold text-paper">İçe Aktarma Tamamlandı</h2>
+          </div>
+          <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
+            Kapat ✕
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <SummaryStat label="Kategori Eklendi" value={summary.categoriesCreated} />
+            <SummaryStat label="Kategori Güncellendi" value={summary.categoriesUpdated} />
+            <SummaryStat label="Ürün Eklendi" value={summary.productsCreated} />
+            <SummaryStat label="Ürün Güncellendi" value={summary.productsUpdated} />
+          </div>
+
+          {summary.warnings?.length > 0 && (
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-amber-500 mb-2">
+                Uyarılar ({summary.warnings.length})
+              </p>
+              <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+                {summary.warnings.map((w, i) => (
+                  <li key={i} className="font-mono text-[11px] text-slate border-l-2 border-amber-500/40 pl-2.5">
+                    {w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-hairline flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
+                       hover:bg-ember/90 rounded-sm px-4 py-2.5 transition-colors"
+          >
+            Tamam
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }) {
+  return (
+    <div className="border border-hairline rounded-sm px-3 py-2.5 bg-charcoal/40">
+      <p className="font-mono text-[9px] uppercase tracking-wide text-slate">{label}</p>
+      <p className="font-display text-xl font-semibold text-paper mt-0.5">{value}</p>
     </div>
   );
 }
