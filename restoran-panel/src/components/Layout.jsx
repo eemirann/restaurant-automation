@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
 import { useShift, SHIFT_ROLES } from '../context/ShiftContext';
 import { OpenShiftModal, CloseShiftModal } from './ShiftWorkflow';
+import CommandPalette from './CommandPalette';
+import NotificationCenter from './NotificationCenter';
 import client from '../api/client';
 
 const NAV_ITEMS = [
@@ -46,6 +48,19 @@ export default function Layout({ children }) {
   const { shift, loading: shiftLoading } = useShift();
   const navigate = useNavigate();
   const [showClose, setShowClose] = useState(false);
+
+  // Komut paleti — global Ctrl/Cmd+K kısayolu (bkz. CommandPalette.jsx).
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Sol menü açık/kapalı (simge-sadece) durumu — tarayıcıda saklanır, tema
   // anahtarıyla aynı desen. Büyük ekranda içerik alanına daha fazla yer
@@ -171,7 +186,22 @@ export default function Layout({ children }) {
       </aside>
 
       {/* İçerik */}
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto flex flex-col">
+        <header className="h-14 shrink-0 border-b border-hairline flex items-center justify-end gap-2 px-6">
+          <button
+            onClick={() => setPaletteOpen(true)}
+            title="Komut Paleti (Ctrl/Cmd+K)"
+            className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-sm px-3 py-1.5 transition-colors flex items-center gap-2"
+          >
+            Ara <kbd className="text-[10px] border border-hairline rounded px-1">Ctrl K</kbd>
+          </button>
+          <NotificationCenter />
+        </header>
+        <div className="flex-1 overflow-auto">{children}</div>
+      </main>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={visibleItems} />
 
       {/* Vardiya iş akışı katmanı (yüzen kart kaldırıldı — vardiya bilgisi Dashboard'da) */}
       {mustOpenShift && <OpenShiftModal />}

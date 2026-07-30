@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Reorder } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import client from '../api/client';
+import { getSocket } from '../api/socket';
 import { useShift } from '../context/ShiftContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -32,6 +34,35 @@ const ACCENT_STYLES = {
   slate: 'bg-slate/10 text-slate',
 };
 
+// Üst sıradaki 6 stat kartının görünürlük + sırası — tarayıcıda saklanır,
+// Layout.jsx'teki SIDEBAR_COLLAPSED_KEY ile aynı desen (localStorage, JSON dizi).
+const DASHBOARD_WIDGETS_KEY = 'dashboardWidgets';
+const DEFAULT_WIDGET_IDS = ['revenue', 'orders', 'avgTicket', 'occupancy', 'lowStock', 'totalProducts'];
+const WIDGET_LABELS = {
+  revenue: 'Günlük Ciro',
+  orders: 'Bugünkü Sipariş',
+  avgTicket: 'Ortalama Sepet',
+  occupancy: 'Doluluk Oranı',
+  lowStock: 'Düşük Stok',
+  totalProducts: 'Toplam Ürün',
+};
+
+function loadWidgetPrefs() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_WIDGETS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('boş/geçersiz');
+    const known = new Set(parsed.map((w) => w.id));
+    const merged = parsed.filter((w) => DEFAULT_WIDGET_IDS.includes(w.id));
+    DEFAULT_WIDGET_IDS.forEach((id) => {
+      if (!known.has(id)) merged.push({ id, visible: true });
+    });
+    return merged;
+  } catch {
+    return DEFAULT_WIDGET_IDS.map((id) => ({ id, visible: true }));
+  }
+}
+
 const money = (n) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(n) || 0);
 
@@ -54,6 +85,13 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Ayarlanabilir widget'lar: görünürlük + sıra (localStorage'a kaydedilir)
+  const [widgetPrefs, setWidgetPrefs] = useState(loadWidgetPrefs);
+  const [editingWidgets, setEditingWidgets] = useState(false);
+  useEffect(() => {
+    localStorage.setItem(DASHBOARD_WIDGETS_KEY, JSON.stringify(widgetPrefs));
+  }, [widgetPrefs]);
 
   // Canlı saat + vardiya (yüzen widget yerine dashboard'da)
   const { shift } = useShift();
@@ -83,6 +121,28 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
+  // Canlı veri: masa/mutfak/müşteri isteği event'lerinden herhangi biri
+  // gelince dashboard'u tazele. Art arda gelen event'ler (ör. birkaç sipariş
+  // kalemi peş peşe mutfağa düşerse) debounce ile TEK fetchData()'ya düşer.
+  const debounceRef = useRef(null);
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const scheduleFetch = () => {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(fetchData, 1500);
+    };
+
+    const events = ['tables:changed', 'kds:new', 'kds:updated', 'customerRequests:new'];
+    events.forEach((e) => socket.on(e, scheduleFetch));
+
+    return () => {
+      clearTimeout(debounceRef.current);
+      events.forEach((e) => socket.off(e, scheduleFetch));
+    };
+  }, []);
+
   const totalTables = data ? data.occupiedTables + data.availableTables : 0;
   const occupancyPct = totalTables ? Math.round((data.occupiedTables / totalTables) * 100) : 0;
   const avgTicket = data && data.todayOrders ? data.todayRevenue / data.todayOrders : 0;
@@ -93,9 +153,20 @@ export default function Dashboard() {
       ? Math.round(((data.todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100)
       : null;
 
-  const stats = data
-    ? [
-        {
+  // Bugünkü Sipariş ve Doluluk Oranı için de dünle karşılaştırma —
+  // dashboardController.js'nin döndürdüğü yesterdayOrders/yesterdayOccupiedTables
+  // üzerinden (Günlük Ciro'daki revenueTrend deseniyle aynı: sadece ikisi de
+  // pozitifse anlamlı bir yüzde/işaret hesaplanır).
+  const ordersTrend =
+    data && data.yesterdayOrders > 0
+      ? Math.round(((data.todayOrders - data.yesterdayOrders) / data.yesterdayOrders) * 100)
+      : null;
+  const yesterdayOccupancyPct = data && totalTables ? Math.round((data.yesterdayOccupiedTables / totalTables) * 100) : null;
+  const occupancyTrend = data && yesterdayOccupancyPct !== null ? occupancyPct - yesterdayOccupancyPct : null;
+
+  const statsById = data
+    ? {
+        revenue: {
           icon: <IconCoin />,
           title: 'Günlük Ciro',
           value: money(data.todayRevenue),
@@ -103,20 +174,31 @@ export default function Dashboard() {
           accent: 'ember',
           trend: revenueTrend !== null ? revenueTrend >= 0 : null,
         },
-        { icon: <IconReceipt />, title: 'Bugünkü Sipariş', value: data.todayOrders, subtitle: 'bugün oluşturulan', accent: 'blue' },
-        { icon: <IconCoin />, title: 'Ortalama Sepet', value: money(avgTicket), subtitle: 'sipariş başına', accent: 'ember' },
-        {
+        orders: {
+          icon: <IconReceipt />,
+          title: 'Bugünkü Sipariş',
+          value: data.todayOrders,
+          subtitle: 'bugün oluşturulan',
+          accent: 'blue',
+          trend: ordersTrend !== null ? ordersTrend >= 0 : null,
+        },
+        avgTicket: { icon: <IconCoin />, title: 'Ortalama Sepet', value: money(avgTicket), subtitle: 'sipariş başına', accent: 'ember' },
+        occupancy: {
           icon: <IconGrid />,
           title: 'Doluluk Oranı',
           value: `${data.occupiedTables} / ${totalTables}`,
           subtitle: `masa dolu · %${occupancyPct}`,
           accent: 'moss',
           progress: occupancyPct,
+          trend: occupancyTrend !== null ? occupancyTrend >= 0 : null,
         },
-        { icon: <IconAlert />, title: 'Düşük Stok', value: data.lowStockCount, subtitle: 'ürün dikkat gerektiriyor', accent: 'rose' },
-        { icon: <IconBox />, title: 'Toplam Ürün', value: data.totalProducts, subtitle: 'menüdeki ürün sayısı', accent: 'slate' },
-      ]
-    : [];
+        lowStock: { icon: <IconAlert />, title: 'Düşük Stok', value: data.lowStockCount, subtitle: 'ürün dikkat gerektiriyor', accent: 'rose' },
+        totalProducts: { icon: <IconBox />, title: 'Toplam Ürün', value: data.totalProducts, subtitle: 'menüdeki ürün sayısı', accent: 'slate' },
+      }
+    : null;
+
+  const visibleWidgetIds = widgetPrefs.filter((w) => w.visible).map((w) => w.id);
+  const stats = statsById ? visibleWidgetIds.map((id) => statsById[id]) : [];
 
   const maxSold = data?.bestSellingProducts?.length
     ? Math.max(...data.bestSellingProducts.map((p) => p.QuantitySold))
@@ -155,20 +237,35 @@ export default function Dashboard() {
         ) : (
           <span />
         )}
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                     border border-hairline rounded-sm px-3 py-2 transition-colors
-                     flex items-center gap-2 disabled:opacity-50"
-        >
-          <IconRefresh spinning={loading} /> Yenile
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setEditingWidgets((v) => !v)}
+            className={`font-mono text-xs uppercase tracking-wide border rounded-sm px-3 py-2 transition-colors
+                       flex items-center gap-2 ${
+                         editingWidgets ? 'border-ember text-ember bg-ember/5' : 'border-hairline text-slate hover:text-ember'
+                       }`}
+          >
+            <IconSliders /> Widget'ları Düzenle
+          </button>
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
+                       border border-hairline rounded-sm px-3 py-2 transition-colors
+                       flex items-center gap-2 disabled:opacity-50"
+          >
+            <IconRefresh spinning={loading} /> Yenile
+          </button>
+        </div>
       </div>
+
+      {editingWidgets && (
+        <WidgetEditor widgetPrefs={widgetPrefs} setWidgetPrefs={setWidgetPrefs} />
+      )}
 
       {/* Üst özet kartları */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-        {(!data ? Array.from({ length: 6 }) : stats).map((s, i) => (
+        {(!data ? Array.from({ length: visibleWidgetIds.length || 6 }) : stats).map((s, i) => (
           <StatCard key={i} stat={s} loading={loading} />
         ))}
       </div>
@@ -631,6 +728,47 @@ function StatCard({ stat, loading }) {
 }
 
 // ============================================================
+// "Widget'ları Düzenle" paneli — üst sıradaki stat kartlarının aç/kapa
+// durumunu (checkbox) ve sırasını (framer-motion Reorder ile sürükle-bırak)
+// düzenler. Tercih Dashboard'da localStorage'a yazılır (bkz. DASHBOARD_WIDGETS_KEY).
+// ============================================================
+function WidgetEditor({ widgetPrefs, setWidgetPrefs }) {
+  const toggleVisible = (id) => {
+    setWidgetPrefs((prev) => prev.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w)));
+  };
+
+  return (
+    <div className="bg-panel rounded-2xl border border-hairline/70 shadow-sm p-5 mb-6">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-3">
+        Widget görünürlüğü ve sırası — sürükleyerek yeniden sırala
+      </p>
+      <Reorder.Group axis="y" values={widgetPrefs} onReorder={setWidgetPrefs} className="space-y-2">
+        {widgetPrefs.map((w) => (
+          <Reorder.Item
+            key={w.id}
+            value={w}
+            className="flex items-center gap-3 border border-hairline rounded-xl px-3 py-2.5 bg-charcoal/40 cursor-grab active:cursor-grabbing"
+          >
+            <span className="text-slate shrink-0">
+              <IconDragHandle />
+            </span>
+            <label className="flex items-center gap-2.5 flex-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={w.visible}
+                onChange={() => toggleVisible(w.id)}
+                className="accent-ember w-4 h-4 shrink-0"
+              />
+              <span className="text-sm text-paper">{WIDGET_LABELS[w.id]}</span>
+            </label>
+          </Reorder.Item>
+        ))}
+      </Reorder.Group>
+    </div>
+  );
+}
+
+// ============================================================
 // İkinci/üçüncü sıradaki kartlar için ortak, yuvarlak köşeli, yumuşak
 // gölgeli kabuk — başlık ve opsiyonel bir sağ üst aksiyon linki alır.
 // ============================================================
@@ -735,6 +873,28 @@ function IconArrowDown() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M19 12l-7 7-7-7" />
+    </svg>
+  );
+}
+function IconSliders() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h13M21 18h0" />
+      <circle cx="16" cy="6" r="2" />
+      <circle cx="8" cy="12" r="2" />
+      <circle cx="17" cy="18" r="2" />
+    </svg>
+  );
+}
+function IconDragHandle() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="8" cy="6" r="1.6" />
+      <circle cx="16" cy="6" r="1.6" />
+      <circle cx="8" cy="12" r="1.6" />
+      <circle cx="16" cy="12" r="1.6" />
+      <circle cx="8" cy="18" r="1.6" />
+      <circle cx="16" cy="18" r="1.6" />
     </svg>
   );
 }

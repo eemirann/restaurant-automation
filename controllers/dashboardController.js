@@ -59,7 +59,10 @@ async function getDashboardStats(req, res) {
                 (SELECT COUNT(*) FROM Tables WHERE Status = 'Occupied') AS OccupiedTables,
                 (SELECT COUNT(*) FROM Tables WHERE Status = 'Empty') AS AvailableTables,
                 (SELECT COUNT(*) FROM Stock WHERE Quantity <= MinStockLevel) AS LowStockCount,
-                (SELECT COUNT(*) FROM Products WHERE IsRawMaterial = 0 AND IsExtra = 0 AND IsSyrup = 0) AS TotalProducts
+                (SELECT COUNT(*) FROM Products WHERE IsRawMaterial = 0 AND IsExtra = 0 AND IsSyrup = 0) AS TotalProducts,
+                (SELECT COUNT(*) FROM Orders WHERE CAST(CreatedAt AS DATE) = CAST(DATEADD(DAY, -1, GETDATE()) AS DATE)) AS YesterdayOrders,
+                (SELECT COUNT(DISTINCT TableId) FROM Orders
+                    WHERE CAST(CreatedAt AS DATE) = CAST(DATEADD(DAY, -1, GETDATE()) AS DATE) AND Status != 'Cancelled') AS YesterdayOccupiedTables
         `);
         const summary = summaryResult.recordset[0];
 
@@ -230,6 +233,8 @@ async function getDashboardStats(req, res) {
             availableTables: summary.AvailableTables,
             lowStockCount: summary.LowStockCount,
             totalProducts: summary.TotalProducts,
+            yesterdayOrders: Number(summary.YesterdayOrders) || 0,
+            yesterdayOccupiedTables: Number(summary.YesterdayOccupiedTables) || 0,
             weeklyRevenue: buildWeeklyRevenue(weeklyRevenueResult.recordset),
             recentOrders: recentOrdersResult.recordset,
             lowStockProducts: lowStockResult.recordset,
