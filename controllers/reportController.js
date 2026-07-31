@@ -215,4 +215,77 @@ async function getProductsReport(req, res) {
     }
 }
 
-module.exports = { getSalesReport, getZReport, getProductsReport };
+// ============================================================
+// PERSONEL PERFORMANS RAPORU  (GET /api/reports/staff-performance?from=&to=&format=)
+// Siparişi AÇAN personel (Orders.UserId) bazında sipariş sayısı, ciro,
+// ortalama sepet tutarı ve en çok sattığı ürün.
+//
+// ÖNEMLİ: Users'a IsActive filtresi UYGULANMAZ — pasife alınmış bir
+// personelin geçmiş performansı da görünmelidir. Sorgu Orders'tan
+// sürüldüğü için sadece tarih aralığında işlem yapmış kullanıcılar döner.
+// ============================================================
+async function getStaffPerformanceReport(req, res) {
+    try {
+        const range = resolveRange(req);
+        if (!range) return res.status(400).json({ error: 'Geçersiz tarih aralığı. from/to YYYY-MM-DD olmalı ve from <= to.' });
+
+        const pool = await connectDB();
+
+        const result = await pool.request()
+            .input('From', sql.Date, new Date(range.from))
+            .input('To', sql.Date, new Date(range.to))
+            .query(`
+                WITH StaffOrders AS (
+                    SELECT o.UserId,
+                           COUNT(*) AS OrderCount,
+                           ISNULL(SUM(o.TotalAmount), 0) AS Revenue
+                    FROM Orders o
+                    WHERE o.Status <> 'Cancelled'
+                      AND o.UserId IS NOT NULL
+                      AND CAST(o.CreatedAt AS DATE) BETWEEN @From AND @To
+                    GROUP BY o.UserId
+                ),
+                StaffTopProduct AS (
+                    SELECT UserId, ProductName, QuantitySold,
+                           ROW_NUMBER() OVER (PARTITION BY UserId ORDER BY QuantitySold DESC, ProductName ASC) AS Rn
+                    FROM (
+                        SELECT o.UserId, p.Name AS ProductName, SUM(od.Quantity) AS QuantitySold
+                        FROM OrderDetails od
+                        JOIN Orders o ON o.OrderId = od.OrderId
+                        JOIN Products p ON p.ProductId = od.ProductId
+                        WHERE o.Status <> 'Cancelled'
+                          AND o.UserId IS NOT NULL
+                          AND CAST(o.CreatedAt AS DATE) BETWEEN @From AND @To
+                        GROUP BY o.UserId, p.Name
+                    ) AS PerUserProduct
+                )
+                SELECT
+                    u.UserId,
+                    u.FullName,
+                    u.UserName,
+                    u.Role,
+                    u.IsActive,
+                    so.OrderCount,
+                    so.Revenue,
+                    CASE WHEN so.OrderCount = 0 THEN 0
+                         ELSE CAST(so.Revenue AS DECIMAL(18,2)) / so.OrderCount END AS AvgBasket,
+                    tp.ProductName AS TopProductName,
+                    tp.QuantitySold AS TopProductQuantity
+                FROM StaffOrders so
+                JOIN Users u ON u.UserId = so.UserId
+                LEFT JOIN StaffTopProduct tp ON tp.UserId = so.UserId AND tp.Rn = 1
+                ORDER BY so.Revenue DESC
+            `);
+
+        if (req.query.format === 'csv') {
+            return sendCSV(res, `personel-performans-${range.from}_${range.to}`, result.recordset);
+        }
+
+        res.status(200).json({ range, staff: result.recordset });
+    } catch (err) {
+        console.error('Personel performans raporu getirilirken hata:', err);
+        res.status(500).json({ error: 'Personel performans raporu getirilemedi' });
+    }
+}
+
+module.exports = { getSalesReport, getZReport, getProductsReport, getStaffPerformanceReport };

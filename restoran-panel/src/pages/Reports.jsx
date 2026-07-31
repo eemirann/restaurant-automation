@@ -10,7 +10,22 @@ const TABS = [
   { key: 'sales', label: 'Satış' },
   { key: 'z', label: 'Z-Raporu' },
   { key: 'products', label: 'Ürünler' },
+  { key: 'staff', label: 'Personel Performansı' },
 ];
+
+const REPORT_PATHS = {
+  sales: '/reports/sales',
+  z: '/reports/z-report',
+  products: '/reports/products',
+  staff: '/reports/staff-performance',
+};
+
+// CSV dosya adı önekleri — backend'in ürettiği adlarla aynı tutulur.
+const CSV_PREFIXES = {
+  sales: 'satis-raporu',
+  products: 'urun-raporu',
+  staff: 'personel-performans',
+};
 
 const METHOD_LABELS = { Cash: 'Nakit', Card: 'Kredi Kartı', FoodCard: 'Yemek Kartı', QR: 'QR' };
 
@@ -39,10 +54,8 @@ export default function Reports() {
     setError('');
     setData(null);
     try {
-      let res;
-      if (tab === 'sales') res = await client.get('/reports/sales', { params: { from, to } });
-      else if (tab === 'z') res = await client.get('/reports/z-report', { params: { date } });
-      else res = await client.get('/reports/products', { params: { from, to } });
+      const params = tab === 'z' ? { date } : { from, to };
+      const res = await client.get(REPORT_PATHS[tab], { params });
       setData(res.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Rapor getirilemedi.');
@@ -56,13 +69,12 @@ export default function Reports() {
   const downloadCsv = async () => {
     setDownloading(true);
     try {
-      const path = tab === 'sales' ? '/reports/sales' : tab === 'z' ? '/reports/z-report' : '/reports/products';
       const params = tab === 'z' ? { date, format: 'csv' } : { from, to, format: 'csv' };
-      const res = await client.get(path, { params, responseType: 'blob' });
+      const res = await client.get(REPORT_PATHS[tab], { params, responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = tab === 'z' ? `z-raporu-${date}.csv` : `${tab === 'sales' ? 'satis' : 'urun'}-raporu-${from}_${to}.csv`;
+      a.download = tab === 'z' ? `z-raporu-${date}.csv` : `${CSV_PREFIXES[tab]}-${from}_${to}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -139,8 +151,10 @@ export default function Reports() {
         <SalesReport data={data} />
       ) : tab === 'z' ? (
         <ZReport data={data} />
-      ) : (
+      ) : tab === 'products' ? (
         <ProductsReport data={data} />
+      ) : (
+        <StaffReport data={data} />
       )}
     </div>
   );
@@ -208,6 +222,59 @@ function ZReport({ data }) {
         <Stat label="Toplam Bahşiş" value={money(data.TotalTip)} />
         <Stat label="Toplam İade" value={money(data.TotalRefund)} tone="text-red-500" />
         <Stat label="Sipariş / İptal" value={`${data.OrderCount ?? 0} / ${data.CancelledCount ?? 0}`} />
+      </div>
+    </>
+  );
+}
+
+function StaffReport({ data }) {
+  const rows = data.staff || [];
+  const totalRevenue = rows.reduce((sum, r) => sum + (Number(r.Revenue) || 0), 0);
+  const totalOrders = rows.reduce((sum, r) => sum + (Number(r.OrderCount) || 0), 0);
+
+  return (
+    <>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <Stat label="Personel" value={rows.length} />
+        <Stat label="Toplam Sipariş" value={totalOrders} />
+        <Stat label="Toplam Ciro" value={money(totalRevenue)} tone="text-moss" />
+        <Stat label="Ort. Sepet" value={money(totalOrders ? totalRevenue / totalOrders : 0)} />
+      </div>
+      <div className="rounded-2xl border border-hairline overflow-hidden bg-panel">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-wide text-slate">
+              <th className="px-4 py-2.5">Personel</th>
+              <th className="px-4 py-2.5 text-center">Sipariş</th>
+              <th className="px-4 py-2.5 text-right">Ciro</th>
+              <th className="px-4 py-2.5 text-right">Ort. Sepet</th>
+              <th className="px-4 py-2.5">En Çok Sattığı</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-4 text-slate text-sm">Bu aralıkta personel hareketi yok.</td></tr>
+            ) : (
+              rows.map((r) => (
+                <tr key={r.UserId} className="border-b border-hairline last:border-b-0">
+                  <td className="px-4 py-2.5 text-paper">
+                    {r.FullName}
+                    {/* Pasife alınmış personel de geçmiş performansı için listelenir */}
+                    {r.IsActive === false && (
+                      <span className="ml-2 font-mono text-[9px] uppercase tracking-wide text-slate border border-hairline rounded px-1.5 py-0.5">Pasif</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-center font-mono text-xs text-paper">{r.OrderCount}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-paper font-medium">{money(r.Revenue)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-slate">{money(r.AvgBasket)}</td>
+                  <td className="px-4 py-2.5 text-slate text-xs">
+                    {r.TopProductName ? `${r.TopProductName} (${r.TopProductQuantity})` : '—'}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </>
   );
