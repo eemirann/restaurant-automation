@@ -143,13 +143,24 @@ export default function Dashboard() {
     };
   }, []);
 
+  // Garson rolünde backend bu alanları response'tan tamamen çıkarır (bkz.
+  // dashboardController.js) — undefined kontrolüyle ilgili widget'lar/panelller
+  // hiç render edilmez, hata vermez.
+  const showRevenue = data ? data.todayRevenue !== undefined : true;
+  const showWeekly = data ? data.weeklyRevenue !== undefined : true;
+  const showHourly = data ? data.hourlyRevenue !== undefined : true;
+  const showCategory = data ? data.categoryDistribution !== undefined : true;
+  const showProfit = data ? data.profitRatio !== undefined : true;
+  const showCombos = data ? data.bestSellingCombos !== undefined : true;
+  const showLoyaltyRedeem = data ? data.loyaltyRedeem !== undefined : true;
+
   const totalTables = data ? data.occupiedTables + data.availableTables : 0;
   const occupancyPct = totalTables ? Math.round((data.occupiedTables / totalTables) * 100) : 0;
-  const avgTicket = data && data.todayOrders ? data.todayRevenue / data.todayOrders : 0;
+  const avgTicket = data && showRevenue && data.todayOrders ? data.todayRevenue / data.todayOrders : 0;
 
-  const yesterdayRevenue = data?.weeklyRevenue?.[5]?.revenue ?? 0;
+  const yesterdayRevenue = showWeekly ? (data?.weeklyRevenue?.[5]?.revenue ?? 0) : 0;
   const revenueTrend =
-    data && yesterdayRevenue > 0
+    data && showRevenue && yesterdayRevenue > 0
       ? Math.round(((data.todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100)
       : null;
 
@@ -166,14 +177,18 @@ export default function Dashboard() {
 
   const statsById = data
     ? {
-        revenue: {
-          icon: <IconCoin />,
-          title: 'Günlük Ciro',
-          value: money(data.todayRevenue),
-          subtitle: 'bugün · tahsil edilen',
-          accent: 'ember',
-          trend: revenueTrend !== null ? revenueTrend >= 0 : null,
-        },
+        ...(showRevenue
+          ? {
+              revenue: {
+                icon: <IconCoin />,
+                title: 'Günlük Ciro',
+                value: money(data.todayRevenue),
+                subtitle: 'bugün · tahsil edilen',
+                accent: 'ember',
+                trend: revenueTrend !== null ? revenueTrend >= 0 : null,
+              },
+            }
+          : {}),
         orders: {
           icon: <IconReceipt />,
           title: 'Bugünkü Sipariş',
@@ -182,7 +197,9 @@ export default function Dashboard() {
           accent: 'blue',
           trend: ordersTrend !== null ? ordersTrend >= 0 : null,
         },
-        avgTicket: { icon: <IconCoin />, title: 'Ortalama Sepet', value: money(avgTicket), subtitle: 'sipariş başına', accent: 'ember' },
+        ...(showRevenue
+          ? { avgTicket: { icon: <IconCoin />, title: 'Ortalama Sepet', value: money(avgTicket), subtitle: 'sipariş başına', accent: 'ember' } }
+          : {}),
         occupancy: {
           icon: <IconGrid />,
           title: 'Doluluk Oranı',
@@ -198,7 +215,7 @@ export default function Dashboard() {
     : null;
 
   const visibleWidgetIds = widgetPrefs.filter((w) => w.visible).map((w) => w.id);
-  const stats = statsById ? visibleWidgetIds.map((id) => statsById[id]) : [];
+  const stats = statsById ? visibleWidgetIds.filter((id) => statsById[id]).map((id) => statsById[id]) : [];
 
   const maxSold = data?.bestSellingProducts?.length
     ? Math.max(...data.bestSellingProducts.map((p) => p.QuantitySold))
@@ -271,7 +288,9 @@ export default function Dashboard() {
       </div>
 
       {/* Saatlik Ciro + Kategori Dağılımı */}
+      {(showHourly || showCategory) && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {showHourly && (
         <Panel title="Saatlik Ciro · Bugün">
           {!data ? (
             <div className="h-[220px] flex items-center justify-center">
@@ -328,7 +347,9 @@ export default function Dashboard() {
             </ResponsiveContainer>
           )}
         </Panel>
+        )}
 
+        {showCategory && (
         <Panel title="Kategori Dağılımı · Bugün (sipariş bazlı)">
           {!data ? (
             <p className="text-slate font-mono text-sm">Yükleniyor...</p>
@@ -382,9 +403,12 @@ export default function Dashboard() {
             </div>
           )}
         </Panel>
+        )}
       </div>
+      )}
 
       {/* Kâr Oranı */}
+      {showProfit && (
       <Panel title="Kâr Oranı · Bugün (sipariş bazlı)" className="mb-8">
         {!data ? (
           <p className="text-slate font-mono text-sm">Yükleniyor...</p>
@@ -446,6 +470,7 @@ export default function Dashboard() {
           </div>
         )}
       </Panel>
+      )}
 
       {/* En Çok Satan Ürünler */}
       <Panel title="En Çok Satan Ürünler" className="mb-8">
@@ -480,6 +505,7 @@ export default function Dashboard() {
 
       {/* Kampanya/Combo + Sadaklık Analitiği */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {showCombos && (
         <Panel title="En Çok Satılan Combo">
           {!data ? (
             <p className="text-slate font-mono text-sm">Yükleniyor...</p>
@@ -496,6 +522,7 @@ export default function Dashboard() {
             </div>
           )}
         </Panel>
+        )}
 
         <Panel title="Sadaklık">
           {!data ? (
@@ -506,14 +533,18 @@ export default function Dashboard() {
                 <span className="text-sm text-slate">Puan biriktiren müşteri</span>
                 <span className="font-display text-xl font-semibold text-paper">{data.loyaltyCustomerCount}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate">Verilen ücretsiz ürün</span>
-                <span className="font-display text-xl font-semibold text-paper">{data.loyaltyRedeem.freeProductCount}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate">Harcanan toplam puan</span>
-                <span className="font-display text-xl font-semibold text-paper">{data.loyaltyRedeem.totalPointsSpent}</span>
-              </div>
+              {showLoyaltyRedeem && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate">Verilen ücretsiz ürün</span>
+                    <span className="font-display text-xl font-semibold text-paper">{data.loyaltyRedeem.freeProductCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate">Harcanan toplam puan</span>
+                    <span className="font-display text-xl font-semibold text-paper">{data.loyaltyRedeem.totalPointsSpent}</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </Panel>
@@ -535,6 +566,7 @@ export default function Dashboard() {
       </div>
 
       {/* Son 7 Gün · Ciro */}
+      {showWeekly && (
       <Panel title="Son 7 Gün · Ciro" className="mb-8">
         {!data ? (
           <div className="h-[280px] flex items-center justify-center">
@@ -591,6 +623,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         )}
       </Panel>
+      )}
 
       {/* Son Siparişler + Düşük Stok */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

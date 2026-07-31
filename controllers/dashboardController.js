@@ -226,7 +226,7 @@ async function getDashboardStats(req, res) {
         `);
         const feedbackRow = feedbackResult.recordset[0];
 
-        res.status(200).json({
+        const payload = {
             todayRevenue: Number(summary.TodayRevenue) || 0,
             todayOrders: summary.TodayOrders,
             occupiedTables: summary.OccupiedTables,
@@ -255,7 +255,23 @@ async function getDashboardStats(req, res) {
                 avgCleanliness: feedbackRow.AvgCleanliness !== null ? Number(feedbackRow.AvgCleanliness) : null,
                 count: feedbackRow.FeedbackCount,
             },
-        });
+        };
+
+        // Garson (Waiter) için hassas/finansal alanlar tamamen çıkarılır — reports.js'teki
+        // requireRole('Cashier', 'Admin') ile aynı yetki sınırı, ama Dashboard route'u
+        // TÜM rollerin ana sayfası olduğu için (bkz. Layout.jsx NAV_ITEMS) route değil,
+        // response içeriği kısıtlanır.
+        if (req.user?.role === 'Waiter') {
+            delete payload.todayRevenue;
+            delete payload.weeklyRevenue;
+            delete payload.profitRatio;
+            delete payload.hourlyRevenue;
+            delete payload.bestSellingCombos;
+            delete payload.loyaltyRedeem;
+            delete payload.categoryDistribution;
+        }
+
+        res.status(200).json(payload);
     } catch (err) {
         console.error('Dashboard verileri getirilirken hata:', err);
         res.status(500).json({ error: 'Dashboard verileri getirilemedi' });
