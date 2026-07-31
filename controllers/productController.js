@@ -334,14 +334,26 @@ async function saveProductOptions(req, res) {
 
     if (extrasList.length > 0) {
         const ids = [...new Set(extrasList.map((e) => e.ExtraProductId))];
-        const validResult = await pool.request().query(`SELECT ProductId FROM Products WHERE IsExtra = 1 AND ProductId IN (${ids.join(',')})`);
+        const request = pool.request();
+        const placeholders = ids.map((idVal, i) => {
+            const paramName = `id${i}`;
+            request.input(paramName, sql.Int, idVal);
+            return `@${paramName}`;
+        });
+        const validResult = await request.query(`SELECT ProductId FROM Products WHERE IsExtra = 1 AND ProductId IN (${placeholders.join(',')})`);
         if (validResult.recordset.length !== ids.length) {
             return res.status(400).json({ error: 'Geçersiz bir ExtraProductId gönderildi' });
         }
     }
     if (syrupsList.length > 0) {
         const ids = [...new Set(syrupsList.map((s) => s.SyrupProductId))];
-        const validResult = await pool.request().query(`SELECT ProductId FROM Products WHERE IsSyrup = 1 AND ProductId IN (${ids.join(',')})`);
+        const request = pool.request();
+        const placeholders = ids.map((idVal, i) => {
+            const paramName = `id${i}`;
+            request.input(paramName, sql.Int, idVal);
+            return `@${paramName}`;
+        });
+        const validResult = await request.query(`SELECT ProductId FROM Products WHERE IsSyrup = 1 AND ProductId IN (${placeholders.join(',')})`);
         if (validResult.recordset.length !== ids.length) {
             return res.status(400).json({ error: 'Geçersiz bir SyrupProductId gönderildi' });
         }

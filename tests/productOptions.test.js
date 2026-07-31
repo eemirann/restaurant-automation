@@ -92,6 +92,15 @@ describe('PUT /api/products/:id/options', () => {
         expect(res.status).toBe(404);
     });
 
+    test('ExtraProductId olarak SQL enjeksiyonu denemesi içeren string gönderilirse 400 döner (typeof kontrolü reddeder)', async () => {
+        const res = await request(app)
+            .put('/api/products/10/options')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ Extras: [{ ExtraProductId: '1); DROP TABLE Products;--', DisplayOrder: 0, IsEnabled: true }] });
+
+        expect(res.status).toBe(400);
+    });
+
     test('geçersiz ExtraProductId gönderilirse 400 döner', async () => {
         fakeDb.__setHandler(async (queryText) => {
             if (queryText.includes('SELECT ProductId FROM Products WHERE ProductId = @Id')) {
