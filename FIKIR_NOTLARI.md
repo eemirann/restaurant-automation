@@ -931,6 +931,234 @@ commitlenmez, her paketlemede yeniden üretilir).
 
 ---
 
+## INCELEME_RAPORU.md Güncel Durum Taraması + 5 Ayrı Prompt (2026-08-06 civarı)
+
+`INCELEME_RAPORU.md` (29 Temmuz) baştan sona kontrol edildi — çoğu madde
+bu tarihten sonraki işlerle zaten çözülmüş (Rezervasyon arayüzü,
+Kategori yönetimi, Ödeme restore, Stok düzenleme, BillModal, Admin
+vardiya muafiyeti, sadakat/QR/düşük-stok-bildirimi/Audit filtreleri).
+Hâlâ açık, gerçek 5 madde için ayrı ayrı prompt hazırlandı — kullanıcı
+her birini istediği zaman/sırada kendi tarafında uygulayabilir.
+
+### Prompt 1/5 — Dashboard: Rol Bazlı Veri Gizleme (küçük, güvenlik)
+
+\`\`\`
+Restoran Otomasyonu projesinde Dashboard'daki bir yetkilendirme
+tutarsızlığını düzelt. Aşağıdaki spesifikasyonu birebir uygula.
+
+ÖNCE OKU: controllers/dashboardController.js (getDashboardStats —
+todayRevenue, weeklyRevenue, profitRatio, hourlyRevenue,
+bestSellingCombos, loyaltyRedeem alanları HASSAS/finansal veri),
+routes/dashboard.js (şu an sadece verifyToken, requireRole YOK),
+routes/reports.js (requireRole('Cashier','Admin') deseni — reports.js
+bu verilere zaten erişimi kısıtlıyor, Dashboard tutarsız kalmış),
+restoran-panel/src/components/Layout.jsx (NAV_ITEMS'ta '/' → Dashboard
+roles: null — TÜM roller Dashboard'ı ana sayfa olarak görüyor, bu
+yüzden route'u TAMAMEN Cashier/Admin'e kapatmak Garson'un ana sayfasını
+kırar — DOĞRU ÇÖZÜM route'u kapatmak değil, hassas alanları rol bazlı
+gizlemek).
+
+Backend: getDashboardStats fonksiyonunda, response oluşturulmadan önce
+req.user.role kontrol edilir. Role 'Waiter' ise şu alanlar response'tan
+ÇIKARILIR (null/undefined değil, tamamen omit edilir): todayRevenue,
+weeklyRevenue, profitRatio, hourlyRevenue, bestSellingCombos,
+loyaltyRedeem, categoryDistribution (kategori bazlı ciro içeriyorsa).
+Garson için hâlâ dönmesi gereken (masa/sipariş sayısı gibi operasyonel
+veri): occupiedTables, availableTables, lowStockCount, totalProducts,
+todayOrders, openTables, lowStockProducts, feedback. Route (routes/
+dashboard.js) DEĞİŞMEZ (hâlâ tüm roller erişebilir), sadece response
+içeriği role göre farklılaşır.
+
+Frontend: restoran-panel/src/pages/Dashboard.jsx'te, Garson için
+gizlenen alanlara ait widget'lar (ciro kartı, kâr oranı, saatlik ciro
+grafiği vb.) `data.todayRevenue !== undefined` gibi bir kontrolle
+koşullu render edilir (alan yoksa widget hiç gösterilmez, hata
+vermez).
+
+== TEST ==
+tests/dashboardController.test.js'e (varsa) ya da yeni bir test
+dosyasına: Waiter rolüyle çağrıldığında hassas alanların response'ta
+OLMADIĞINI, Cashier/Admin rolüyle çağrıldığında HEPSİNİN olduğunu
+doğrulayan test ekle. Mevcut TÜM testler geçmeye devam etmeli — npm
+test. restoran-panel'de npm run build hatasız tamamlanmalı. Bitince
+commit + push (branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+### Prompt 2/5 — SQL Enjeksiyon Riski Düzeltmesi (küçük, güvenlik)
+
+\`\`\`
+Restoran Otomasyonu projesinde kod tabanındaki TEK parametrize
+edilmemiş SQL sorgusunu düzelt. Aşağıdaki spesifikasyonu birebir
+uygula.
+
+ÖNCE OKU: controllers/productController.js saveProductOptions
+fonksiyonu (satır ~297-350) — iki sorguda ID'ler `IN (${ids.join(',')})`
+şeklinde doğrudan string interpolasyonla sorguya ekleniyor (satır
+~337 ve ~344). Kod tabanının geri kalanındaki TÜM diğer sorgular
+`.input(...)` ile parametrize — bu ikisi istisna.
+
+Düzeltme: `ids` dizisindeki her elemanın zaten `typeof === 'number'`
+olduğu doğrulanmış olsa bile (mevcut kontrolü BOZMA, ekstra güvenlik
+katmanı olarak kalsın), sorguyu parametrize hale getir — mssql
+paketinin `sql.Int` array parametresi desteklemediği için, standart
+yöntem: her ID için ayrı bir named parameter oluşturup
+(`@id0, @id1, ...`) `IN (@id0, @id1, ...)` şeklinde dinamik ama
+parametrize bir sorgu kurmak (ids.map ile @idN input'ları eklenir,
+placeholder string'i buna göre oluşturulur — SQL enjeksiyonu tamamen
+imkansız hale gelir çünkü değerler artık string interpolasyonla değil
+gerçek SQL parametresi olarak gönderiliyor).
+
+== TEST ==
+tests/productController.test.js'e (varsa) mevcut saveProductOptions
+testlerinin hâlâ geçtiğini doğrula, ekstra bir test: ids içine normal
+sayısal olmayan bir şey enjekte etmeye çalışan bir senaryo (mevcut
+typeof kontrolü zaten reddediyor olmalı, davranış değişmemeli).
+Mevcut TÜM testler geçmeye devam etmeli — npm test. Bitince commit +
+push (branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+### Prompt 3/5 — Personel Performans/Satış Raporu (büyük)
+
+\`\`\`
+Restoran Otomasyonu projesine personel bazlı performans/satış raporu
+ekle. Aşağıdaki spesifikasyonu birebir uygula, varsayımda bulunma.
+
+ÖNCE OKU: controllers/reportController.js (mevcut getSalesReport/
+getZReport/getProductsReport — CSV export deseni, tarih aralığı
+filtreleme deseni, hepsi Orders/OrderDetails/Payments üzerinden),
+routes/reports.js (requireRole('Cashier','Admin') deseni — yeni uç da
+aynı korumaya sahip olacak), Orders tablosu (UserId — siparişi açan
+personel), Payments tablosu (UserId var mı kontrol et, yoksa
+ShiftId üzerinden Shifts.UserId'ye join edilebilir — bkz.
+migrations/2026_07_29_payments_shift_id.sql).
+
+Backend: controllers/reportController.js'e yeni fonksiyon
+getStaffPerformanceReport(req,res) — GET /api/reports/staff-performance
+?from=&to=&format=csv (mevcut diğer raporlarla aynı query param
+deseni). Personel (Users) bazında GROUP BY: toplam sipariş sayısı,
+toplam ciro (Orders.TotalAmount ya da Payments üzerinden tahsil
+edilen), ortalama sepet tutarı, (opsiyonel) en çok sattığı ürün. Sadece
+IsActive kullanıcılar değil, tarih aralığında işlem yapmış TÜM
+kullanıcılar (pasife alınmış olsa bile geçmiş performansı görünmeli).
+Mevcut CSV export deseni (format=csv) aynen uygulanır.
+routes/reports.js'e requireRole('Cashier','Admin') ile eklenir.
+
+Frontend: restoran-panel/src/pages/Reports.jsx'e (mevcut sayfaya, yeni
+sayfa AÇMA) yeni bir sekme/bölüm: "Personel Performansı" — tarih
+aralığı seçici (mevcut diğer raporlarla aynı UI deseni), personel
+bazında tablo (ad, sipariş sayısı, ciro, ortalama sepet), CSV indir
+butonu (mevcut desenle aynı).
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle
+getStaffPerformanceReport için test yaz (tarih aralığı filtreleme,
+pasif kullanıcının geçmiş verisinin göründüğünü doğrulayan senaryo
+dahil). Mevcut TÜM testler geçmeye devam etmeli — npm test.
+restoran-panel'de npm run build hatasız tamamlanmalı. Bitince commit +
+push (branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+### Prompt 4/5 — Rezervasyon Takvim Görünümü (büyük)
+
+\`\`\`
+Restoran Otomasyonu projesindeki rezervasyon sayfasına takvim
+görünümü ekle. Aşağıdaki spesifikasyonu birebir uygula, varsayımda
+bulunma.
+
+ÖNCE OKU: controllers/reservationController.js (getReservations —
+mevcut liste sorgusu, çakışma/tampon süre kontrolü mantığı),
+restoran-panel/src/pages/Reservations.jsx (mevcut liste görünümü,
+oluşturma/iptal formu — takvim BUNUN YERİNE GEÇMEYECEK, ek bir
+görünüm modu olacak), package.json (framer-motion kurulu, yeni bir
+takvim kütüphanesi eklenmesi GEREKMİYOR — basit bir haftalık/aylık
+grid kendi bileşenimizle kurulabilir, gereksiz bağımlılık ekleme).
+
+Frontend: Reservations.jsx'e "Liste" / "Takvim" görünüm anahtarı
+(toggle) eklenir. Takvim modu: haftalık görünüm (7 gün, her günün
+altında o güne ait rezervasyonlar saat sırasına göre kart olarak
+listelenir — grid/CSS ile, ağır bir takvim kütüphanesi gerekmez),
+hafta ileri/geri butonları. Bir rezervasyon kartına tıklayınca mevcut
+düzenleme/iptal akışı açılır (var olan fonksiyonlar yeniden kullanılır,
+YENİ bir API çağrısı gerekmez — mevcut GET /reservations verisi
+client-side günlere göre gruplanır).
+
+Aylık görünüm İSTENMEDİYSE eklenmesin (kapsam sadece haftalık — proje
+büyürse aylık ayrı bir iş olarak eklenir).
+
+== TEST ==
+restoran-panel'de npm run build hatasız tamamlanmalı (bu tamamen
+frontend bir özellik, backend değişikliği yok — mevcut testler zaten
+etkilenmemeli, npm test yine de çalıştırılıp doğrulanmalı). Bitince
+commit + push (branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+### Prompt 5/5 — Çoklu Şube Desteği (BÜYÜK, temel altyapı — dikkatli oku)
+
+\`\`\`
+Restoran Otomasyonu projesine çoklu şube desteğinin TEMEL
+ALTYAPISINI ekle. ÖNEMLİ: Bu, tek promptta biten küçük bir iş DEĞİL —
+bu proje şu an tamamen tek-şube varsayımıyla kurulu (26 controller'ın
+hiçbirinde BranchId/şube kavramı yok). Bu prompt sadece TEMELİ atar
+(veri modeli + en kritik 3-4 controller'da filtreleme); geri kalan
+controller'lara (Products, Stock, Reports, Dashboard, vb.) yayılması
+AYRI, sonraki promptlar/turlar gerektirir. Varsayımda bulunma, kapsamı
+genişletme — sadece aşağıda yazılanı yap.
+
+ÖNCE OKU: migrations/2026_07_22_base_schema.sql (Users, Tables şeması
+— BranchId eklenecek iki ana tablo), controllers/tableController.js
+(getAllTables — şube filtresi ekleneceği ana yer), controllers/
+userController.js (kullanıcı listesi/oluşturma — hangi şubede
+çalıştığı), middleware/authMiddleware.js (JWT payload'ına BranchId
+eklenecek yer — verifyToken içinde req.user'a nereden geldiğine bak).
+
+Yeni migration migrations/2026_08_07_branches_foundation.sql:
+- Yeni tablo Branches: BranchId INT IDENTITY PK, Name NVARCHAR(150)
+  NOT NULL, Address NVARCHAR(300) NULL, IsActive BIT DEFAULT 1.
+- Mevcut kurulumlar için varsayılan bir şube otomatik oluşturulur
+  (INSERT INTO Branches (Name) VALUES ('Ana Şube') IF NOT EXISTS).
+- Users tablosuna nullable BranchId INT eklenir (FK Branches), mevcut
+  kullanıcılar varsayılan şubeye atanır (UPDATE ... WHERE BranchId IS
+  NULL, EXEC ile ertelenerek — bkz. migrations/2026_07_31_qr_customer_menu.sql'deki
+  EXEC deseni, aynı-batch kolon referansı sorunu için).
+- Tables tablosuna nullable BranchId INT eklenir (FK Branches), aynı
+  şekilde mevcut masalar varsayılan şubeye atanır.
+
+Backend (SADECE bu 2 controller, başka hiçbir yere dokunma):
+- authController.js login/loginWithPin: JWT payload'ına BranchId
+  eklenir (kullanıcının Users.BranchId'si).
+- middleware/authMiddleware.js verifyToken: req.user.branchId olarak
+  JWT'den okunur, sonraki controller'ların kullanabilmesi için.
+- tableController.js getAllTables: eğer req.user.branchId doluysa
+  (Admin için NULL bırakılabilir = "tüm şubeleri gör" anlamına gelir,
+  Waiter/Cashier için her zaman dolu olmalı) sorguya `WHERE BranchId =
+  @BranchId OR @BranchId IS NULL` filtresi eklenir.
+
+Frontend: restoran-panel Users.jsx'teki kullanıcı oluşturma/düzenleme
+formuna bir "Şube" dropdown'u eklenir (yeni GET /api/branches ucu —
+basit bir liste, Admin-only CRUD şimdilik gerekmiyor, sadece dropdown
+için okuma).
+
+BU PROMPTTA YAPILMAYACAKLAR (bilerek kapsam dışı, sonraki bir turda
+ayrıca ele alınacak): Products/Stock/Orders/Payments/Reports/Dashboard
+şube filtrelemesi, şube yönetim sayfası (CRUD arayüzü), şubeler arası
+raporlama/karşılaştırma, restoran-panel'de aktif şube göstergesi/geçişi.
+
+== TEST ==
+tests/ klasöründeki mevcut Jest + fakeDb mock deseniyle
+getAllTables'ın BranchId filtresini doğru uyguladığını test et. Mevcut
+TÜM testler geçmeye devam etmeli — npm test (bu KRİTİK, çünkü mevcut
+testlerin çoğu BranchId'siz senaryoları varsayıyor olabilir — nullable
+tasarım tam da bunun için, geriye dönük uyumluluk bozulmamalı).
+restoran-panel'de npm run build hatasız tamamlanmalı. Bitince commit +
+push (branch: claude/turkce-yazi-m3dfnh).
+\`\`\`
+
+**Durum:** Hiçbiri henüz uygulanmadı. Prompt 5 özellikle büyük/riskli —
+kullanıcı gerçekten ikinci bir şube açmayı planlıyorsa anlamlı, aksi
+halde ertelenebilir.
+
+---
+
 ## Sıradaki Fikirler İçin
 
 Yeni beyin fırtınası oturumlarında buraya eklenecek başlıklar için boşluk.
