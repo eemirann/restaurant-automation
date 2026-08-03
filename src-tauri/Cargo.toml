@@ -1,0 +1,34 @@
+[package]
+name = "resto-pos"
+version = "1.0.0"
+description = "RESTO POS — Restoran Otomasyonu"
+authors = ["RESTO"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# tray-icon + image-png: sistem tepsisi ikonunu PNG'den yüklemek için gerekli.
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Tauri varsayılanı: üretim derlemesinde devtools KAPALI.
+# `cargo build --features devtools` ile sadece geliştirme için açılabilir.
+devtools = ["tauri/devtools"]
+
+# ============================================================
+# Üretim derlemesi: başlangıç hızı ve dosya boyutu optimizasyonu
+# ============================================================
+[profile.release]
+opt-level = "s"      # boyut odaklı optimizasyon (POS için hız yeterli kalır)
+lto = true           # link-time optimization: ölü kodu agresif ayıklar
+codegen-units = 1    # tek birim: daha iyi optimizasyon, daha küçük binary
+panic = "abort"      # unwind tablolarını atar (~%10 boyut kazancı)
+strip = true         # sembolleri kaldırır
+incremental = false

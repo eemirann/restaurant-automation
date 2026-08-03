@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "RESTO POS için ASGARİ izin kümesi. Pencere/tepsi/tam-ekran işlemleri Rust tarafındaki özel komutlarla yapılır (özel komutlar ayrıca izin gerektirmez), böylece frontend'e geniş çekirdek yetkiler açılmaz.",
+  "windows": ["main"],
+  "permissions": [
+    "core:app:default",
+    "core:event:default",
+    "updater:default"
+  ]
+}

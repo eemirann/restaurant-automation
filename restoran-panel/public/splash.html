@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>RESTO POS</title>
+<!--
+  Açılış (splash) ekranı — backend ayağa kalkana kadar gösterilir.
+  Rust tarafı backend hazır olduğunda bu pencereyi kapatır (src-tauri/src/main.rs).
+
+  TASARIM KURALLARI:
+  - Hiç DIŞ KAYNAK yok (font/görsel/script): tek istek, anında boyanır.
+  - Satır içi <script> YOK: CSP script-src 'self' ile uyumlu, animasyonlar saf CSS.
+  - Logo satır içi SVG: branding/resto-icon.svg ile aynı tasarım dili.
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;      /* pencere transparent: true */
+    overflow: hidden;
+    user-select: none;
+    cursor: default;
+  }
+
+  .kart {
+    width: 100%; height: 100%;
+    border-radius: 20px;
+    background:
+      radial-gradient(120% 100% at 50% 0%, #273140 0%, #1A222D 55%, #111720 100%);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    position: relative;
+  }
+
+  /* Üst kenarda ince ışık çizgisi — cam/premium his */
+  .kart::before {
+    content: "";
+    position: absolute; top: 0; left: 12%; right: 12%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  }
+
+  .logo {
+    width: 76px; height: 76px;
+    filter: drop-shadow(0 8px 22px rgba(46, 125, 247, 0.45));
+    animation: yuksel 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .metin { text-align: center; animation: yuksel 620ms 90ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+  .baslik {
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: 0.20em;
+    color: #F2F6FC;
+    text-indent: 0.20em;       /* letter-spacing'in sağda bıraktığı boşluğu dengeler */
+  }
+
+  .altbaslik {
+    margin-top: 7px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.26em;
+    text-indent: 0.26em;
+    text-transform: uppercase;
+    color: #7C8CA3;
+  }
+
+  /* Belirsiz (indeterminate) ilerleme çubuğu */
+  .cubuk {
+    width: 190px; height: 3px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    overflow: hidden;
+    animation: yuksel 620ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .cubuk span {
+    display: block;
+    width: 42%; height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #4C97FF, #2E7DF7);
+    box-shadow: 0 0 12px rgba(46, 125, 247, 0.7);
+    animation: kay 1.15s ease-in-out infinite;
+  }
+
+  .durum {
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #5E6C81;
+    animation: yuksel 620ms 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes kay {
+    0%   { transform: translateX(-105%); }
+    100% { transform: translateX(345%); }
+  }
+
+  @keyframes yuksel {
+    from { opacity: 0; transform: translateY(9px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Hareket azaltma tercihi olan kullanıcılarda animasyonları sustur */
+  @media (prefers-reduced-motion: reduce) {
+    .logo, .metin, .cubuk, .durum { animation: none; }
+    .cubuk span { animation-duration: 2.4s; }
+  }
+</style>
+</head>
+<body>
+  <div class="kart">
+    <!-- RESTO markası: fiş/adisyon sembolü (branding/resto-icon.svg ile aynı) -->
+    <svg class="logo" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-label="RESTO POS">
+      <defs>
+        <linearGradient id="b" x1="0" y1="0" x2="0.35" y2="1">
+          <stop offset="0" stop-color="#4C97FF"/>
+          <stop offset="0.5" stop-color="#2E7DF7"/>
+          <stop offset="1" stop-color="#1A63DE"/>
+        </linearGradient>
+      </defs>
+      <path fill="url(#b)" d="M328,252 Q328,208 372,208 H652 Q696,208 696,252 V712
+        l-46,44 -46,-44 -46,44 -46,-44 -46,44 -46,-44 -46,44 -46,-44 Z"/>
+      <g fill="#FFFFFF">
+        <rect x="384" y="278" width="256" height="54" rx="27" opacity="0.97"/>
+        <rect x="384" y="386" width="148" height="30" rx="15" opacity="0.72"/>
+        <rect x="562" y="386" width="78"  height="30" rx="15" opacity="0.50"/>
+        <rect x="384" y="450" width="116" height="30" rx="15" opacity="0.72"/>
+        <rect x="586" y="450" width="54"  height="30" rx="15" opacity="0.50"/>
+        <rect x="384" y="524" width="256" height="6"  rx="3"  opacity="0.34"/>
+        <rect x="384" y="568" width="132" height="40" rx="20" opacity="0.97"/>
+        <rect x="540" y="568" width="100" height="40" rx="20" opacity="0.97"/>
+      </g>
+    </svg>
+
+    <div class="metin">
+      <div class="baslik">RESTO POS</div>
+      <div class="altbaslik">Restoran Otomasyonu</div>
+    </div>
+
+    <div class="cubuk"><span></span></div>
+    <div class="durum">Başlatılıyor</div>
+  </div>
+</body>
+</html>

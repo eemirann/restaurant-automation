@@ -17,3 +17,20 @@ db-backups/
 /KurulumPaketi/
 *.tar
 Docker Desktop Installer.exe
+
+# ============================================================
+# RESTO POS masaüstü (Tauri) derleme çıktıları
+# ============================================================
+# Rust derleme önbelleği (GB'larca)
+/src-tauri/target/
+# scripts/masaustu-hazirla.mjs tarafından HER derlemede yeniden üretilir
+/src-tauri/backend-dist/
+/src-tauri/binaries/
+/src-tauri/gen/
+# İkon üretim hattının ara çıktıları (kaynak: branding/resto-icon.svg)
+/branding/dist/
+
+# GÜNCELLEME İMZA ANAHTARI — ASLA commitlenmez.
+# Bu özel anahtar kaybolursa mevcut kurulumlara güncelleme yayınlanamaz;
+# ayrı ve güvenli bir yerde yedeklenmelidir (bkz. MASAUSTU.md).
+/.secrets/

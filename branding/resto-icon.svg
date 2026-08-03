@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RESTO POS — ana uygulama ikonu (TEK KAYNAK / MASTER).
+  Tüm PNG/ICO/ICNS boyutları bu dosyadan üretilir: scripts/ikon-uret.mjs
+  Bu dosyayı değiştirdikten sonra `npm run ikon` çalıştırmak yeterlidir.
+
+  Tasarım notu: 16px'te de okunabilmesi için tek bir güçlü siluet (fiş/adisyon)
+  kullanıldı; ince detay yok, kontrast yüksek (koyu gri zemin + mavi fiş).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Koyu gri zemin: üstten alta hafif derinlik -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#273140"/>
+      <stop offset="0.55" stop-color="#1A222D"/>
+      <stop offset="1" stop-color="#111720"/>
+    </linearGradient>
+
+    <!-- Mavi fiş gövdesi -->
+    <linearGradient id="blue" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#4C97FF"/>
+      <stop offset="0.5" stop-color="#2E7DF7"/>
+      <stop offset="1" stop-color="#1A63DE"/>
+    </linearGradient>
+
+    <!-- Üst kenar parlaması (cam hissi) -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Fişin arkasındaki mavi ışıma -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="52"/>
+    </filter>
+  </defs>
+
+  <!-- Zemin -->
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
+
+  <!-- Zeminin üst yarısında yumuşak parlama -->
+  <path d="M0,232 A232,232 0 0 1 232,0 H792 A232,232 0 0 1 1024,232 V520 H0 Z" fill="url(#sheen)"/>
+
+  <!-- Mavi ışıma (fişin arkasında) -->
+  <ellipse cx="512" cy="500" rx="210" ry="240" fill="#2E7DF7" opacity="0.4" filter="url(#glow)"/>
+
+  <!-- Fiş / adisyon gövdesi: üstü yuvarlak, altı zikzak (yırtık kâğıt) -->
+  <path fill="url(#blue)" d="
+    M328,252
+    Q328,208 372,208
+    H652
+    Q696,208 696,252
+    V712
+    l-46,44 -46,-44 -46,44 -46,-44 -46,44 -46,-44 -46,44 -46,-44
+    Z"/>
+
+  <!-- Fiş içeriği: başlık, iki satır, ayraç, toplam -->
+  <g fill="#FFFFFF">
+    <rect x="384" y="278" width="256" height="54" rx="27" opacity="0.97"/>
+
+    <rect x="384" y="386" width="148" height="30" rx="15" opacity="0.72"/>
+    <rect x="562" y="386" width="78"  height="30" rx="15" opacity="0.50"/>
+
+    <rect x="384" y="450" width="116" height="30" rx="15" opacity="0.72"/>
+    <rect x="586" y="450" width="54"  height="30" rx="15" opacity="0.50"/>
+
+    <rect x="384" y="524" width="256" height="6"  rx="3"  opacity="0.34"/>
+
+    <rect x="384" y="568" width="132" height="40" rx="20" opacity="0.97"/>
+    <rect x="540" y="568" width="100" height="40" rx="20" opacity="0.97"/>
+  </g>
+
+  <!-- İnce dış kenarlık: koyu temada ikonun sınırını belirginleştirir -->
+  <rect x="1" y="1" width="1022" height="1022" rx="231" fill="none"
+        stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2"/>
+</svg>

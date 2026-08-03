@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ShiftProvider } from './context/ShiftContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
+import DesktopBridge from './components/DesktopBridge';
 
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -41,6 +42,8 @@ export default function App() {
   return (
     <AuthProvider>
       <ShiftProvider>
+      {/* Masaüstü (Tauri) kabuğu: tarayıcıda hiçbir etkisi yoktur */}
+      <DesktopBridge />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />

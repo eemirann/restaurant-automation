@@ -1,0 +1,107 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "RESTO POS",
+  "version": "1.0.0",
+  "identifier": "com.resto.pos",
+
+  "build": {
+    "beforeDevCommand": "npm --prefix restoran-panel run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "node scripts/masaustu-hazirla.mjs",
+    "frontendDist": "../restoran-panel/dist"
+  },
+
+  "app": {
+    "windows": [
+      {
+        "label": "splash",
+        "url": "splash.html",
+        "title": "RESTO POS",
+        "width": 480,
+        "height": 320,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "center": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": true
+      },
+      {
+        "label": "main",
+        "url": "index.html",
+        "title": "RESTO POS",
+        "width": 1600,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "maximized": true,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false,
+        "focus": true,
+        "dragDropEnabled": false
+      }
+    ],
+
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:4091 http://127.0.0.1:4091; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:4091 http://127.0.0.1:4091 ws://localhost:4091 ws://127.0.0.1:4091; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      "freezePrototype": true,
+      "capabilities": ["default"]
+    }
+  },
+
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "publisher": "RESTO",
+    "homepage": "https://resto.local",
+    "copyright": "© 2026 RESTO. Tüm hakları saklıdır.",
+    "category": "Business",
+    "shortDescription": "RESTO POS — Restoran Otomasyonu",
+    "longDescription": "RESTO POS; sipariş, masa, stok, ödeme ve raporlama süreçlerini tek ekrandan yöneten restoran otomasyon sistemidir.",
+
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+
+    "resources": {
+      "backend-dist": "backend"
+    },
+    "externalBin": ["binaries/node"],
+
+    "createUpdaterArtifacts": true,
+
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "allowDowngrades": false,
+      "wix": {
+        "language": ["tr-TR"]
+      },
+      "nsis": {
+        "languages": ["turkish", "english"],
+        "installMode": "perMachine",
+        "displayLanguageSelector": false
+      }
+    }
+  },
+
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://resto.local/updates/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2QTU1Rjg3Q0VEN0NEQgpSV1RiZk8xOCtGVnFEWWp0aXJWOW8yTXViRmhJU3M1NmluNVkwZXlyNzFsanFENS9pekxaam1zSgo=",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
