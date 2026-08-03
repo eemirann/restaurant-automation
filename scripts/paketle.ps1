@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Restoran Otomasyonu'nu offline (USB'den, internetsiz) kurulum için paketler.
 
@@ -28,11 +28,19 @@
 [CmdletBinding()]
 param(
     # KurulumPaketi klasörünün oluşturulacağı yer (varsayılan: proje kökü).
-    [string]$CikisKlasoru = (Join-Path (Split-Path -Parent $PSScriptRoot) 'KurulumPaketi')
+    [string]$CikisKlasoru
 )
 
+$ScriptKlasoru = $PSScriptRoot
+if (-not $ScriptKlasoru) {
+    $ScriptKlasoru = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$kokDizin = Split-Path -Parent $ScriptKlasoru
+if (-not $CikisKlasoru) {
+    $CikisKlasoru = Join-Path $kokDizin 'KurulumPaketi'
+}
+
 $ErrorActionPreference = 'Stop'
-$kokDizin = Split-Path -Parent $PSScriptRoot
 
 function Adim($mesaj) {
     Write-Host ''

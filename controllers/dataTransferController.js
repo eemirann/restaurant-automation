@@ -1,4 +1,6 @@
 const { sql, connectDB } = require('../config/db');
+const fs = require('fs');
+const path = require('path');
 
 // ============================================================
 // MENÜ VERİSİ DIŞA/İÇE AKTARMA (SADECE ADMIN)
@@ -10,12 +12,14 @@ const { sql, connectDB } = require('../config/db');
 // bulunursa GÜNCELLENİR, bulunamazsa YENİ oluşturulur (upsert). Bu,
 // aynı JSON'u birden fazla kez içe aktarmayı güvenli/idempotent yapar.
 //
-// Stock.Quantity (canlı stok adedi) ve Products.ImageUrl (görsel dosyası
-// JSON'a sığmaz) KESİNLİKLE dahil edilmez — bunlar operasyonel veri /
-// dosya sistemi verisi, menü YAPILANDIRMASI değil.
+// Stock.Quantity (canlı stok adedi) KESİNLİKLE dahil edilmez — bu
+// operasyonel veridir, menü YAPILANDIRMASI değil. Ürün görselleri ise
+// base64 olarak (ImageData/ImageFileName) JSON'a gömülür, böylece
+// içe aktarıldığı kurulumda da görsel dosyası diskte oluşturulur.
 // ============================================================
 
 const CI_COLLATE = 'COLLATE Latin1_General_CI_AS';
+const uploadDir = path.join(__dirname, '..', 'uploads', 'products');
 
 // ============================================================
 // GET /api/products/export (SADECE ADMIN)
@@ -29,17 +33,17 @@ async function exportMenuData(req, res) {
         const productsResult = await pool.request().query(`
             SELECT p.Name, p.Description, p.Price, c.Name AS CategoryName,
                    p.IsExtra, p.IsSyrup, p.IsPopular, p.Barcode, p.LoyaltyPointCost,
-                   p.IsActive, p.IsAvailable, p.IsRawMaterial, p.Cost, p.StockCount
+                   p.IsActive, p.IsAvailable, p.IsRawMaterial, p.Cost, p.StockCount, p.ImageUrl
             FROM Products p
             LEFT JOIN Categories c ON c.CategoryId = p.CategoryId
             ORDER BY p.Name ASC
         `);
 
         const variantsResult = await pool.request().query(`
-            SELECT p.Name AS ProductName, v.Name, v.Price
+            SELECT p.Name AS ProductName, v.VariantName AS Name, v.Price
             FROM ProductVariants v
             JOIN Products p ON p.ProductId = v.ProductId
-            ORDER BY p.Name ASC, v.Name ASC
+            ORDER BY p.Name ASC, v.VariantName ASC
         `);
 
         const productExtrasResult = await pool.request().query(`
@@ -68,17 +72,33 @@ async function exportMenuData(req, res) {
 
         res.status(200).json({
             exportedAt: new Date().toISOString(),
-            note: 'Ürün görselleri (ImageUrl) ve canlı stok adetleri (Stock.Quantity) bu dosyaya dahil değildir — bunlar sırasıyla dosya sistemi ve operasyonel veridir, menü yapılandırması değildir.',
+            note: 'Canlı stok adetleri (Stock.Quantity) bu dosyaya dahil değildir — bu operasyonel veridir, menü yapılandırması değildir. Ürün görselleri base64 olarak (ImageData/ImageFileName) gömülüdür.',
             categories: categoriesResult.recordset.map((c) => ({ Name: c.Name, IsActive: Boolean(c.IsActive) })),
-            products: productsResult.recordset.map((p) => ({
-                ...p,
-                IsExtra: Boolean(p.IsExtra),
-                IsSyrup: Boolean(p.IsSyrup),
-                IsPopular: Boolean(p.IsPopular),
-                IsActive: Boolean(p.IsActive),
-                IsAvailable: Boolean(p.IsAvailable),
-                IsRawMaterial: Boolean(p.IsRawMaterial),
-            })),
+            products: productsResult.recordset.map((p) => {
+                const { ImageUrl, ...rest } = p;
+                let ImageData = null;
+                let ImageFileName = null;
+                if (ImageUrl) {
+                    const filePath = path.join(uploadDir, path.basename(ImageUrl));
+                    try {
+                        ImageData = fs.readFileSync(filePath).toString('base64');
+                        ImageFileName = path.basename(ImageUrl);
+                    } catch {
+                        // Görsel dosyası diskte yoksa (ör. silinmiş) sessizce atlanır.
+                    }
+                }
+                return {
+                    ...rest,
+                    IsExtra: Boolean(p.IsExtra),
+                    IsSyrup: Boolean(p.IsSyrup),
+                    IsPopular: Boolean(p.IsPopular),
+                    IsActive: Boolean(p.IsActive),
+                    IsAvailable: Boolean(p.IsAvailable),
+                    IsRawMaterial: Boolean(p.IsRawMaterial),
+                    ImageFileName,
+                    ImageData,
+                };
+            }),
             variants: variantsResult.recordset,
             productExtras: productExtrasResult.recordset.map((r) => ({ ...r, IsEnabled: Boolean(r.IsEnabled) })),
             productSyrups: productSyrupsResult.recordset.map((r) => ({ ...r, IsEnabled: Boolean(r.IsEnabled) })),
@@ -189,12 +209,30 @@ async function upsertProduct(transaction, prod, categoryId) {
     return { productId: inserted.recordset[0].ProductId, created: true };
 }
 
+// Base64 görsel verisini diske yazar ve Products.ImageUrl'i günceller.
+// Bozuk/geçersiz base64 veya yazma hatası içe aktarmayı DURDURMAZ, sessizce atlanır
+// (çağıran taraf warnings dizisine ekler).
+async function saveProductImage(transaction, productId, imageData, imageFileName) {
+    const ext = path.extname(imageFileName || '') || '.png';
+    const fileName = `product-${productId}-${Date.now()}${ext}`;
+    const filePath = path.join(uploadDir, fileName);
+
+    fs.mkdirSync(uploadDir, { recursive: true });
+    fs.writeFileSync(filePath, Buffer.from(imageData, 'base64'));
+
+    const imageUrl = `/uploads/products/${fileName}`;
+    await new sql.Request(transaction)
+        .input('Id', sql.Int, productId)
+        .input('ImageUrl', sql.NVarChar(255), imageUrl)
+        .query(`UPDATE Products SET ImageUrl = @ImageUrl WHERE ProductId = @Id`);
+}
+
 async function upsertVariant(transaction, productId, name, price) {
     if (name) {
         const existing = await new sql.Request(transaction)
             .input('ProductId', sql.Int, productId)
             .input('Name', sql.NVarChar(100), name)
-            .query(`SELECT ProductVariantsId FROM ProductVariants WHERE ProductId = @ProductId AND Name = @Name ${CI_COLLATE}`);
+            .query(`SELECT ProductVariantsId FROM ProductVariants WHERE ProductId = @ProductId AND VariantName = @Name ${CI_COLLATE}`);
 
         if (existing.recordset.length > 0) {
             await new sql.Request(transaction)
@@ -209,7 +247,7 @@ async function upsertVariant(transaction, productId, name, price) {
         .input('ProductId', sql.Int, productId)
         .input('Name', sql.NVarChar(100), name || null)
         .input('Price', sql.Decimal(10, 2), price || 0)
-        .query(`INSERT INTO ProductVariants (ProductId, Name, Price) VALUES (@ProductId, @Name, @Price)`);
+        .query(`INSERT INTO ProductVariants (ProductId, VariantName, Price) VALUES (@ProductId, @Name, @Price)`);
 }
 
 async function upsertProductExtra(transaction, productId, extraProductId, displayOrder, isEnabled) {
@@ -349,6 +387,14 @@ async function importMenuData(req, res) {
             const { productId, created } = await upsertProduct(transaction, { ...prod, Name: name }, categoryId);
             productIdByName.set(name.toLowerCase(), productId);
             if (created) productsCreated++; else productsUpdated++;
+
+            if (typeof prod.ImageData === 'string' && prod.ImageData.trim()) {
+                try {
+                    await saveProductImage(transaction, productId, prod.ImageData, prod.ImageFileName);
+                } catch (imgErr) {
+                    warnings.push(`"${name}" ürününün görseli kaydedilemedi: ${imgErr.message}`);
+                }
+            }
         }
 
         // Payload'daki products dizisinde YER ALMAYAN ama variants/productExtras/

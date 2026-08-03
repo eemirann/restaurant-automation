@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
 import client, { CUSTOMER_MENU_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import { getSocket } from '../api/socket';
 
 const SERVICE_TYPE_LABELS = {
@@ -269,9 +270,19 @@ export default function CustomerRequests() {
 
 // ============================================================
 // Masa QR kodları (SADECE ADMIN) — GET /api/tables/qrcodes
-// Her masa için CUSTOMER_MENU_URL + '/' + QrToken linkini QR koda çevirir.
+// Her masa için <menü adresi> + '/' + QrToken linkini QR koda çevirir.
+//
+// Menü adresi ÖNCE veritabanındaki ayardan (Ayarlar > Genel > Müşteri QR
+// Menüsü · Adres) okunur; ayar boşsa panelin build anında gömülen
+// CUSTOMER_MENU_URL değerine düşülür. Ayarın veritabanında tutulmasının
+// nedeni: offline/USB kurulumda imajlar önceden derlenip geldiği için,
+// her restoranın kendi adresini (yerel IP ya da Cloudflare alan adı)
+// girebilmesi ancak çalışma anında okunan bir değerle mümkün.
 // ============================================================
 function TableQrCodesModal({ onClose }) {
+  const { CustomerMenuBaseUrl } = useSettings();
+  const menuBaseUrl = (CustomerMenuBaseUrl || CUSTOMER_MENU_URL || '').replace(/\/+$/, '');
+
   const [tables, setTables] = useState([]);
   const [qrImages, setQrImages] = useState({});
   const [loading, setLoading] = useState(true);
@@ -286,7 +297,7 @@ function TableQrCodesModal({ onClose }) {
         setTables(res.data);
         const images = {};
         for (const t of res.data) {
-          const url = `${CUSTOMER_MENU_URL}/${t.QrToken}`;
+          const url = `${menuBaseUrl}/${t.QrToken}`;
           images[t.TableId] = await QRCode.toDataURL(url, { width: 220, margin: 1 });
         }
         if (active) setQrImages(images);
@@ -294,7 +305,10 @@ function TableQrCodesModal({ onClose }) {
       .catch((err) => { if (active) setError(err.response?.data?.error || 'QR kodları getirilemedi.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+    // menuBaseUrl bağımlılıkta OLMALI: ayarlar context'i asenkron yüklendiği
+    // için modal, adres gelmeden önce açılabilir — bu durumda QR'lar yedek
+    // adresle üretilip bir daha tazelenmezdi.
+  }, [menuBaseUrl]);
 
   const printAll = () => {
     const w = window.open('', 'PRINT', 'height=800,width=600');
@@ -338,6 +352,22 @@ function TableQrCodesModal({ onClose }) {
         </div>
 
         <div className="p-6">
+          {/* Hangi adresin gömüldüğünü göster — yanlış adresle basılan QR'lar
+              ancak müşteri telefonunda denendiğinde fark edilir. 'localhost'
+              en sık yapılan hata: sadece bu bilgisayarda açılır. */}
+          <div className="mb-4 border border-hairline rounded-sm px-3 py-2.5 bg-charcoal/50">
+            <p className="font-mono text-[11px] text-slate">
+              QR kodların açtığı adres: <span className="text-paper">{menuBaseUrl || '(tanımsız)'}</span>
+            </p>
+            {/localhost|127\.0\.0\.1/i.test(menuBaseUrl) && (
+              <p className="font-mono text-[11px] text-ember mt-1.5">
+                ⚠ Bu adres yalnızca BU bilgisayarda çalışır — müşterinin telefonu açamaz.
+                Ayarlar › Genel › “Müşteri QR Menüsü · Adres” alanına bu bilgisayarın yerel IP'sini
+                (ör. http://192.168.1.50:8081) veya alan adınızı yazın, sonra QR'ları yeniden yazdırın.
+              </p>
+            )}
+          </div>
+
           {loading ? (
             <p className="text-slate font-mono text-sm">QR kodları oluşturuluyor...</p>
           ) : error ? (

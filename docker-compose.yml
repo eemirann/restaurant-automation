@@ -72,13 +72,46 @@ services:
   customer-menu:
     build:
       context: ./musteri-menu
+      # BOŞ BIRAKILIYOR (bilerek): boş olduğunda menü API'yi göreli '/api'
+      # adresinden çağırır ve kendi nginx'i backend'e proxy'ler. Böylece aynı
+      # imaj hem yerel IP hem Cloudflare alan adı üzerinden çalışır. Buraya
+      # mutlak bir adres yazmak menüyü tek bir adrese kilitler ve telefondan
+      # (yerel IP ya da internet) erişimi bozar. Ayrıntı: musteri-menu/nginx.conf.
       args:
-        VITE_API_URL: "${VITE_API_URL:-http://localhost:4091/api}"
+        VITE_API_URL: "${CUSTOMER_MENU_API_URL:-}"
     ports:
       - "8081:80"
     depends_on:
       - backend
     restart: unless-stopped
+
+  # ============================================================
+  # Cloudflare Tunnel — OPSİYONEL, VARSAYILAN OLARAK KAPALI.
+  #
+  # Müşteri menüsünü mobil veriyle (4G/5G) de erişilebilir hale getirir.
+  # 'profiles' sayesinde normal 'docker compose up -d' ile BAŞLAMAZ;
+  # sadece açıkça istendiğinde çalışır:
+  #     docker compose --profile tunnel up -d
+  #
+  # GÜVENLİK: Tünel yalnızca 'customer-menu' konteynerine bağlanır
+  # (Cloudflare panelinde public hostname -> http://customer-menu:80).
+  # Yönetim paneli (8080), backend (4091) ve veritabanı (1433) internete
+  # HİÇ çıkmaz. Menü konteyneri de backend'in sadece anonim müşteri
+  # uçlarını proxy'ler (bkz. musteri-menu/nginx.conf).
+  #
+  # NOT: Bu imaj images.tar'a dahil DEĞİLDİR (offline pakette yer kaplamasın
+  # diye) — ilk çalıştırmada internetten indirilir. Zaten tünel kurmak için
+  # internet gerektiği için bu bir kısıt oluşturmaz.
+  # ============================================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # ':-' ile boş varsayılan: token .env'de tanımlı değilken (tünel
+    # kullanılmadığında) compose her komutta uyarı basmasın.
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - customer-menu
+    restart: unless-stopped
+    profiles: ["tunnel"]
 
 volumes:
   mssql-data:

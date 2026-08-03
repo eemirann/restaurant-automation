@@ -35,7 +35,7 @@ export default function Settings() {
     RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, KitchenAutoPrintEnabled,
     EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, CafeNote, SocialInstagram, SocialFacebook, SocialX, SocialWhatsapp,
     ContactPhone, ContactAddress, TaxNumber, TaxOffice, BillingAddress,
-    AutoBackupEnabled, AutoBackupRetentionDays,
+    AutoBackupEnabled, AutoBackupRetentionDays, CustomerMenuBaseUrl,
     updateLocalSettings,
   } = useSettings();
   const { theme, toggleTheme } = useTheme();
@@ -60,6 +60,7 @@ export default function Settings() {
   const [whatsapp, setWhatsapp] = useState(SocialWhatsapp || '');
   const [contactPhone, setContactPhone] = useState(ContactPhone || '');
   const [contactAddress, setContactAddress] = useState(ContactAddress || '');
+  const [customerMenuBaseUrl, setCustomerMenuBaseUrl] = useState(CustomerMenuBaseUrl || '');
 
   const [taxNumber, setTaxNumber] = useState(TaxNumber || '');
   const [taxOffice, setTaxOffice] = useState(TaxOffice || '');
@@ -87,6 +88,7 @@ export default function Settings() {
   useEffect(() => { setWhatsapp(SocialWhatsapp || ''); }, [SocialWhatsapp]);
   useEffect(() => { setContactPhone(ContactPhone || ''); }, [ContactPhone]);
   useEffect(() => { setContactAddress(ContactAddress || ''); }, [ContactAddress]);
+  useEffect(() => { setCustomerMenuBaseUrl(CustomerMenuBaseUrl || ''); }, [CustomerMenuBaseUrl]);
   useEffect(() => { setTaxNumber(TaxNumber || ''); }, [TaxNumber]);
   useEffect(() => { setTaxOffice(TaxOffice || ''); }, [TaxOffice]);
   useEffect(() => { setBillingAddress(BillingAddress || ''); }, [BillingAddress]);
@@ -126,6 +128,9 @@ export default function Settings() {
         SocialWhatsapp: whatsapp.trim() || null,
         ContactPhone: contactPhone.trim() || null,
         ContactAddress: contactAddress.trim() || null,
+        // Sondaki '/' temizlenir — QR linki `${adres}/${QrToken}` şeklinde
+        // kurulduğu için aksi halde çift eğik çizgi oluşurdu.
+        CustomerMenuBaseUrl: customerMenuBaseUrl.trim().replace(/\/+$/, '') || null,
         TaxNumber: taxNumber.trim() || null,
         TaxOffice: taxOffice.trim() || null,
         BillingAddress: billingAddress.trim() || null,
@@ -273,6 +278,38 @@ export default function Settings() {
                     Logo yükleme (sidebar, giriş ekranı, QR menü üstü ve fişlerde kullanılacak) ve
                     Açılış/Kapanış Saati (QR menüde "şu an kapalı" göstermek için).
                   </ComingSoonNote>
+
+                  <div className="pt-2 border-t border-hairline">
+                    <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                      Müşteri QR Menüsü · Adres
+                    </label>
+                    <input
+                      type="text"
+                      value={customerMenuBaseUrl}
+                      onChange={(e) => setCustomerMenuBaseUrl(e.target.value)}
+                      placeholder="http://192.168.1.50:8081"
+                      maxLength={300}
+                      className={`max-w-md ${inputClass}`}
+                    />
+                    <p className="font-mono text-[11px] text-slate mt-1.5">
+                      Masa QR kodlarının açtığı adres. Müşterinin telefonu bu adrese ulaşabilmelidir —
+                      bu yüzden <span className="text-paper">localhost</span> YAZMAYIN.
+                    </p>
+                    <ul className="font-mono text-[11px] text-slate mt-1.5 space-y-0.5 list-disc list-inside">
+                      <li>
+                        Müşteri restoranın Wi-Fi'ına bağlanıyorsa: bu bilgisayarın yerel IP'si,
+                        ör. <span className="text-paper">http://192.168.1.50:8081</span>
+                      </li>
+                      <li>
+                        Mobil veriyle de çalışsın isteniyorsa: Cloudflare Tunnel alan adınız,
+                        ör. <span className="text-paper">https://menu.restoranim.com</span>
+                      </li>
+                    </ul>
+                    <p className="font-mono text-[11px] text-slate mt-1.5">
+                      Adresi değiştirdikten sonra masa QR kodlarını <span className="text-paper">yeniden
+                      yazdırmanız</span> gerekir. Boş bırakılırsa kurulumdaki varsayılan adres kullanılır.
+                    </p>
+                  </div>
 
                   <div className="pt-2 border-t border-hairline">
                     <p className="font-mono text-xs uppercase tracking-wide text-slate mb-1.5">

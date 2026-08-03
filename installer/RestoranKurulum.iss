@@ -63,11 +63,12 @@ function IsDockerInstalled(): Boolean;
 var
   RegKey: String;
 begin
-  Result := FileExists('C:\Program Files\Docker\Docker\Docker Desktop.exe');
+  Result := FileExists(ExpandConstant('{localappdata}') + '\Programs\DockerDesktop\Docker Desktop.exe')
+    or FileExists('C:\Program Files\Docker\Docker\Docker Desktop.exe');
   if not Result then
   begin
     RegKey := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Docker Desktop';
-    Result := RegKeyExists(HKLM, RegKey) or RegKeyExists(HKLM64, RegKey);
+    Result := RegKeyExists(HKLM, RegKey) or RegKeyExists(HKLM64, RegKey) or RegKeyExists(HKCU, RegKey);
   end;
 end;
 

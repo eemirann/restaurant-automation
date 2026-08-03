@@ -9,6 +9,7 @@ const DEFAULTS = {
   AutoBackupEnabled: false, AutoBackupRetentionDays: 7,
   CafeNote: null, SocialInstagram: null, SocialFacebook: null, SocialX: null, SocialWhatsapp: null, ContactPhone: null, ContactAddress: null,
   TaxNumber: null, TaxOffice: null, BillingAddress: null,
+  CustomerMenuBaseUrl: null,
 };
 
 // #RRGGBB -> "R G B" (Tailwind'in rgb(var(--x) / <alpha-value>) beklediği format)

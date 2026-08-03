@@ -18,6 +18,12 @@ db-backups/
 *.tar
 Docker Desktop Installer.exe
 
+# Offline GÜNCELLEME paketi (scripts/paketle-guncelle.ps1 ile her seferinde
+# yeniden üretilir): içindeki migrations/ ve guncelle.ps1 dosyaları repodaki
+# migrations/ ve installer/guncelle.ps1'in KOPYASIDIR — ikisini birden
+# commitlemek kaynakları ikizleyip senkrondan çıkarır.
+/Guncelleme/
+
 # ============================================================
 # RESTO POS masaüstü (Tauri) derleme çıktıları
 # ============================================================

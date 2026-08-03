@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Restoran Otomasyonu kurulum sonrası script'i.
 
@@ -27,6 +27,14 @@
 param(
     [string]$InstallDir = $PSScriptRoot
 )
+
+if (-not $InstallDir) {
+    if ($MyInvocation.MyCommand.Path) {
+        $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    } else {
+        $InstallDir = (Get-Location).Path
+    }
+}
 
 $ErrorActionPreference = 'Stop'
 Set-Location $InstallDir
@@ -69,11 +77,13 @@ if (-not $adminAd -or -not $adminKullanici -or -not $adminPin) {
 Adim 'Docker Desktop kontrol ediliyor...'
 $dockerHazir = $false
 for ($i = 0; $i -lt 3; $i++) {
-    docker info *> $null
+    try {
+        docker info *> $null
+    } catch {}
     if ($LASTEXITCODE -eq 0) { $dockerHazir = $true; break }
 
     if ($i -eq 0) {
-        $dockerExe = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+        $dockerExe = 'C:\Users\e\AppData\Local\Programs\DockerDesktop\Docker Desktop.exe'
         if (Test-Path $dockerExe) {
             Write-Host 'Docker Desktop çalışmıyor, başlatılıyor (ilk açılış biraz sürebilir)...'
             Start-Process $dockerExe | Out-Null
@@ -104,7 +114,9 @@ if ($LASTEXITCODE -ne 0) { Basarisiz 'docker compose up -d başarısız oldu.' }
 Adim 'Veritabanı sunucusunun hazır olması bekleniyor (en fazla ~60 sn)...'
 $sqlHazir = $false
 for ($i = 0; $i -lt 20; $i++) {
-    docker compose exec -T db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $dbSifre -C -Q "SELECT 1" *> $null
+    try {
+        docker compose exec -T db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $dbSifre -C -Q "SELECT 1" *> $null
+    } catch {}
     if ($LASTEXITCODE -eq 0) { $sqlHazir = $true; break }
     Start-Sleep -Seconds 3
 }
