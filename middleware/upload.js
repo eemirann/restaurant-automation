@@ -2,8 +2,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ürün resimleri buraya kaydedilir: <proje>/uploads/products/
-const uploadDir = path.join(__dirname, '..', 'uploads', 'products');
+// Ürün resimleri buraya kaydedilir (varsayılan: <proje>/uploads/products/,
+// masaüstü kurulumunda UPLOAD_DIR ile yazılabilir klasöre yönlendirilir).
+const { PRODUCT_IMAGE_DIR: uploadDir } = require('../utils/paths');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }

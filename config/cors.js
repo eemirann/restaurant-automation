@@ -8,10 +8,18 @@
 // (üretimde MUTLAKA set edilmeli).
 // ============================================================
 
+// Masaüstü (Tauri) kabuğunun WebView origin'leri. Panel uygulama içinde bu
+// origin'den servis edilip backend'e http://localhost:4091 üzerinden gider —
+// yani teknik olarak CROSS-ORIGIN'dir. Bunlar birinci-parti istemci olduğu
+// için CORS_ORIGIN listesine her zaman EKLENİR; aksi halde CORS_ORIGIN set
+// edilmiş bir kurulumda (ör. docker-compose) masaüstü uygulaması engellenir.
+const TAURI_ORIGINS = ['http://tauri.localhost', 'tauri://localhost'];
+
 function getAllowedOrigins() {
     const raw = process.env.CORS_ORIGIN;
     if (!raw || raw.trim() === '') return null; // null => hepsine izin ver
-    return raw.split(',').map((o) => o.trim()).filter(Boolean);
+    const listed = raw.split(',').map((o) => o.trim()).filter(Boolean);
+    return [...new Set([...listed, ...TAURI_ORIGINS])];
 }
 
 // Express cors() ve Socket.IO cors için ortak origin doğrulama fonksiyonu.

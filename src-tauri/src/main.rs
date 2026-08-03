@@ -74,6 +74,74 @@ fn backend_yollari(app: &AppHandle) -> (PathBuf, PathBuf) {
     }
 }
 
+/// Kuruluma özel ayar dosyasının yolu: `%APPDATA%\com.resto.pos\ayarlar.env`
+///
+/// NEDEN BURADA: `.env` kasıtlı olarak PAKETE DAHİL EDİLMEZ (makineye özel
+/// kimlik bilgileri içerir ve kurulum klasörü Program Files altında salt
+/// okunurdur). Ayarlar kullanıcı veri klasöründe tutulur, backend'e ortam
+/// değişkeni olarak geçilir. `dotenv` var olan ortam değişkenlerinin ÜZERİNE
+/// YAZMAZ, dolayısıyla buradan gelen değerler geçerli olur.
+fn ayar_dosyasi(app: &AppHandle) -> Option<PathBuf> {
+    let dizin = app.path().app_config_dir().ok()?;
+    let _ = std::fs::create_dir_all(&dizin);
+    Some(dizin.join("ayarlar.env"))
+}
+
+/// Kriptografik rastgele 32 baytlık hex anahtar (ilk kurulumda JWT_SECRET).
+fn rastgele_anahtar() -> String {
+    let mut bayt = [0u8; 32];
+    match getrandom::fill(&mut bayt) {
+        Ok(()) => bayt.iter().map(|b| format!("{b:02x}")).collect(),
+        // RNG erişilemezse boş dön: aşağıdaki kod kullanıcıyı dosyayı elle
+        // doldurmaya yönlendirir; ZAYIF bir anahtar üretmektense boş bırakılır.
+        Err(_) => String::new(),
+    }
+}
+
+/// Ayar dosyasını okur; yoksa varsayılanlarla oluşturur.
+/// Dönen liste backend sürecine ortam değişkeni olarak verilir.
+fn backend_ortami(app: &AppHandle) -> Vec<(String, String)> {
+    let Some(yol) = ayar_dosyasi(app) else {
+        return Vec::new();
+    };
+
+    if !yol.exists() {
+        let sablon = format!(
+            "# RESTO POS — kuruluma özel ayarlar\n\
+             # Bu dosya ilk çalıştırmada oluşturuldu. Veritabanı bilgilerinizi girin\n\
+             # ve uygulamayı yeniden başlatın.\n\
+             DB_SERVER=localhost\n\
+             DB_DATABASE=RestoranDB\n\
+             DB_USER=sa\n\
+             DB_PASSWORD=\n\
+             DB_PORT=1433\n\
+             PORT=4091\n\
+             NODE_ENV=production\n\
+             # Oturum anahtarı — otomatik üretildi, DEĞİŞTİRMEYİN.\n\
+             JWT_SECRET={}\n",
+            rastgele_anahtar()
+        );
+        if let Err(e) = std::fs::write(&yol, sablon) {
+            eprintln!("[resto] ayar dosyası oluşturulamadı: {e}");
+            return Vec::new();
+        }
+        println!("[resto] ayar dosyası oluşturuldu: {}", yol.display());
+    }
+
+    let Ok(icerik) = std::fs::read_to_string(&yol) else {
+        return Vec::new();
+    };
+
+    icerik
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .filter_map(|s| s.split_once('='))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .filter(|(k, _)| !k.is_empty())
+        .collect()
+}
+
 /// Express backend'ini alt süreç olarak başlatır.
 fn backend_baslat(app: &AppHandle) -> Option<Child> {
     let (calisma_dizini, node) = backend_yollari(app);
@@ -89,6 +157,31 @@ fn backend_baslat(app: &AppHandle) -> Option<Child> {
         .arg("server.js")
         .current_dir(&calisma_dizini)
         .env("NODE_ENV", "production");
+
+    // Geliştirmede proje kökündeki .env zaten okunur; üretimde kullanıcı
+    // ayar dosyasından gelen değerler ortam değişkeni olarak geçilir.
+    if !cfg!(debug_assertions) {
+        komut.envs(backend_ortami(app));
+
+        // YAZILABİLİR KLASÖRLER — kritik.
+        // Uygulama "C:\Program Files\RESTO POS" altına kurulur ve orası
+        // standart kullanıcı için SALT OKUNURDUR. Backend açılışta logs/ ve
+        // uploads/ oluşturmaya çalıştığında EPERM ile çöker. Bu yüzden veri
+        // klasörleri kullanıcı veri dizinine yönlendirilir (bkz. utils/paths.js).
+        if let Ok(veri) = app.path().app_local_data_dir() {
+            for (degisken, alt_klasor) in [
+                ("LOG_DIR", "logs"),
+                ("UPLOAD_DIR", "uploads"),
+                ("BACKUP_FS_DIR", "db-backups"),
+            ] {
+                let yol = veri.join(alt_klasor);
+                if let Err(e) = std::fs::create_dir_all(&yol) {
+                    eprintln!("[resto] {alt_klasor} klasörü oluşturulamadı: {e}");
+                }
+                komut.env(degisken, &yol);
+            }
+        }
+    }
 
     // Windows'ta alt sürecin konsol penceresi açmasını engelle (CREATE_NO_WINDOW).
     #[cfg(windows)]

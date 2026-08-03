@@ -11,7 +11,7 @@ require('winston-daily-rotate-file');
 // saklanır (GET /api/logs/recent bu dosyaları okur, bkz. controllers/
 // logsController.js).
 // ============================================================
-const LOG_DIR = path.join(__dirname, '..', 'logs');
+const { LOG_DIR } = require('./paths');
 
 const fileTransport = new winston.transports.DailyRotateFile({
     dirname: LOG_DIR,

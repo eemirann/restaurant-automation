@@ -28,8 +28,26 @@ var olan React panelini ve Express backend'ini saran bir kabuktur.
 - Backend, uygulama açılışında **alt süreç** olarak başlatılır, kapanışta durdurulur.
 - Kurulan makinede **Node.js kurulu olması gerekmez**: `node.exe` uygulamayla paketlenir.
 
-> **Ön koşul (değişmedi):** Backend hâlâ bir SQL Server örneğine ihtiyaç duyar
-> (`.env` içindeki `DB_SERVER`). Tauri bunu değiştirmez.
+> **Ön koşul (değişmedi):** Backend hâlâ bir SQL Server örneğine ihtiyaç duyar.
+> Tauri bunu değiştirmez.
+
+### Kurulum ayarları — `ayarlar.env`
+
+`.env` **bilerek pakete dahil edilmez**: makineye özel kimlik bilgileri içerir
+ve kurulum klasörü (Program Files) salt okunurdur. Bunun yerine ayarlar
+kullanıcı veri klasöründe tutulur:
+
+```
+%APPDATA%\com.resto.pos\ayarlar.env
+```
+
+- Dosya **ilk çalıştırmada otomatik oluşturulur** (varsayılanlar + kuruluma
+  özel, kriptografik rastgele üretilmiş `JWT_SECRET`).
+- Kurulumu yapan kişi `DB_SERVER` / `DB_USER` / `DB_PASSWORD` alanlarını
+  doldurup uygulamayı yeniden başlatır.
+- Rust bu değerleri backend sürecine **ortam değişkeni** olarak geçirir.
+  `dotenv` var olan ortam değişkenlerinin üzerine yazmadığı için bu değerler
+  geçerli olur — `config/db.js` değiştirilmedi.
 
 ---
 
@@ -61,6 +79,10 @@ yetkiler açmaktan kaçındık (bkz. `capabilities/default.json`).
   `visible: false` (splash kapanınca gösterilir), `dragDropEnabled: false`
   (panele dosya sürüklenmesi anlamsız).
 - **Splash penceresi:** çerçevesiz, şeffaf, her zaman üstte, görev çubuğunda görünmez.
+- ⚠️ **Ana pencerenin `url` değeri `/` OLMALI, `index.html` DEĞİL.** `index.html`
+  verilirse React Router pathname'i `/index.html` olarak görür, `App.jsx`'teki
+  hiçbir route eşleşmez ve uygulama **beyaz ekran** açılır. (Ek güvence olarak
+  `App.jsx`'e catch-all route eklendi.) Bu hata testte bizzat yaşandı.
 - **CSP:** `default-src 'self'` tabanlı; yalnızca `localhost:4091` (HTTP + WS)
   ve `ipc:` şemasına izin verir. `object-src 'none'`, `frame-ancestors 'none'`.
   `style-src` içindeki `'unsafe-inline'` **zorunludur** — Tailwind ve

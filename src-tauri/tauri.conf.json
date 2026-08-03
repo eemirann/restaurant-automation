@@ -30,7 +30,7 @@
       },
       {
         "label": "main",
-        "url": "index.html",
+        "url": "/",
         "title": "RESTO POS",
         "width": 1600,
         "height": 900,

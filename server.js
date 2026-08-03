@@ -83,7 +83,9 @@ app.use(cors({ origin: corsOrigin }));
 // tavan yükseltilir.
 app.use(express.json({ limit: '60mb' }));
 app.use('/api', apiLimiter); // tüm API trafiğine geniş kötüye-kullanım tavanı
-app.use('/uploads', express.static('uploads')); // ürün resimleri buradan servis edilir
+// Ürün resimleri buradan servis edilir. Yol CWD'ye göre değil UPLOAD_DIR'e
+// göre çözülür — masaüstü kurulumunda görseller yazılabilir bir klasörde durur.
+app.use('/uploads', express.static(require('./utils/paths').UPLOAD_DIR));
 
 // Test endpoint'i
 app.get('/', (req, res) => {

@@ -19,7 +19,7 @@ const path = require('path');
 // ============================================================
 
 const CI_COLLATE = 'COLLATE Latin1_General_CI_AS';
-const uploadDir = path.join(__dirname, '..', 'uploads', 'products');
+const { PRODUCT_IMAGE_DIR: uploadDir } = require('../utils/paths');
 
 // ============================================================
 // GET /api/products/export (SADECE ADMIN)

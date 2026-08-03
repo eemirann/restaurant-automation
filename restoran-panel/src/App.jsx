@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ShiftProvider } from './context/ShiftContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -177,6 +177,11 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Bilinmeyen adres -> panele yönlendir. Aksi halde eşleşmeyen bir
+              yol (ör. masaüstü kabuğunun '/index.html' yüklemesi) hiçbir şey
+              render etmez ve BEYAZ EKRAN olarak görünür. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
       </ShiftProvider>
