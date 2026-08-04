@@ -888,7 +888,7 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
       onClose={onClose}
       title={`Masa ${detail.TableNumber}`}
       eyebrow="Masa Detayı"
-      size="xl"
+      size="full"
       meta={headerMeta}
       actions={headerActions}
     >
@@ -1382,7 +1382,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
               }
             />
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[55vh] overflow-y-auto overscroll-contain pr-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 max-h-[68vh] overflow-y-auto overscroll-contain pr-1">
               <AnimatePresence initial={false}>
                 {visibleProducts.map((p) => (
                   <ProductCard
@@ -1404,13 +1404,29 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
         </div>
 
         {/* SAĞ: sabit sepet paneli (~%30) */}
-        <div className="w-80 shrink-0 border border-hairline rounded-sm bg-hairline/20 flex flex-col max-h-[55vh]">
-          <div className="px-4 pt-4 pb-2">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-slate">
-              Sepet {itemCount > 0 ? `(${itemCount})` : ''}
-            </p>
+        <div className="w-80 shrink-0 border border-hairline rounded-sm bg-hairline/20 flex flex-col max-h-[68vh]">
+          <div className="px-4 pt-3 pb-2 border-b border-hairline">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-slate flex items-center gap-1.5">
+                🧺 Sepet
+                {itemCount > 0 && (
+                  <span className="font-mono text-[10px] text-cream bg-ember rounded-full px-1.5 py-0.5 leading-none tabular-nums">
+                    {itemCount}
+                  </span>
+                )}
+              </p>
+              {cartEntries.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCart({})}
+                  className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember transition-colors"
+                >
+                  Temizle
+                </button>
+              )}
+            </div>
             {existingOrder && (
-              <p className="font-mono text-[10px] text-slate mt-0.5">
+              <p className="font-mono text-[10px] text-slate mt-1">
                 Sipariş #{existingOrder.OrderId} · {ORDER_STATUS_LABEL[existingOrder.Status] || existingOrder.Status}
               </p>
             )}
@@ -1487,73 +1503,75 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto overscroll-contain px-4 space-y-2 min-h-[4rem]">
+          <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 space-y-2 min-h-[4rem]">
             {existingOrder && existingOrder.items?.length > 0 && (
               <div className="mb-3">
-                <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Sipariş Edilenler</p>
-                <div className="border border-hairline rounded-sm divide-y divide-hairline bg-panel/60">
+                <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5 sticky top-0 bg-hairline/20 backdrop-blur-sm py-1 -mx-1 px-1 z-10">
+                  Sipariş Edilenler
+                </p>
+                <div className="space-y-1.5">
                   {existingOrder.items.map((item, i) => {
                     const product = products.find((p) => p.ProductId === item.ProductId);
                     const busy = itemActionBusy === item.OrderDetailsId;
                     const hasOptions = (item.Extras?.length > 0) || (item.Syrups?.length > 0);
                     return (
-                      <div key={item.OrderDetailsId ?? i} className="px-3 py-2 text-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-paper truncate">{product?.Name || `Ürün #${item.ProductId}`}</span>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => changeExistingItemQuantity(item, -1)}
-                              className="w-11 h-11 flex items-center justify-center font-mono text-sm text-slate hover:text-ember
-                                         border border-hairline rounded-sm select-none disabled:opacity-30"
-                            >
-                              −
-                            </button>
-                            <span className="font-mono text-xs text-paper w-4 text-center">{item.Quantity}</span>
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => changeExistingItemQuantity(item, 1)}
-                              className="w-11 h-11 flex items-center justify-center font-mono text-sm text-cream bg-ember hover:bg-ember/90
-                                         rounded-sm select-none disabled:opacity-40"
-                            >
-                              +
-                            </button>
-                            <span className="font-mono text-xs text-slate w-16 text-right">
-                              {money(item.Quantity * item.UnitPrice)}
-                            </span>
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => removeExistingItem(item)}
-                              title="Siparişten çıkar"
-                              className="w-11 h-11 flex items-center justify-center font-mono text-xs text-slate hover:text-ember disabled:opacity-30"
-                            >
-                              ✕
-                            </button>
-                          </div>
+                      <div
+                        key={item.OrderDetailsId ?? i}
+                        className={`border border-hairline rounded-sm bg-panel/60 px-2.5 py-2 transition-opacity ${busy ? 'opacity-50' : ''}`}
+                      >
+                        {/* 1. satır: ürün adı + satır tutarı */}
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-sm text-paper truncate">{product?.Name || `Ürün #${item.ProductId}`}</span>
+                          <span className="font-mono text-xs text-paper font-semibold tabular-nums shrink-0">
+                            {money(item.Quantity * item.UnitPrice)}
+                          </span>
                         </div>
                         {hasOptions && (
-                          <div className="flex flex-wrap gap-1.5 mt-1.5">
-                            {(item.Extras || []).map((extra) => (
-                              <span
-                                key={`extra-${extra.ExtraProductId}`}
-                                className="font-mono text-[10px] text-slate border border-hairline rounded-full px-2 py-0.5"
-                              >
-                                {extra.Quantity}x {extra.ExtraName}
-                              </span>
-                            ))}
-                            {(item.Syrups || []).map((syrup) => (
-                              <span
-                                key={`syrup-${syrup.SyrupProductId}`}
-                                className="font-mono text-[10px] text-slate border border-hairline rounded-full px-2 py-0.5"
-                              >
-                                {syrup.Quantity}x {syrup.SyrupName}
-                              </span>
-                            ))}
-                          </div>
+                          <p className="font-mono text-[10px] text-slate truncate mt-0.5">
+                            {[
+                              ...(item.Extras || []).map((e) => `${e.Quantity}x ${e.ExtraName}`),
+                              ...(item.Syrups || []).map((s) => `${s.Quantity}x ${s.SyrupName}`),
+                            ].join(' · ')}
+                          </p>
                         )}
+                        {/* 2. satır: dokunmatik adet kontrolü (44×44) + çıkar */}
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            aria-label="Adet azalt"
+                            onClick={() => changeExistingItemQuantity(item, -1)}
+                            className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal
+                                       border border-hairline rounded-sm select-none touch-manipulation disabled:opacity-30 transition-colors"
+                          >
+                            −
+                          </button>
+                          <span className="font-mono text-sm text-paper w-6 text-center tabular-nums">{item.Quantity}</span>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            aria-label="Adet artır"
+                            onClick={() => changeExistingItemQuantity(item, 1)}
+                            className="w-11 h-11 flex items-center justify-center font-mono text-base text-cream bg-ember hover:bg-ember/90 active:bg-ember/80
+                                       rounded-sm select-none touch-manipulation disabled:opacity-40 transition-colors"
+                          >
+                            +
+                          </button>
+                          <span className="font-mono text-[10px] text-slate ml-1 truncate">
+                            {money(item.UnitPrice)} / adet
+                          </span>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => removeExistingItem(item)}
+                            title="Siparişten çıkar"
+                            aria-label="Siparişten çıkar"
+                            className="w-11 h-11 ml-auto shrink-0 flex items-center justify-center font-mono text-xs text-slate hover:text-ember
+                                       touch-manipulation disabled:opacity-30 transition-colors"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1562,13 +1580,19 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
             )}
 
             {existingOrder && existingOrder.items?.length > 0 && (
-              <p className="font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Yeni Eklenecekler</p>
+              <p className="font-mono text-[10px] uppercase tracking-wide text-ember mb-1.5 sticky top-0 bg-hairline/20 backdrop-blur-sm py-1 -mx-1 px-1 z-10">
+                Yeni Eklenecekler
+              </p>
             )}
 
             {cartEntries.length === 0 ? (
-              <p className="text-sm text-slate py-6 text-center">
-                {existingOrder ? 'Eklenecek ürün seçilmedi' : 'Sepet boş'}
-              </p>
+              <div className="py-8 text-center">
+                <p className="text-3xl leading-none mb-2 opacity-40">🧺</p>
+                <p className="text-sm text-slate">
+                  {existingOrder ? 'Eklenecek ürün seçilmedi' : 'Sepet boş'}
+                </p>
+                <p className="font-mono text-[10px] text-slate/60 mt-1">Soldaki listeden ürün seçin</p>
+              </div>
             ) : (
               cartEntries.map(([productId, line]) => {
                 const product = products.find((p) => String(p.ProductId) === String(productId));
@@ -1579,41 +1603,50 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 const productOptionsLoaded = Boolean(optionsByProduct[productId]);
                 const productOptions = optionsFor(productId);
                 return (
-                  <div key={productId} className="border border-hairline rounded-sm bg-panel p-3">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <p className="text-sm text-paper font-medium leading-tight">
+                  <div key={productId} className="border border-ember/40 rounded-sm bg-panel px-2.5 py-2">
+                    {/* 1. satır: ürün adı + satır tutarı */}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm text-paper font-medium truncate leading-tight">
                         {product?.Name || `Ürün #${productId}`}
                       </p>
+                      <span className="font-mono text-xs text-paper font-semibold tabular-nums shrink-0">
+                        {money(lineTotal(product, line))}
+                      </span>
+                    </div>
+                    {/* 2. satır: dokunmatik adet kontrolü (44×44) + sepetten çıkar */}
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <button
+                        type="button"
+                        aria-label="Adet azalt"
+                        onClick={() => removeFromCart(productId)}
+                        className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal
+                                   border border-hairline rounded-sm select-none touch-manipulation transition-colors"
+                      >
+                        −
+                      </button>
+                      <span className="font-mono text-sm text-paper w-6 text-center tabular-nums">{qty}</span>
+                      <button
+                        type="button"
+                        aria-label="Adet artır"
+                        onClick={() => addToCart(productId)}
+                        className="w-11 h-11 flex items-center justify-center font-mono text-base text-cream bg-ember hover:bg-ember/90 active:bg-ember/80
+                                   rounded-sm select-none touch-manipulation transition-colors"
+                      >
+                        +
+                      </button>
+                      <span className="font-mono text-[10px] text-slate ml-1 truncate">
+                        {money(product?.Price)} / adet
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeLineFromCart(productId)}
-                        className="font-mono text-xs text-slate hover:text-ember shrink-0 w-11 h-11 flex items-center justify-center"
+                        className="w-11 h-11 ml-auto shrink-0 flex items-center justify-center font-mono text-xs text-slate hover:text-ember
+                                   touch-manipulation transition-colors"
                         title="Sepetten çıkar"
+                        aria-label="Sepetten çıkar"
                       >
                         ✕
                       </button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => removeFromCart(productId)}
-                          className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal border border-hairline rounded-sm select-none"
-                        >
-                          −
-                        </button>
-                        <span className="font-mono text-sm text-paper w-5 text-center">{qty}</span>
-                        <button
-                          type="button"
-                          onClick={() => addToCart(productId)}
-                          className="w-11 h-11 flex items-center justify-center font-mono text-base text-cream bg-ember hover:bg-ember/90 active:bg-ember/80 rounded-sm select-none"
-                        >
-                          +
-                        </button>
-                      </div>
-                      <span className="font-mono text-xs text-slate">
-                        {money(lineTotal(product, line))}
-                      </span>
                     </div>
 
                     {/* Seçili ekstra/şuruplar (ör. "2x Ekstra Shot") */}
@@ -1701,7 +1734,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
             )}
           </div>
 
-          <div className="px-4 pt-3 border-t border-hairline mt-2">
+          <div className="px-4 pt-3 border-t border-hairline bg-panel/60 shrink-0">
             {!existingOrderId && (
               <div className="mb-3">
                 {!showNoteField ? (
@@ -1759,9 +1792,11 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-mono text-xs text-slate uppercase tracking-wide">Toplam</span>
-                <span className="font-mono text-paper font-semibold text-base">{money(total)}</span>
+              <div className="flex items-baseline justify-between mb-3">
+                <span className="font-mono text-xs text-slate uppercase tracking-wide">
+                  Toplam{itemCount > 0 ? ` · ${itemCount} adet` : ''}
+                </span>
+                <span className="font-mono text-paper font-semibold text-xl tabular-nums">{money(total)}</span>
               </div>
             )}
 
@@ -2295,16 +2330,31 @@ function BillModal({ tableId, productName, onClose }) {
 // ============================================================
 // Ortak modal kabuğu
 // ============================================================
+// size='full' → ekranın tamamını kaplar (masa/menü ekranı için: ürün seçerken
+// azami alan). Bu modda başlık çubuğu yapışkandır, içerik kayarken "Kapat"
+// düğmesi her zaman erişilebilir kalır.
 function ModalShell({ title, eyebrow, meta, actions, onClose, children, size = 'md' }) {
-  const widthClass = size === 'xl' ? 'max-w-[90vw]' : size === 'lg' ? 'max-w-3xl' : 'max-w-lg';
-  const heightClass = size === 'xl' ? 'max-h-[92vh]' : 'max-h-[88vh]';
+  const full = size === 'full';
+  const widthClass = full
+    ? 'max-w-none'
+    : size === 'xl' ? 'max-w-[90vw]' : size === 'lg' ? 'max-w-3xl' : 'max-w-lg';
+  const heightClass = full
+    ? 'h-full'
+    : size === 'xl' ? 'max-h-[92vh]' : 'max-h-[88vh]';
   return (
-    <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
+    <div
+      className={`fixed inset-0 bg-ink/40 flex items-center justify-center z-50 ${full ? '' : 'px-4'}`}
+      onClick={onClose}
+    >
       <div
-        className={`bg-panel rounded-sm border border-hairline w-full ${widthClass} ${heightClass} overflow-auto overscroll-contain shadow-lg`}
+        className={`bg-panel border border-hairline w-full overflow-auto overscroll-contain shadow-lg
+                    ${full ? 'rounded-none border-0' : 'rounded-sm'} ${widthClass} ${heightClass}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-hairline flex items-center justify-between gap-4">
+        <div
+          className={`px-6 py-4 border-b border-hairline flex items-center justify-between gap-4
+                      ${full ? 'sticky top-0 z-10 bg-panel' : ''}`}
+        >
           <div className="flex items-center gap-4 flex-wrap min-w-0">
             <div className="shrink-0">
               {eyebrow && <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">{eyebrow}</p>}
