@@ -29,6 +29,8 @@ Docker Desktop Installer.exe
 # ============================================================
 # Rust derleme önbelleği (GB'larca)
 /src-tauri/target/
+# Derleme çıktısını OneDrive dışına taşıyan MAKİNEYE ÖZEL ayar
+/src-tauri/.cargo/
 # scripts/masaustu-hazirla.mjs tarafından HER derlemede yeniden üretilir
 /src-tauri/backend-dist/
 /src-tauri/binaries/
