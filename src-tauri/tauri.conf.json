@@ -48,7 +48,6 @@
 
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:4091 http://127.0.0.1:4091; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:4091 http://127.0.0.1:4091 ws://localhost:4091 ws://127.0.0.1:4091; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
-      "freezePrototype": true,
       "capabilities": ["default"]
     }
   },

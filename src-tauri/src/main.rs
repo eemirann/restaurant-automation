@@ -413,6 +413,15 @@ fn main() {
                 })
                 .build(app)?;
 
+            // ---------- 3.5) Tanılama: geliştirici araçlarını aç ----------
+            // SADECE `--features devtools` ile derlenirse çalışır; normal
+            // üretim derlemesinde bu kod hiç yer almaz. Beyaz ekran gibi
+            // arayüz hatalarında konsolu görebilmek için.
+            #[cfg(feature = "devtools")]
+            if let Some(pencere) = app.get_webview_window("main") {
+                pencere.open_devtools();
+            }
+
             // ---------- 4) Kapatma tuşu -> tepsiye gizle ----------
             // POS'ta yanlışlıkla kapatma veri kaybı riski taşır; X tuşu
             // uygulamayı kapatmaz, tepsiye indirir. Gerçek çıkış tepsi
