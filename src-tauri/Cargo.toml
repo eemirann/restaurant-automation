@@ -19,6 +19,17 @@ serde_json = "1"
 # İlk çalıştırmada kurulum'a özel JWT_SECRET üretmek için (kriptografik RNG).
 getrandom = "0.3"
 
+# Job Object: uygulama NASIL sonlanırsa sonlansın (çökme, Görev Yöneticisi'nden
+# sonlandırma, güç kesintisi hariç) backend alt sürecinin de kapanmasını
+# işletim sistemine garantiletir. Aksi halde arkada öksüz node.exe kalıp
+# 4091 portunu tutuyor ve kurulum/güncellemeyi "dosya kullanımda" hatasıyla
+# engelliyordu.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+] }
+
 [features]
 # Tauri varsayılanı: üretim derlemesinde devtools KAPALI.
 # `cargo build --features devtools` ile sadece geliştirme için açılabilir.

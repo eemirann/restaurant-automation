@@ -32,6 +32,74 @@ const BACKEND_HAZIR_TIMEOUT: Duration = Duration::from_secs(60);
 /// Başlatılan backend alt süreci. Uygulama kapanırken durdurulur.
 struct BackendSureci(Mutex<Option<Child>>);
 
+// ============================================================
+// Windows Job Object — öksüz backend'e karşı işletim sistemi güvencesi
+//
+// `backend_durdur` yalnızca DÜZGÜN kapanışta çalışır. Uygulama çökerse ya da
+// Görev Yöneticisi'nden sonlandırılırsa backend arkada kalır: 4091 portunu
+// tutar ve kurulum "node.exe dosya yazmak için açılırken hata" verir.
+//
+// Job Object'e JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE koyup backend'i bu nesneye
+// atarsak, ana süreç sonlandığı anda (handle kapanır) çekirdek alt süreçleri
+// de öldürür. Nesnenin uygulama ömrü boyunca YAŞAMASI gerekir — bu yüzden
+// Tauri state'inde tutulur.
+// ============================================================
+#[cfg(windows)]
+struct IsNesnesi(windows_sys::Win32::Foundation::HANDLE);
+
+// HANDLE ham işaretçidir; yalnızca saklıyoruz (thread'ler arası taşınması güvenli).
+#[cfg(windows)]
+unsafe impl Send for IsNesnesi {}
+#[cfg(windows)]
+unsafe impl Sync for IsNesnesi {}
+
+#[cfg(windows)]
+fn is_nesnesi_olustur() -> Option<IsNesnesi> {
+    use windows_sys::Win32::System::JobObjects::{
+        CreateJobObjectW, SetInformationJobObject, JobObjectExtendedLimitInformation,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            eprintln!("[resto] Job Object oluşturulamadı");
+            return None;
+        }
+
+        let mut bilgi: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        bilgi.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+        let sonuc = SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &bilgi as *const _ as *const core::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+        if sonuc == 0 {
+            eprintln!("[resto] Job Object yapılandırılamadı");
+            return None;
+        }
+        Some(IsNesnesi(job))
+    }
+}
+
+/// Alt süreci Job Object'e bağlar; başarısızlık ÖLÜMCÜL DEĞİLDİR
+/// (düzgün kapanışta `backend_durdur` yine devreye girer).
+#[cfg(windows)]
+fn is_nesnesine_ekle(job: &IsNesnesi, child: &Child) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+
+    unsafe {
+        if AssignProcessToJobObject(job.0, child.as_raw_handle() as _) == 0 {
+            eprintln!("[resto] backend Job Object'e eklenemedi");
+        } else {
+            println!("[resto] backend Job Object'e bağlandı (öksüz kalmayacak)");
+        }
+    }
+}
+
 /// Tepsiden "Çıkış" seçildiğinde, frontend onay verene kadar gerçek çıkışı
 /// engellemek için kullanılır. `quit_app` komutu bunu true yapar.
 struct CikisOnayi(Mutex<bool>);
@@ -82,9 +150,40 @@ fn backend_yollari(app: &AppHandle) -> (PathBuf, PathBuf) {
 /// değişkeni olarak geçilir. `dotenv` var olan ortam değişkenlerinin ÜZERİNE
 /// YAZMAZ, dolayısıyla buradan gelen değerler geçerli olur.
 fn ayar_dosyasi(app: &AppHandle) -> Option<PathBuf> {
-    let dizin = app.path().app_config_dir().ok()?;
-    let _ = std::fs::create_dir_all(&dizin);
-    Some(dizin.join("ayarlar.env"))
+    // %PROGRAMDATA%\RESTO POS tercih edilir çünkü:
+    //   1) Kaldırma/yeniden kurulumdan ETKİLENMEZ. Uygulama kimliğine dayalı
+    //      %APPDATA%\com.resto.pos klasörü kaldırıcı tarafından siliniyor ve
+    //      her güncellemede veritabanı bilgileri kayboluyordu (yaşandı).
+    //   2) Makinedeki tüm Windows kullanıcıları aynı ayarı görür — bir POS
+    //      terminali için doğru davranış.
+    let dizin = std::env::var_os("ProgramData")
+        .map(PathBuf::from)
+        .map(|p| p.join("RESTO POS"));
+
+    let dizin = match dizin {
+        Some(d) if std::fs::create_dir_all(&d).is_ok() => d,
+        // ProgramData yoksa/yazılamıyorsa kullanıcı klasörüne düş.
+        _ => {
+            let yedek = app.path().app_config_dir().ok()?;
+            let _ = std::fs::create_dir_all(&yedek);
+            return Some(yedek.join("ayarlar.env"));
+        }
+    };
+
+    let yeni = dizin.join("ayarlar.env");
+
+    // Geriye dönük uyumluluk: eski kurulumlarda ayarlar %APPDATA% altındaydı.
+    // Kullanıcı bilgilerini yeniden girmek zorunda kalmasın diye taşınır.
+    if !yeni.exists() {
+        if let Ok(eski_dizin) = app.path().app_config_dir() {
+            let eski = eski_dizin.join("ayarlar.env");
+            if eski.exists() && std::fs::copy(&eski, &yeni).is_ok() {
+                println!("[resto] ayarlar yeni konuma taşındı: {}", yeni.display());
+            }
+        }
+    }
+
+    Some(yeni)
 }
 
 /// Kriptografik rastgele 32 baytlık hex anahtar (ilk kurulumda JWT_SECRET).
@@ -336,14 +435,29 @@ fn main() {
             // ---------- 1) Backend'i başlat ----------
             // Zaten çalışan bir backend varsa (ör. geliştirici npm ile açtıysa)
             // ikinci bir kopya başlatılmaz.
+            // Job Object önce kurulur: backend başlar başlamaz ona bağlanmalı.
+            #[cfg(windows)]
+            let is_nesnesi = is_nesnesi_olustur();
+
             if backend_hazir_mi() {
                 println!("[resto] backend zaten çalışıyor, yeni süreç başlatılmadı");
             } else if let Some(child) = backend_baslat(&handle) {
+                #[cfg(windows)]
+                if let Some(job) = &is_nesnesi {
+                    is_nesnesine_ekle(job, &child);
+                }
                 if let Some(durum) = handle.try_state::<BackendSureci>() {
                     if let Ok(mut k) = durum.0.lock() {
                         *k = Some(child);
                     }
                 }
+            }
+
+            // Job Object handle'ı uygulama ömrü boyunca AÇIK kalmalı; kapanırsa
+            // (yani uygulama sonlanırsa) çekirdek backend'i otomatik öldürür.
+            #[cfg(windows)]
+            if let Some(job) = is_nesnesi {
+                app.manage(job);
             }
 
             // ---------- 2) Backend hazır olunca splash'ı kapat ----------
@@ -369,9 +483,13 @@ fn main() {
             // ---------- 3) Sistem tepsisi ----------
             let goster = MenuItem::with_id(app, "goster", "Göster", true, None::<&str>)?;
             let gizle = MenuItem::with_id(app, "gizle", "Tepsiye Gizle", true, None::<&str>)?;
+            // X tuşu pencereyi yalnızca gizlediği için sayfa yeniden YÜKLENMEZ;
+            // F5/Ctrl+R de bilerek kapalı. Backend uygulamadan sonra hazır
+            // olduğunda kullanıcının elinde başka çare kalmıyordu.
+            let yenile = MenuItem::with_id(app, "yenile", "Sayfayı Yeniden Yükle", true, None::<&str>)?;
             let ayrac = PredefinedMenuItem::separator(app)?;
             let cikis = MenuItem::with_id(app, "cikis", "Çıkış", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&goster, &gizle, &ayrac, &cikis])?;
+            let menu = Menu::with_items(app, &[&goster, &gizle, &yenile, &ayrac, &cikis])?;
 
             TrayIconBuilder::with_id("resto-tray")
                 .icon(app.default_window_icon().cloned().expect("ikon yok"))
@@ -384,6 +502,13 @@ fn main() {
                     "gizle" => {
                         if let Some(p) = app.get_webview_window("main") {
                             let _ = p.hide();
+                        }
+                    }
+                    "yenile" => {
+                        if let Some(p) = app.get_webview_window("main") {
+                            let _ = p.show();
+                            let _ = p.set_focus();
+                            let _ = p.eval("window.location.reload()");
                         }
                     }
                     "cikis" => {

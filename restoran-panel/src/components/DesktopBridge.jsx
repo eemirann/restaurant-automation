@@ -24,6 +24,9 @@ export default function DesktopBridge() {
     // null: sorulmuyor | number: onay bekleniyor (aktif sipariş sayısı)
     const [aktifSiparis, setAktifSiparis] = useState(null);
     const [kontrolEdiliyor, setKontrolEdiliyor] = useState(false);
+    // Backend ayakta değilse gösterilecek hata ekranı
+    const [backendYok, setBackendYok] = useState(false);
+    const [yenidenDeneniyor, setYenidenDeneniyor] = useState(false);
 
     // Uygulamayı gerçekten kapatır (Rust tarafındaki komut).
     const cik = useCallback(async () => {
@@ -71,6 +74,41 @@ export default function DesktopBridge() {
         return () => temizle();
     }, [cik]);
 
+    // ---------- Backend hazır mı? Değilse sessizce başarısız OLMA ----------
+    // Rust, backend'i bekledikten sonra sonucu bildirir. Hazır değilse
+    // kullanıcı eskiden yalnızca boş liste + konsol hatası görüyordu; artık
+    // ne yapması gerektiğini söyleyen bir ekran gösteriyoruz.
+    useEffect(() => {
+        if (!tauriMi()) return;
+
+        let temizle = () => {};
+        (async () => {
+            const { listen } = await import('@tauri-apps/api/event');
+            const birak = await listen('resto://backend-hazir', (olay) => {
+                setBackendYok(olay.payload === false);
+            });
+            temizle = birak;
+        })();
+
+        return () => temizle();
+    }, []);
+
+    // "Tekrar Dene": backend bu arada ayağa kalktıysa sayfayı yeniden yükler.
+    const tekrarDene = useCallback(async () => {
+        setYenidenDeneniyor(true);
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const hazir = await invoke('backend_durumu');
+            if (hazir) {
+                window.location.reload();
+            } else {
+                setYenidenDeneniyor(false);
+            }
+        } catch {
+            setYenidenDeneniyor(false);
+        }
+    }, []);
+
     // ---------- Klavye: F11 tam ekran + gereksiz kısayolları kapat ----------
     useEffect(() => {
         if (!tauriMi()) return;
@@ -112,6 +150,67 @@ export default function DesktopBridge() {
             window.removeEventListener('dragstart', surukle);
         };
     }, []);
+
+    // Backend hazır olmadığında: her 5 saniyede bir sessizce tekrar dener.
+    // Backend uygulamadan sonra ayağa kalkarsa kullanıcı hiçbir şey yapmadan
+    // sayfa kendiliğinden yüklenir.
+    useEffect(() => {
+        if (!backendYok) return;
+        const zamanlayici = setInterval(async () => {
+            try {
+                const { invoke } = await import('@tauri-apps/api/core');
+                if (await invoke('backend_durumu')) window.location.reload();
+            } catch {
+                /* backend hâlâ yok, denemeye devam */
+            }
+        }, 5000);
+        return () => clearInterval(zamanlayici);
+    }, [backendYok]);
+
+    if (backendYok) {
+        return (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-ink p-6">
+                <div className="w-full max-w-lg rounded-2xl border border-hairline bg-panel p-7 shadow-2xl">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-ember mb-2">
+                        Bağlantı Hatası
+                    </p>
+                    <h2 className="font-display text-xl font-bold text-paper mb-3">
+                        Sunucu başlatılamadı
+                    </h2>
+                    <p className="text-sm text-slate leading-relaxed mb-4">
+                        Uygulama kendi sunucusunu başlattı ancak veritabanına bağlanamadı.
+                        En sık sebebi, ayar dosyasındaki veritabanı bilgilerinin yanlış
+                        olmasıdır (özellikle yeniden kurulumdan sonra varsayılanlara döner).
+                    </p>
+                    <div className="rounded-lg border border-hairline bg-ink/40 p-3 mb-4">
+                        <p className="font-mono text-[10px] uppercase tracking-wide text-slate/70 mb-1.5">
+                            Ayar dosyası
+                        </p>
+                        <code className="font-mono text-xs text-paper break-all">
+                            %APPDATA%\com.resto.pos\ayarlar.env
+                        </code>
+                    </div>
+                    <p className="text-xs text-slate leading-relaxed mb-6">
+                        Bu dosyadaki <span className="font-mono text-paper">DB_SERVER</span>,
+                        {' '}<span className="font-mono text-paper">DB_DATABASE</span>,
+                        {' '}<span className="font-mono text-paper">DB_USER</span> ve
+                        {' '}<span className="font-mono text-paper">DB_PASSWORD</span> değerlerini
+                        kontrol edin, ardından Tekrar Dene'ye basın. SQL Server'ın çalıştığından
+                        da emin olun. (Arka planda her 5 saniyede bir otomatik denenir.)
+                    </p>
+                    <div className="flex justify-end">
+                        <button
+                            onClick={tekrarDene}
+                            disabled={yenidenDeneniyor}
+                            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 disabled:opacity-40 rounded-lg px-4 py-2.5 transition-colors"
+                        >
+                            {yenidenDeneniyor ? 'Deneniyor…' : '↻ Tekrar Dene'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (aktifSiparis == null) return null;
 
