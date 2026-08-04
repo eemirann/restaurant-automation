@@ -20,7 +20,7 @@ export function OpenShiftModal() {
   const { user } = useAuth();
   const { openShift } = useShift();
   // Kasa miktarını sadece Admin girer — Mutfak/Kasa/Garson için vardiya
-  // tek tıkla açılır, açılış kasası 0 kaydedilir (bkz. FIKIR_NOTLARI kararı).
+  // tek tıkla açılır, açılış kasası 0 kaydedilir.
   const canEnterAmount = user?.role === 'Admin';
   const [now, setNow] = useState(Date.now());
   const [openingFloat, setOpeningFloat] = useState('');
