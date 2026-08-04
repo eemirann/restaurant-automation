@@ -7,10 +7,11 @@ const ROLE_LABELS = {
   Admin: 'Yönetici',
   Cashier: 'Kasiyer',
   Waiter: 'Garson',
+  Kitchen: 'Mutfak',
 };
 
 // Yeni kullanıcı / rol değiştirme seçeneklerinde kullanılan sıra
-const ROLE_OPTIONS = ['Waiter', 'Cashier', 'Admin'];
+const ROLE_OPTIONS = ['Waiter', 'Cashier', 'Kitchen', 'Admin'];
 
 const FILTERS = [
   { value: '', label: 'Tümü' },

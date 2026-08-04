@@ -184,7 +184,7 @@ async function closeShiftRecord(pool, shift, countedCash, note) {
 async function closeShift(req, res) {
     try {
         const { CountedCash, Note } = req.body;
-        if (typeof CountedCash !== 'number' || CountedCash < 0) {
+        if (CountedCash !== undefined && CountedCash !== null && (typeof CountedCash !== 'number' || CountedCash < 0)) {
             return res.status(400).json({ error: 'Sayılan nakit negatif olmayan bir sayı olmalı' });
         }
 

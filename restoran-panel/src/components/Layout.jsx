@@ -9,6 +9,10 @@ import CommandPalette from './CommandPalette';
 import NotificationCenter from './NotificationCenter';
 import client from '../api/client';
 
+// Mutfak (Kitchen) rolü sadece fiş ekranını (Mutfak) ve kendi vardiyasını
+// görür — masalar, ödeme, raporlama gibi ekranlarla işi yok.
+const KITCHEN_ONLY = ['/kds', '/shifts'];
+
 const NAV_ITEMS = [
   { to: '/', label: 'Panel', roles: null, icon: '📊' },
   { to: '/orders', label: 'Siparişler', roles: null, icon: '🧾' },
@@ -38,6 +42,7 @@ const ROLE_LABELS = {
   Admin: 'Yönetici',
   Cashier: 'Kasiyer',
   Waiter: 'Garson',
+  Kitchen: 'Mutfak',
 };
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
@@ -92,9 +97,10 @@ export default function Layout({ children }) {
     doLogout();
   };
 
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.roles || item.roles.includes(user?.role)
-  );
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (user?.role === 'Kitchen') return KITCHEN_ONLY.includes(item.to);
+    return !item.roles || item.roles.includes(user?.role);
+  });
 
   return (
     <div className="min-h-screen bg-charcoal font-body flex">

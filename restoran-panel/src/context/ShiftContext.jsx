@@ -5,7 +5,7 @@ import { useAuth } from './AuthContext';
 
 // Vardiya açması gereken roller (kasa/servis). Yönetici (Admin) muaf —
 // gözetim/override yapar, kendi kasası olmadan panele erişebilir.
-export const SHIFT_ROLES = ['Cashier', 'Waiter'];
+export const SHIFT_ROLES = ['Cashier', 'Waiter', 'Kitchen'];
 
 const ShiftContext = createContext(null);
 

@@ -19,6 +19,9 @@ const KEYFRAMES = `
 export function OpenShiftModal() {
   const { user } = useAuth();
   const { openShift } = useShift();
+  // Kasa miktarını sadece Admin girer — Mutfak/Kasa/Garson için vardiya
+  // tek tıkla açılır, açılış kasası 0 kaydedilir (bkz. FIKIR_NOTLARI kararı).
+  const canEnterAmount = user?.role === 'Admin';
   const [now, setNow] = useState(Date.now());
   const [openingFloat, setOpeningFloat] = useState('');
   const [note, setNote] = useState('');
@@ -31,10 +34,10 @@ export function OpenShiftModal() {
   }, []);
 
   const start = async () => {
-    if (openingFloat === '' || Number(openingFloat) < 0) { setError('Açılış kasasını girin.'); return; }
+    if (canEnterAmount && (openingFloat === '' || Number(openingFloat) < 0)) { setError('Açılış kasasını girin.'); return; }
     setBusy(true); setError('');
     try {
-      await openShift(Number(openingFloat), note.trim());
+      await openShift(canEnterAmount ? Number(openingFloat) : 0, note.trim());
     } catch (err) {
       setError(err.response?.data?.error || 'Vardiya açılamadı.');
       setBusy(false);
@@ -60,14 +63,16 @@ export function OpenShiftModal() {
             <Info label="Saat" value={<span className="tabular-nums">{fmtTime(d)}</span>} className="col-span-2" />
           </div>
 
-          <div>
-            <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Açılış Kasası <span className="text-ember">*</span></label>
-            <div className="flex items-center gap-2 bg-charcoal rounded-lg px-3 border border-hairline focus-within:border-ember">
-              <span className="font-mono text-xl text-slate">₺</span>
-              <input autoFocus type="number" min="0" step="0.01" value={openingFloat} onChange={(e) => setOpeningFloat(e.target.value)} placeholder="0.00"
-                className="w-full bg-transparent border-0 py-3 font-mono text-3xl tabular-nums text-paper font-semibold focus:outline-none placeholder:text-slate/30" />
+          {canEnterAmount && (
+            <div>
+              <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Açılış Kasası <span className="text-ember">*</span></label>
+              <div className="flex items-center gap-2 bg-charcoal rounded-lg px-3 border border-hairline focus-within:border-ember">
+                <span className="font-mono text-xl text-slate">₺</span>
+                <input autoFocus type="number" min="0" step="0.01" value={openingFloat} onChange={(e) => setOpeningFloat(e.target.value)} placeholder="0.00"
+                  className="w-full bg-transparent border-0 py-3 font-mono text-3xl tabular-nums text-paper font-semibold focus:outline-none placeholder:text-slate/30" />
+              </div>
             </div>
-          </div>
+          )}
 
           <div>
             <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Açılış Notu <span className="normal-case text-slate/60">(opsiyonel)</span></label>
@@ -101,20 +106,22 @@ function Info({ label, value, className = '' }) {
 // onClosed: vardiya kapatıldıktan sonra çağrılır (çıkış yap).
 // ============================================================
 export function CloseShiftModal({ onCancel, onClosed }) {
+  const { user } = useAuth();
   const { shift, closeShift } = useShift();
+  const canEnterAmount = user?.role === 'Admin';
   const [counted, setCounted] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const expected = Number(shift?.ExpectedCash) || 0;
-  const diff = counted !== '' ? Number(counted) - expected : null;
+  const diff = canEnterAmount && counted !== '' ? Number(counted) - expected : null;
 
   const confirm = async () => {
-    if (counted === '' || Number(counted) < 0) { setError('Sayılan nakti girin.'); return; }
+    if (canEnterAmount && (counted === '' || Number(counted) < 0)) { setError('Sayılan nakti girin.'); return; }
     setBusy(true); setError('');
     try {
-      await closeShift(Number(counted), note.trim());
+      await closeShift(canEnterAmount ? Number(counted) : undefined, note.trim());
       onClosed?.();
     } catch (err) {
       setError(err.response?.data?.error || 'Vardiya kapatılamadı.');
@@ -133,19 +140,23 @@ export function CloseShiftModal({ onCancel, onClosed }) {
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          <div className="rounded-xl bg-charcoal border border-hairline px-4 py-3 flex items-center justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-slate">Beklenen Nakit</span>
-            <span className="font-mono text-xl font-bold tabular-nums text-paper">{money(expected)}</span>
-          </div>
-
-          <div>
-            <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Sayılan Nakit <span className="text-ember">*</span></label>
-            <div className="flex items-center gap-2 bg-charcoal rounded-lg px-3 border border-hairline focus-within:border-ember">
-              <span className="font-mono text-xl text-slate">₺</span>
-              <input autoFocus type="number" min="0" step="0.01" value={counted} onChange={(e) => setCounted(e.target.value)} placeholder="0.00"
-                className="w-full bg-transparent border-0 py-3 font-mono text-2xl tabular-nums text-paper font-semibold focus:outline-none placeholder:text-slate/30" />
+          {canEnterAmount && (
+            <div className="rounded-xl bg-charcoal border border-hairline px-4 py-3 flex items-center justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-slate">Beklenen Nakit</span>
+              <span className="font-mono text-xl font-bold tabular-nums text-paper">{money(expected)}</span>
             </div>
-          </div>
+          )}
+
+          {canEnterAmount && (
+            <div>
+              <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1.5">Sayılan Nakit <span className="text-ember">*</span></label>
+              <div className="flex items-center gap-2 bg-charcoal rounded-lg px-3 border border-hairline focus-within:border-ember">
+                <span className="font-mono text-xl text-slate">₺</span>
+                <input autoFocus type="number" min="0" step="0.01" value={counted} onChange={(e) => setCounted(e.target.value)} placeholder="0.00"
+                  className="w-full bg-transparent border-0 py-3 font-mono text-2xl tabular-nums text-paper font-semibold focus:outline-none placeholder:text-slate/30" />
+              </div>
+            </div>
+          )}
 
           {diff !== null && (
             <div className={`rounded-lg px-3 py-2.5 font-mono text-sm flex items-center justify-between ${

@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const { sql, connectDB } = require('../config/db');
 const { logAudit } = require('../utils/audit');
 
-const VALID_ROLES = ['Waiter', 'Cashier', 'Admin'];
+const VALID_ROLES = ['Waiter', 'Cashier', 'Admin', 'Kitchen'];
 
 // ============================================================
 // TÜM KULLANICILARI LİSTELE (SADECE ADMIN)

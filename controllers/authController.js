@@ -6,7 +6,7 @@ const { logAudit } = require('../utils/audit');
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '8h'; // bir vardiya süresi mantıklı bir varsayılan, istersen değiştiririz
 
-const VALID_ROLES = ['Waiter', 'Cashier', 'Admin'];
+const VALID_ROLES = ['Waiter', 'Cashier', 'Admin', 'Kitchen'];
 
 // ============================================================
 // KAYIT (REGISTER)

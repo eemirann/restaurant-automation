@@ -36,7 +36,7 @@ BEGIN
         Role NVARCHAR(20) NOT NULL DEFAULT 'Waiter',
         IsActive BIT NOT NULL DEFAULT 1,
         CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
-        CONSTRAINT CK_Users_Role CHECK (Role IN ('Waiter', 'Cashier', 'Admin'))
+        CONSTRAINT CK_Users_Role CHECK (Role IN ('Waiter', 'Cashier', 'Admin', 'Kitchen'))
     );
 END
 
