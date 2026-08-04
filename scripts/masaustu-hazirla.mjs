@@ -25,25 +25,38 @@ function adim(mesaj) {
     console.log(`\n==> ${mesaj}`);
 }
 
-function calistir(komut, argumanlar, calismaDizini = kok) {
-    execFileSync(komut, argumanlar, { stdio: 'inherit', cwd: calismaDizini });
+function calistir(komut, argumanlar, calismaDizini = kok, ekOrtam = {}) {
+    execFileSync(komut, argumanlar, {
+        stdio: 'inherit',
+        cwd: calismaDizini,
+        env: { ...process.env, ...ekOrtam },
+    });
 }
 
 // Windows'ta npm bir .cmd dosyasıdır ve Node 20+ bunu shell olmadan
 // çalıştırmayı reddeder (EINVAL). npm-cli.js doğrudan node ile çağrılır.
-function npm(argumanlar, calismaDizini) {
+function npm(argumanlar, calismaDizini, ekOrtam) {
     const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
     if (existsSync(npmCli)) {
-        calistir(process.execPath, [npmCli, ...argumanlar], calismaDizini);
+        calistir(process.execPath, [npmCli, ...argumanlar], calismaDizini, ekOrtam);
     } else {
         // Yedek: npm PATH'te farklı bir yerde kuruluysa
-        calistir(process.platform === 'win32' ? 'npm.cmd' : 'npm', argumanlar, calismaDizini);
+        calistir(process.platform === 'win32' ? 'npm.cmd' : 'npm', argumanlar, calismaDizini, ekOrtam);
     }
 }
 
 // ---------- 1) Paneli derle ----------
 adim('React paneli derleniyor...');
-npm(['--prefix', 'restoran-panel', 'run', 'build']);
+// VITE_API_URL BİLEREK localhost'a sabitlenir: restoran-panel/.env içinde
+// dağıtım için bir LAN IP'si (ör. http://10.30.80.139:4091/api) yazılı
+// olabilir; masaüstü uygulamasında backend HER ZAMAN aynı makinede çalışır,
+// o adres kullanılırsa paket başka makinede/IP değişince bozulur ve dar CSP
+// tarafından da engellenir. Vite'ta process.env, .env dosyasını EZER.
+// (src/api/client.js ayrıca çalışma anında Tauri'yi tespit edip localhost'a
+// döner — bu iki katmanlı güvence bilinçlidir.)
+npm(['--prefix', 'restoran-panel', 'run', 'build'], kok, {
+    VITE_API_URL: 'http://localhost:4091/api',
+});
 
 // ---------- 2) Backend'i üretim bağımlılıklarıyla hazırla ----------
 adim('Backend paketleniyor (sadece üretim bağımlılıkları)...');

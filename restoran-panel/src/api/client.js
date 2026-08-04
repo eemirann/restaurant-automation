@@ -1,8 +1,20 @@
 import axios from 'axios';
 
-// Backend adresi. Öncelik: VITE_API_URL env (dağıtım için); yoksa yerel geliştirme.
+// Masaüstü (Tauri) uygulamasında backend HER ZAMAN aynı makinede, uygulamanın
+// kendi başlattığı süreçte çalışır. Bu yüzden derleme anında .env'e gömülmüş
+// adres (ör. VITE_API_URL=http://10.30.80.139:4091/api gibi bir LAN IP'si)
+// KULLANILMAZ — aksi halde paket başka bir makineye kurulduğunda ya da IP
+// değiştiğinde uygulama backend'ini bulamaz. Ayrıca CSP'nin yalnızca
+// localhost'a izin veren dar haliyle uyumlu kalır.
+const TAURI_ORTAMI =
+  typeof window !== 'undefined' &&
+  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
+// Backend adresi. Öncelik: Tauri -> localhost; sonra VITE_API_URL (web dağıtımı).
 // Örn. .env: VITE_API_URL=https://api.restoranim.com/api
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4091/api';
+const BASE_URL = TAURI_ORTAMI
+  ? 'http://localhost:4091/api'
+  : import.meta.env.VITE_API_URL || 'http://localhost:4091/api';
 
 // Ürün resimleri /api olmadan, sunucu kökünden servis ediliyor (örn. /uploads/products/x.jpg)
 export const API_ORIGIN = BASE_URL.replace(/\/api$/, '');
