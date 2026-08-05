@@ -363,7 +363,7 @@ function TableQrCodesModal({ onClose }) {
               <p className="font-mono text-[11px] text-ember mt-1.5">
                 ⚠ Bu adres yalnızca BU bilgisayarda çalışır — müşterinin telefonu açamaz.
                 Ayarlar › Genel › “Müşteri QR Menüsü · Adres” alanına bu bilgisayarın yerel IP'sini
-                (ör. http://192.168.1.50:8081) veya alan adınızı yazın, sonra QR'ları yeniden yazdırın.
+                (ör. http://192.168.1.50:4091) veya alan adınızı yazın, sonra QR'ları yeniden yazdırın.
               </p>
             )}
           </div>

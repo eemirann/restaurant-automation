@@ -23,8 +23,9 @@ const TEXT_FIELDS = [
     { key: 'TaxOffice', maxLen: 100 },
     { key: 'BillingAddress', maxLen: 300 },
     // Masa QR kodlarının işaret ettiği müşteri menüsü adresi (ör.
-    // http://192.168.1.50:8081 ya da https://menu.restoranim.com).
-    // Gizli değildir — müşteri zaten tarayıcısında görür.
+    // http://192.168.1.50:4091). Menüyü backend'in kendisi servis ettiği
+    // için port, sunucunun portudur — ayrı bir menü servisi yoktur
+    // (bkz. server.js). Gizli değildir — müşteri zaten tarayıcısında görür.
     { key: 'CustomerMenuBaseUrl', maxLen: 300 },
 ];
 

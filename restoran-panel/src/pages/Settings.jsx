@@ -287,7 +287,7 @@ export default function Settings() {
                       type="text"
                       value={customerMenuBaseUrl}
                       onChange={(e) => setCustomerMenuBaseUrl(e.target.value)}
-                      placeholder="http://192.168.1.50:8081"
+                      placeholder="http://192.168.1.50:4091"
                       maxLength={300}
                       className={`max-w-md ${inputClass}`}
                     />
@@ -297,12 +297,18 @@ export default function Settings() {
                     </p>
                     <ul className="font-mono text-[11px] text-slate mt-1.5 space-y-0.5 list-disc list-inside">
                       <li>
-                        Müşteri restoranın Wi-Fi'ına bağlanıyorsa: bu bilgisayarın yerel IP'si,
-                        ör. <span className="text-paper">http://192.168.1.50:8081</span>
+                        Müşteri restoranın Wi-Fi'ına bağlanıyorsa: bu bilgisayarın yerel IP'si ve
+                        sunucu portu, ör. <span className="text-paper">http://192.168.1.50:4091</span>
                       </li>
                       <li>
-                        Mobil veriyle de çalışsın isteniyorsa: Cloudflare Tunnel alan adınız,
-                        ör. <span className="text-paper">https://menu.restoranim.com</span>
+                        Port <span className="text-paper">4091</span>'dir: menüyü sunucunun kendisi
+                        yayınlar, ayrı bir menü servisi yoktur.
+                      </li>
+                      <li className="text-ember/90">
+                        Mobil veriyle çalışsın diye 4091'i olduğu gibi internete AÇMAYIN — yönetim
+                        API'si de aynı porttadır. Tünel/ters proxy kullanacaksanız yalnızca
+                        <span className="text-paper"> /api/public</span>,
+                        <span className="text-paper"> /uploads</span> ve menü sayfasına izin verin.
                       </li>
                     </ul>
                     <p className="font-mono text-[11px] text-slate mt-1.5">
