@@ -97,7 +97,7 @@
       "endpoints": [
         "https://resto.local/updates/{{target}}/{{arch}}/{{current_version}}"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2QTU1Rjg3Q0VEN0NEQgpSV1RiZk8xOCtGVnFEWWp0aXJWOW8yTXViRmhJU3M1NmluNVkwZXlyNzFsanFENS9pekxaam1zSgo=",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERFODA2NjAzMjY2RDE1RkQKUldUOUZXMG1BMmFBM3UwRi9QM1FHUldQLzZ4elR6NU1YTmdkVS82YnBYNjZVMFJhaTBBWUhmUnYK",
       "windows": {
         "installMode": "passive"
       }
