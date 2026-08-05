@@ -108,46 +108,147 @@ if (-not (Test-Path (Join-Path $menuKlasoru 'dist\index.html'))) {
 }
 
 # ---------- 3) Çıkış klasörünü hazırla ----------
+#
+# KLASÖR SİLİNMEZ (bilerek): içinde elle indirilmiş ÇOK BÜYÜK dosyalar olur —
+# SQLEXPR_x64_ENU.exe (~700 MB) ve RESTO POS masaüstü paketleri. Script'i
+# ikinci kez çalıştırmak bunları silseydi her seferinde yeniden indirilmeleri
+# gerekirdi. Yalnızca bu script'in ÜRETTİĞİ dosyalar tazelenir; gerisi durur.
 Adim "Çıkış klasörü hazırlanıyor: $CikisKlasoru"
-if (Test-Path $CikisKlasoru) {
-    Remove-Item $CikisKlasoru -Recurse -Force
+New-Item -ItemType Directory -Force -Path $CikisKlasoru | Out-Null
+
+$eskiSihirbaz = Join-Path $CikisKlasoru 'RestoranKurulumSihirbazi.exe'
+if (Test-Path $eskiSihirbaz) { Remove-Item $eskiSihirbaz -Force }
+
+# Docker döneminden kalan artıklar (eski bir paket üzerine çalışılıyorsa)
+foreach ($artik in @('images.tar', 'docker-compose.yml', 'Docker Desktop Installer.exe')) {
+    $yol = Join-Path $CikisKlasoru $artik
+    if (Test-Path $yol) {
+        Remove-Item $yol -Recurse -Force
+        Write-Host "  temizlendi (Docker artığı): $artik"
+    }
 }
-New-Item -ItemType Directory -Path $CikisKlasoru | Out-Null
+foreach ($eskiKlasor in @('migrations', 'scripts')) {
+    $yol = Join-Path $CikisKlasoru $eskiKlasor
+    if (Test-Path $yol) {
+        Remove-Item $yol -Recurse -Force
+        Write-Host "  temizlendi (artık sihirbaza gömülü): $eskiKlasor\"
+    }
+}
 
 # Proje dosyalarının KOPYALANMASINA GEREK YOK: installer\RestoranKurulum.iss
 # hepsini (server.js, config\, controllers\, routes\, utils\, migrations\,
 # scripts\, node_modules\, musteri-menu\dist\) doğrudan repodan GÖMÜYOR.
-# Bu klasöre sadece Inno Setup çıktısı ve büyük ikili dosyalar (SQL Express
-# kurulumu, Node.js MSI) konur.
+# Bu klasöre sadece Inno Setup çıktısı ve SQL Express kurulumu konur.
 
+# ---------- 3b) Taşınabilir Node'u installer\ klasörüne yerleştir ----------
+# Kurulum programı bunu {app}\node.exe olarak açar ve servis DOĞRUDAN onu
+# çalıştırır — hedef makinede Node.js kurulu olmasına gerek kalmaz.
+# Kaynak, Tauri paketlemesinin ürettiği sidecar'dır; yoksa uyarılır.
+Adim 'Taşınabilir Node.js hazırlanıyor...'
+$sidecar = Get-ChildItem (Join-Path $kokDizin 'src-tauri\binaries') -Filter 'node-*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($sidecar) {
+    Copy-Item $sidecar.FullName (Join-Path $kokDizin 'installer\node.exe') -Force
+    Write-Host "  ✓ installer\node.exe ($([math]::Round($sidecar.Length/1MB,1)) MB)"
+} elseif (Test-Path (Join-Path $kokDizin 'installer\node.exe')) {
+    Write-Host '  ✓ installer\node.exe zaten mevcut'
+} else {
+    Write-Host '  ! installer\node.exe YOK — kurulum hedef makinede Node.js arayacak.' -ForegroundColor Yellow
+    Write-Host '    Üretmek için: npm run masaustu:derle (sidecar''ı indirir)' -ForegroundColor Yellow
+}
+
+# ---------- 3c) Kurulum sihirbazını DERLE ----------
+# Derleme BU SCRIPT'İN İÇİNDE yapılır çünkü sıralama kritiktir: yukarıdaki
+# 'npm ci --omit=dev' node_modules'ü küçültür, ama sonra biri 'npm install'
+# çalıştırırsa geliştirme paketleri geri gelir. Derleme elle/sonradan
+# yapılırsa şişmiş bir node_modules (jest, vite, caniuse-lite...) sihirbazın
+# içine gömülür — sessiz ve fark edilmesi zor bir hata. Burada, küçültmenin
+# hemen ardından derleyerek bu ihtimali kapatıyoruz.
+$iscc = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $iscc) { $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source }
+
+if ($iscc) {
+    Adim 'Kurulum sihirbazı derleniyor (Inno Setup)... birkaç dakika sürebilir.'
+    & $iscc (Join-Path $kokDizin 'installer\RestoranKurulum.iss') | Out-Null
+    if ($LASTEXITCODE -ne 0) { Basarisiz 'Inno Setup derlemesi başarısız oldu.' }
+    Write-Host '  ✓ RestoranKurulumSihirbazi.exe'
+} else {
+    Write-Host '  ! Inno Setup (ISCC.exe) bulunamadı — sihirbaz DERLENMEDİ.' -ForegroundColor Yellow
+    Write-Host '    https://jrsoftware.org/isinfo.php adresinden kurup şunu çalıştırın:' -ForegroundColor Yellow
+    Write-Host '    ISCC.exe installer\RestoranKurulum.iss' -ForegroundColor Yellow
+}
+
+# OKUBENI.txt — KURAN kişi için (geliştirici için değil). Bilerek ASCII
+# yazılmıştır: Not Defteri'nde kodlama sorunu çıkmasın diye.
 $okuBeni = @"
-RESTORAN OTOMASYONU - KURULUM PAKETİ
-====================================
+===============================================================
+ RESTORAN OTOMASYONU - KURULUM PAKETI
+===============================================================
 
-Bu klasöre KOPYALANMASI GEREKEN dosyalar (büyük oldukları için repoda
-tutulmuyor, buraya elle indirilir):
+KURULUM SIRASI - onemli, once sunucu sonra panel:
 
-1) SQLEXPR_x64_ENU.exe   -- ZORUNLU
-   SQL Server 2022 Express > Download Media > Express Core
-   (Microsoft'un indirme sayfasından. Küçük indirici SQL2022-SSEI-Expr.exe
-   de çalışır ama İNTERNET İSTER — USB kurulumu için TAM paketi kullanın.)
+ADIM 1 - Sunucu ve veritabani
+  RestoranKurulumSihirbazi.exe   (sag tik > Yonetici olarak calistir)
+  Sorulacaklar:
+    - Veritabani sifresi (otomatik uretilir) -> MUTLAKA NOT ALIN
+    - Ilk yonetici: Ad Soyad, kullanici adi, 4-6 haneli PIN
+  SQL Server Express kurulumu birkac dakika surer ve ekranda ilerleme
+  GOSTERMEZ. Takilmis gibi gorunse de bekleyin.
 
-2) installer\node.exe    -- ZORUNLU (bu klasore DEGIL, kaynak klasore)
-   src-tauri\binaries\node-*.exe dosyasinin kopyasi (~88 MB).
-   Kurulum programinin ICINE gomulur; Node.js MSI'ina gerek yoktur.
+  NOT: Ayni klasorde SQLEXPR_x64_ENU.exe bulunmalidir.
 
-3) RestoranKurulumSihirbazi.exe
-   installer\RestoranKurulum.iss dosyasını Inno Setup ile derleyin (Compile);
-   çıktı otomatik olarak bu klasöre düşer.
+ADIM 2 - Yonetim paneli
+  "RESTO POS ... -setup.exe"  (ya da .msi - IKISINDEN BIRI, ikisi birden degil)
+  Masaustunde "RESTO POS" kisayolu olusur.
 
-AYRICA (repo tarafında, derlemeden ÖNCE):
-   installer\nssm.exe  -- https://nssm.cc/download > win64\nssm.exe
-   Bu dosya kurulum programının İÇİNE gömülür.
+ADIM 3 - QR menu adresini ayarlayin
+  Sunucu bilgisayarinda komut istemi:  ipconfig
+  "IPv4 Address" satirini not alin (orn. 192.168.1.50)
+  Panelde: Ayarlar > Genel > "Musteri QR Menusu . Adres"
+      http://192.168.1.50:4091
+  localhost YAZMAYIN - musterinin telefonu acamaz.
+  Adresi girdikten sonra masa QR kodlarini YENIDEN YAZDIRIN.
 
-Sonra bu klasörün TAMAMINI USB belleğe kopyalayın.
+---------------------------------------------------------------
+ KURULUMDAN SONRA
+---------------------------------------------------------------
 
-NOT: Yönetim paneli (RESTO POS) bu pakette DEĞİLDİR — Tauri ile ayrı bir
-masaüstü .exe olarak derlenip (npm run masaustu:derle) ayrıca dağıtılır.
+  Panel          : Masaustundeki RESTO POS uygulamasi
+  Musteri menusu : http://<sunucu-ip>:4091/<masa-qr-kodu>
+  API            : http://localhost:4091/api
+  Veritabani     : localhost\SQLEXPRESS
+  Kurulum klasoru: C:\RestoranOtomasyonu   (SILMEYIN)
+
+Calistigini dogrulamak icin (Yonetici PowerShell):
+  Get-Service RestoranBackend        -> Running olmali
+  Get-Service 'MSSQL`$SQLEXPRESS'     -> Running olmali
+
+Loglar:
+  C:\RestoranOtomasyonu\logs\servis-hata.log
+  C:\RestoranOtomasyonu\logs\servis-cikti.log
+
+Kurulum yarida kalirsa bastan kurmaya gerek YOK, su komut tekrar
+calistirilabilir (Yonetici PowerShell):
+  powershell -ExecutionPolicy Bypass -File "C:\RestoranOtomasyonu\postinstall.ps1"
+
+---------------------------------------------------------------
+ NOTLAR
+---------------------------------------------------------------
+
+- Docker ARTIK KULLANILMIYOR. Sanallastirma / BIOS ayari gerekmez.
+- Node.js kurmaniza GEREK YOK - kurulum kendi node.exe'sini tasir.
+- Backend bir Windows Servisi olarak calisir, bilgisayar acilisinda
+  kendiliginden baslar. Panel kapaliyken de mutfak ekrani ve QR menu calisir.
+- Panel (RESTO POS) kendi icinde bir backend kopyasi tasir. Acilista 4091
+  portuna bakar; servis calisiyorsa kendi kopyasini BASLATMAZ. Kurulum
+  sirasi bu yuzden onemli.
+- 4091 portunu oldugu gibi internete ACMAYIN: yonetim API'si de ayni
+  porttadir.
+- .sig dosyalari guncelleme imzalaridir, kurulumda kullanilmaz.
+
+Ayrintili anlatim ve sorun giderme: projedeki BENIOKU.md
 "@
 Set-Content -Path (Join-Path $CikisKlasoru 'OKUBENI.txt') -Value $okuBeni -Encoding utf8
 
