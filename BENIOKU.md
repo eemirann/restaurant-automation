@@ -1,66 +1,127 @@
-2# Restoran Otomasyonu — Kurulum, Güncelleme ve Sorun Giderme
+# Restoran Otomasyonu — Kurulum, Güncelleme ve Sorun Giderme
 
 Bu doküman iki kişi için yazıldı:
 
-- **Kuran/kullanan kişi** → "İlk Kurulum", "Güncelleme", "Sık Karşılaşılan Hatalar" bölümleri.
-- **Geliştirici (paketi hazırlayan)** → "USB Paketini Hazırlama" ve "Geliştirici Notları" bölümleri.
+- **Kuran/kullanan kişi** → "Sistem Nelerden Oluşuyor", "İlk Kurulum", "Güncelleme",
+  "Sık Karşılaşılan Hatalar" bölümleri.
+- **Geliştirici (paketi hazırlayan)** → "USB Paketini Hazırlama" ve
+  "Geliştirici Notları" bölümleri.
 
-Sistem tamamen **Docker** üzerinde çalışır. Kurulan bilgisayara ayrıca SQL Server,
-Node.js veya başka bir veritabanı programı **kurmanıza gerek yoktur** — hepsi
-Docker imajlarının içinde gelir.
+> **Docker artık kullanılmıyor.** Sistem doğrudan Windows üzerinde çalışır:
+> veritabanı **SQL Server Express**, sunucu ise bir **Windows Servisi**dir.
+> Sanallaştırma (BIOS/VT-x) gereksinimi ortadan kalkmıştır.
+
+---
+
+## 1. Sistem Nelerden Oluşuyor
+
+İki ayrı kurulum dosyası var ve **ikisi de aynı bilgisayara kurulur**:
+
+| # | Kurulum | Ne kurar |
+|---|---|---|
+| 1 | `RestoranKurulumSihirbazi.exe` | SQL Server Express + veritabanı + **sunucu (Windows Servisi)** + müşteri QR menüsü |
+| 2 | `RESTO POS_x.y.z_x64.msi` (Tauri) | **Yönetim paneli** (masaüstü uygulaması) |
 
 Kurulumdan sonra kullanılan adresler:
 
 | Ne | Adres |
 |---|---|
-| Yönetim paneli | http://localhost:8080 |
-| Müşteri (QR) menüsü | http://localhost:8081 |
-| Backend / API | http://localhost:4091 |
-| Veritabanı (SQL Server) | localhost:1433 |
+| Yönetim paneli | Masaüstündeki **RESTO POS** uygulaması |
+| Müşteri (QR) menüsü | `http://<sunucu-ip>:4091/<masa-qr-kodu>` |
+| Backend / API | `http://localhost:4091/api` |
+| Veritabanı | `localhost\SQLEXPRESS` (TCP 1433) |
+
+### İkisi birbirine nasıl bağlanıyor?
+
+RESTO POS masaüstü uygulaması **kendi içinde eksiksiz bir backend kopyası** ve
+bir `node.exe` taşır (bu yüzden ~100 MB'tan büyüktür). Açılışta şunu yapar:
+
+1. **4091 portu cevap veriyor mu diye bakar.**
+2. **Cevap veriyorsa** → kendi backend'ini **başlatmaz**, var olana bağlanır.
+3. **Cevap vermiyorsa** → kendi taşıdığı backend'i başlatır.
+
+Windows Servisi bilgisayar açılışında 4091'i dinlemeye başladığı için, RESTO POS
+açıldığında **her zaman 2. durumdadır**: port çakışması olmaz, tek bir backend çalışır.
+
+> Bu yüzden **kurulum sırası önemlidir: önce sunucu, sonra RESTO POS.**
+
+### Neden ikisi de gerekli?
+
+RESTO POS'u tek başına da kurabilirsiniz, ama o zaman:
+
+- **Veritabanı olmaz.** Uygulamanın taşıdığı backend'in bağlanacağı bir SQL Server
+  yoktur; kurulum sihirbazı bunu kurar ve şifresini ayarlar.
+- **QR menüsü çalışmaz.** Müşteri menüsü uygulamanın içine paketlenmez; onu
+  kurulum sihirbazı yerleştirir.
+- **Bilgisayar açılışında sunucu ayağa kalkmaz.** Uygulama kapalıyken backend de
+  kapalıdır; mutfak ekranı, QR menü ve yedekleme çalışmaz.
 
 ---
 
-## 1. İlk Kurulum (yeni bir bilgisayara)
+## 2. İlk Kurulum (yeni bir bilgisayara)
 
 ### Gereksinimler
 
 - Windows 10/11 (64-bit)
-- **Sanallaştırma açık olmalı** (BIOS'ta Intel VT-x / AMD-V). Docker Desktop
-  bunu gerektirir, kurulum sihirbazı bu ayarı sizin yerinize değiştiremez.
-- En az 8 GB RAM önerilir (SQL Server tek başına ~2 GB kullanır).
-- USB bellekte hazır **KurulumPaketi** klasörü.
+- **Yönetici hakkı** (servis kaydı ve SQL Server kurulumu için)
+- En az 4 GB RAM (SQL Server Express ~1 GB kullanır)
+- USB bellekte hazır **KurulumPaketi** klasörü
+- Sanallaştırma/BIOS ayarı **gerekmez** (Docker döneminin şartıydı)
 
-### Adımlar
+### Adım 1 — Sunucu ve veritabanı
 
-1. USB'deki `KurulumPaketi` klasörünü hedef bilgisayara kopyalayın
-   (USB'den de çalıştırılabilir, ama diske kopyalamak daha hızlıdır).
-2. Klasörün içindeki **`RestoranKurulumSihirbazi.exe`** dosyasını çift tıklayın.
-3. Sihirbaz Docker Desktop'ı kontrol eder:
-   - Kurulu değilse, aynı klasördeki `Docker Desktop Installer.exe`'yi başlatmayı
-     teklif eder. **Docker Desktop kurulumu genellikle bilgisayarın yeniden
-     başlatılmasını ister** — yeniden başlattıktan sonra `RestoranKurulumSihirbazi.exe`'yi
-     **tekrar çalıştırın**.
-4. Sihirbaz size şunları sorar:
-   - **Veritabanı şifresi** — otomatik güçlü bir şifre üretilir. **Bu şifreyi not alın.**
-     Sadece kurulum sonunda bir kez gösterilir.
-   - **İlk yönetici** — Ad Soyad, kullanıcı adı, 4-6 haneli PIN. Panele bu bilgilerle gireceksiniz.
-5. "Kur" dedikten sonra kurulum otomatik ilerler (Docker imajlarını yükleme adımı
-   **birkaç dakika sürer**, imaj dosyası ~1.3 GB'dır — takılmış gibi görünse de bekleyin).
-6. Bitince masaüstünde **"Restoran Paneli"** kısayolu oluşur. Panele, 4. adımda
-   belirlediğiniz kullanıcı adı ve PIN ile girin.
+1. USB'deki `KurulumPaketi` klasörünü hedef bilgisayara kopyalayın.
+2. İçindeki **`RestoranKurulumSihirbazi.exe`** dosyasını çift tıklayın.
+3. Sihirbaz size şunları sorar:
+   - **Veritabanı şifresi** — otomatik güçlü bir şifre üretilir.
+     **Bu şifreyi not alın**, sadece kurulum sonunda bir kez gösterilir.
+   - **İlk yönetici** — Ad Soyad, kullanıcı adı, 4-6 haneli PIN.
+4. "Kur" dedikten sonra kurulum otomatik ilerler. **SQL Server Express kurulumu
+   birkaç dakika sürer ve ekranda ilerleme göstermez** — takılmış gibi görünse de bekleyin.
+5. Sonunda "Kurulum tamamlandı!" penceresi çıkar ve veritabanı şifresi gösterilir.
 
-> **Not:** Kurulum her şeyi `C:\RestoranOtomasyonu` klasörüne yapar. Bu klasörü
-> silmeyin — güncelleme ve yedekleme buradan yürür.
+Kurulum her şeyi `C:\RestoranOtomasyonu` klasörüne yapar. **Bu klasörü silmeyin** —
+güncelleme ve yedekleme buradan yürür.
+
+### Adım 2 — Yönetim paneli (RESTO POS)
+
+1. `RESTO POS_x.y.z_x64.msi` (ya da `.exe`) dosyasını çalıştırın.
+2. Kurulum bitince masaüstünde **RESTO POS** kısayolu oluşur.
+3. Uygulamayı açın; 1. adımda belirlediğiniz kullanıcı adı ve PIN ile girin.
+
+### Adım 3 — QR menü adresini ayarlayın
+
+Masa QR kodlarının hangi adresi açacağını sisteme siz söylemelisiniz.
+
+1. Sunucu bilgisayarın yerel IP'sini öğrenin — komut isteminde `ipconfig`,
+   "IPv4 Address" satırı (ör. `192.168.1.50`).
+2. Panelde **Ayarlar → Genel → "Müşteri QR Menüsü · Adres"** alanına yazın:
+
+   ```
+   http://192.168.1.50:4091
+   ```
+
+3. Kaydedin, sonra **masa QR kodlarını yeniden yazdırın**.
+
+> `localhost` **yazmayın** — o adres yalnızca sunucu bilgisayarında çalışır,
+> müşterinin telefonu açamaz.
 
 ### Kurulum sihirbazı elle ne yapıyor?
 
-Merak ederseniz: dosyaları kopyalar, `.env` dosyasını yazar, sonra
-`postinstall.ps1`'i çalıştırır. O script de sırasıyla:
-Docker'ı kontrol eder → `docker load` (offline imajlar) → `docker compose up -d` →
-SQL Server hazır olana kadar bekler → veritabanını oluşturur → migration'ları
-uygular → ilk admin kullanıcısını oluşturur.
+Dosyaları kopyalar, `.env` dosyasını yazar, sonra `postinstall.ps1`'i çalıştırır.
+O script sırasıyla:
 
-Kurulum yarıda hata verirse, bu script'i **tek başına tekrar çalıştırabilirsiniz**
+1. Node.js kurulu mu bakar (yoksa paketteki MSI ile sessizce kurar)
+2. `kurulum-sql-express.ps1` → SQL Express sessiz kurulum, **TCP/IP'yi açar**,
+   **Mixed Mode** kimlik doğrulamayı açar, `sa` şifresini ayarlar, 1433 portunu
+   sabitler, güvenlik duvarını açar, `RestoranDB` veritabanını oluşturur
+3. Müşteri menüsü derlenmemişse derler
+4. `node scripts\migrate.js` → tabloları kurar
+5. `node scripts\createFirstAdmin.js` → ilk yöneticiyi oluşturur
+6. `servis-kur.ps1` → NSSM ile **`RestoranBackend`** Windows Servisini kaydeder
+7. `http://localhost:4091/api` gerçekten cevap veriyor mu diye doğrular
+
+Kurulum yarıda hata verirse bu script'i **tek başına tekrar çalıştırabilirsiniz**
 (baştan kurmaya gerek yok, adımlar tekrar çalıştırılmaya uygundur):
 
 ```powershell
@@ -69,34 +130,35 @@ powershell -ExecutionPolicy Bypass -File "C:\RestoranOtomasyonu\postinstall.ps1"
 
 ---
 
-## 2. Güncelleme (kurulu bir bilgisayarı yeni sürüme geçirme)
+## 3. Güncelleme
 
-Yeni bir özellik/düzeltme yaptığınızda, hedef bilgisayarı **baştan kurmanıza gerek yok**.
-Veritabanındaki verileriniz (ürünler, siparişler, kullanıcılar) güncellemede **silinmez** —
-veritabanı container'ına hiç dokunulmaz.
+Veritabanındaki verileriniz (ürünler, siparişler, kullanıcılar) güncellemede
+**silinmez** — SQL Server'a ve `RestoranDB`'ye hiç dokunulmaz.
 
-### A) Geliştirici bilgisayarında paketi hazırlayın
+### Sunucu tarafı
+
+**A) Geliştirici bilgisayarında paketi hazırlayın**
 
 ```powershell
-# Hepsini paketle (backend + panel + müşteri menüsü)
 powershell -ExecutionPolicy Bypass -File scripts\paketle-guncelle.ps1
 
-# Ya da sadece değiştirdiğiniz servisi — çok daha küçük/hızlı paket
-powershell -ExecutionPolicy Bypass -File scripts\paketle-guncelle.ps1 -Servisler panel
+# Müşteri menüsü de değiştiyse:
+powershell -ExecutionPolicy Bypass -File scripts\paketle-guncelle.ps1 -MenuyuDerle
+
+# package.json bağımlılıkları değiştiyse (paket çok büyür):
+powershell -ExecutionPolicy Bypass -File scripts\paketle-guncelle.ps1 -BagimliliklarDegisti
 ```
 
-Proje kökünde **`Guncelleme\`** klasörü oluşur; içinde `guncelleme.tar`,
-`migrations\` ve `guncelle.ps1` bulunur.
+Proje kökünde **`Guncelleme\`** klasörü oluşur.
 
-> Sadece paneli paketlerseniz dosya ~25 MB olur; hepsini paketlerseniz ~1.3 GB.
-> Bu yüzden mümkünse `-Servisler` ile sınırlayın.
-
-### B) USB ile taşıyın
+**B) USB ile taşıyın**
 
 `Guncelleme\` klasörünün **içindeki dosyaları** hedef bilgisayarda
 `C:\RestoranOtomasyonu` klasörüne kopyalayın (üzerine yazsın).
 
-### C) Hedef bilgisayarda güncellemeyi uygulayın
+> `.env` dosyası pakette **yoktur**, üzerine yazılmaz — şifreleriniz korunur.
+
+**C) Hedef bilgisayarda uygulayın**
 
 PowerShell'i **Yönetici olarak** açıp:
 
@@ -104,18 +166,22 @@ PowerShell'i **Yönetici olarak** açıp:
 powershell -ExecutionPolicy Bypass -File "C:\RestoranOtomasyonu\guncelle.ps1"
 ```
 
-Script: yeni imajları yükler → backend/panel/müşteri menüsü container'larını
-yeniler → SQL Server'ı bekler → yeni migration'ları uygular.
+Script: servisi durdurur → yeni migration'ları uygular → servisi başlatır →
+4091'in cevap verdiğini doğrular.
 
-Sonunda `Güncelleme tamamlandı!` yazısını görmelisiniz.
+### Panel tarafı
+
+Yeni RESTO POS kurulumunu (`.msi`) çalıştırmanız yeterli, üzerine kurar.
+Panel ile sunucu ayrı güncellenebilir — API yolu (`/api`) ve port (4091)
+sabit tutulduğu için eski panel yeni sunucuyla çalışmaya devam eder.
 
 ---
 
-## 3. Ürünleri/menüyü başka bir kuruluma taşıma
+## 4. Ürünleri/menüyü başka bir kuruluma taşıma
 
 Panelde hazır bir özellik var — veritabanını elle kopyalamanıza gerek yok.
 
-1. **Kaynak bilgisayarda:** Panel → **Ürünler** sayfası → sağ üstte **"⇩ Dışa Aktar"**.
+1. **Kaynak bilgisayarda:** Panel → **Ürünler** → sağ üstte **"⇩ Dışa Aktar"**.
    Bir JSON dosyası iner (kategoriler, ürünler, varyantlar, ekstralar, şuruplar, reçeteler).
 2. Dosyayı USB ile hedef bilgisayara taşıyın.
 3. **Hedef bilgisayarda:** Admin olarak girin → Ürünler → **"⇧ İçe Aktar"** → dosyayı seçin.
@@ -123,41 +189,77 @@ Panelde hazır bir özellik var — veritabanını elle kopyalamanıza gerek yok
 Bilmeniz gerekenler:
 
 - Eşleştirme **isme göre** yapılır: aynı isimde ürün varsa **güncellenir**, yoksa
-  **yeni oluşturulur**. Bu yüzden aynı dosyayı birden fazla kez içe aktarmak güvenlidir.
+  **yeni oluşturulur**. Aynı dosyayı birden fazla kez içe aktarmak güvenlidir.
 - **Ürün görselleri dahil değildir** (dosya olarak ayrı taşınmalı).
-- **Canlı stok adetleri dahil değildir** (bunlar her restoranın kendi operasyonel verisidir).
+- **Canlı stok adetleri dahil değildir.**
 - Bu butonları sadece **Admin** rolündeki kullanıcılar görebilir.
 
 ---
 
-## 4. Sık Karşılaşılan Hatalar ve Çözümleri
+## 5. Sık Karşılaşılan Hatalar ve Çözümleri
 
-### "Login timeout expired" / "Failed to connect to db:1433"
+### Panel açılıyor ama "sunucuya ulaşılamıyor" diyor
 
-SQL Server henüz açılmamış ya da çökmüş. Önce durumu kontrol edin:
+Servis çalışmıyor olabilir. Yönetici PowerShell'de:
 
 ```powershell
-cd C:\RestoranOtomasyonu
-docker compose ps -a
+Get-Service RestoranBackend
 ```
 
-- `db` satırında **`Up`** yazıyorsa: SQL Server açılış aşamasındadır, 30-60 saniye
-  bekleyip script'i tekrar çalıştırın (script zaten 60 saniye bekliyor).
-- `db` satırında **`Exited (137)`** yazıyorsa: **bellek yetersizliğinden** container
-  öldürülmüş. Docker Desktop → Settings → Resources → Memory değerini **en az 4 GB**
-  yapın, sonra:
+`Running` değilse başlatın ve logu okuyun:
+
+```powershell
+Start-Service RestoranBackend
+Get-Content C:\RestoranOtomasyonu\logs\servis-hata.log -Tail 40
+```
+
+### Servis başlamıyor / hemen duruyor
+
+En sık üç neden:
+
+1. **`.env` içinde `JWT_SECRET` yok** — sunucu bunu bilerek reddeder ve çıkar.
+2. **Veritabanına bağlanamıyor** — `DB_SERVER` / `DB_PASSWORD` hatalı.
+3. **4091 portu başka bir programda.** Kim tuttuğuna bakın:
+
+   ```powershell
+   Get-NetTCPConnection -LocalPort 4091 -State Listen |
+     Select-Object OwningProcess, @{n='Ad';e={(Get-Process -Id $_.OwningProcess).ProcessName}}
+   ```
+
+   `RESTO POS` ya da `node` çıkarsa: masaüstü uygulaması kendi backend'ini
+   başlatmış demektir (servis kurulmadan önce açılmış olabilir). Uygulamayı
+   tamamen kapatın, sonra `Start-Service RestoranBackend`.
+
+### "Login timeout expired" / veritabanına bağlanılamıyor
+
+```powershell
+Get-Service 'MSSQL$SQLEXPRESS'
+```
+
+- `Stopped` ise: `Start-Service 'MSSQL$SQLEXPRESS'`
+- `Running` ama yine bağlanmıyorsa, TCP/IP kapanmış olabilir. Yapılandırmayı
+  yeniden uygulayın (tekrar çalıştırılabilir):
+
   ```powershell
-  docker compose up -d db
+  powershell -ExecutionPolicy Bypass -File "C:\RestoranOtomasyonu\kurulum-sql-express.ps1" -SaSifre "<.env'deki DB_PASSWORD>"
   ```
-- Ayrıntılı log için: `docker compose logs db`
 
-### "Cannot bind argument to parameter 'Path' because it is an empty string."
+### QR menüsü telefonda açılmıyor
 
-`C:\RestoranOtomasyonu` içindeki script eski sürüm. Depodaki güncel dosyayı kopyalayın:
+Sırayla kontrol edin:
 
-```powershell
-Copy-Item "...\restoran-backend\installer\postinstall.ps1" "C:\RestoranOtomasyonu\postinstall.ps1" -Force
-```
+1. **Adres doğru mu?** Ayarlar → Genel → "Müşteri QR Menüsü · Adres" değeri
+   `http://<yerel-ip>:4091` olmalı — `localhost` **olmamalı**.
+2. **Telefon aynı Wi-Fi'da mı?** Mobil veriyle çalışmaz (bkz. Bölüm 8).
+3. **Güvenlik duvarı 4091'e izin veriyor mu?**
+
+   ```powershell
+   Get-NetFirewallRule -DisplayName "*4091*"
+   ```
+
+4. **Menü derlenmiş mi?** `C:\RestoranOtomasyonu\musteri-menu\dist\index.html`
+   dosyası olmalı. Yoksa sunucu logunda "Müşteri menüsü derlenmemiş" uyarısı görürsünüz.
+5. **QR kodları adres değiştikten sonra yeniden yazdırıldı mı?**
 
 ### "-File" parametresi tanınmıyor / komut hata veriyor
 
@@ -168,20 +270,20 @@ tanımaz. Komutu birebir şöyle yazın (İ değil, I):
 powershell -ExecutionPolicy Bypass -File "C:\RestoranOtomasyonu\postinstall.ps1"
 ```
 
-### "Docker Desktop çalışır duruma getirilemedi"
+### "SQL Server Express sessiz kurulumu başarısız oldu"
 
-- Görev çubuğundaki balina simgesine bakın; **"Docker Desktop is running"** demeli.
-- Docker Desktop'ı elle açıp tam yüklenmesini bekleyin (ilk açılış 1-2 dakika sürebilir),
-  sonra kurulumu tekrar çalıştırın.
-- Hâlâ olmuyorsa sanallaştırma kapalı olabilir: BIOS'ta **Intel VT-x / AMD-V**, Windows'ta
-  **Denetim Masası → Programlar → Windows özelliklerini aç/kapat** altında
-  **"Virtual Machine Platform"** ve **"Windows Subsystem for Linux"** açık olmalı.
+Ayrıntılı günlük şurada:
+`C:\Program Files\Microsoft SQL Server\<sürüm>\Setup Bootstrap\Log\Summary.txt`
 
-### "images.tar bulunamadı" / "guncelleme.tar bulunamadı"
+Sık nedenler: aynı isimde yarım kalmış bir instance, parola politikasını
+karşılamayan `sa` şifresi (en az 8 karakter; büyük+küçük harf, rakam, sembol),
+eksik Windows güncellemesi.
 
-USB'deki klasörün **tamamı** kopyalanmamış. `KurulumPaketi` (kurulum için) veya
-`Guncelleme` (güncelleme için) klasöründeki **tüm** dosyaların hedef klasörde
-olduğundan emin olun. Bu dosyalar büyüktür, kopyalama yarıda kesilmiş olabilir.
+Daha önce **farklı bir `sa` şifresiyle** kurulmuşsa şifreyi Windows kimliğiyle sıfırlayın:
+
+```powershell
+sqlcmd -S localhost\SQLEXPRESS -E -Q "ALTER LOGIN sa WITH PASSWORD='<yeni>'; ALTER LOGIN sa ENABLE;"
+```
 
 ### ".env dosyası bulunamadı"
 
@@ -191,137 +293,175 @@ Script'i yanlış klasörde çalıştırıyorsunuz. Kurulumun yapıldığı klas
 
 ### "UYARI: İlk admin oluşturulamadı — muhtemelen bu kullanıcı adı zaten var"
 
-**Bu bir hata değildir.** Kurulum script'i ikinci kez çalıştırıldığında normaldir;
-admin kullanıcısı zaten oluşturulmuştur. Mevcut bilgilerinizle giriş yapabilirsiniz.
+**Bu bir hata değildir.** Kurulum ikinci kez çalıştırıldığında normaldir; admin
+kullanıcısı zaten oluşturulmuştur. Mevcut bilgilerinizle giriş yapabilirsiniz.
 
-Yeni bir kullanıcı eklemek isterseniz panelden **Kullanıcılar** sayfasını kullanın,
-ya da:
-
-```powershell
-docker compose exec backend node scripts/createFirstAdmin.js "Ad Soyad" "kullaniciadi" "1234"
-```
-
-### Panel açılmıyor / "bu siteye ulaşılamıyor"
+Yeni kullanıcı için panelden **Kullanıcılar** sayfasını kullanın, ya da:
 
 ```powershell
 cd C:\RestoranOtomasyonu
-docker compose ps
+node scripts\createFirstAdmin.js "Ad Soyad" "kullaniciadi" "1234"
 ```
-
-Tüm servisler (`db`, `backend`, `panel`, `customer-menu`) `Up` olmalı. Değilse:
-
-```powershell
-docker compose up -d
-docker compose logs backend    # hata varsa burada görünür
-```
-
-### "port is already allocated" / port çakışması
-
-Başka bir program 8080, 8081, 4091 veya 1433 portunu kullanıyor. O programı kapatın,
-ya da `docker-compose.yml` içindeki port eşlemesini değiştirin (örn. `"8090:80"`).
 
 ---
 
-## 5. USB Paketini Hazırlama (geliştirici)
+## 6. USB Paketini Hazırlama (geliştirici)
 
-İnternete bağlı, kodun bulunduğu makinede **bir kez**:
+İnternete bağlı, kodun bulunduğu makinede:
 
 ```powershell
-# 1) İmajları derle/indir ve KurulumPaketi\ klasörünü oluştur
+# 1) Bağımlılıkları kur, müşteri menüsünü derle, KurulumPaketi\ klasörünü oluştur
 powershell -ExecutionPolicy Bypass -File scripts\paketle.ps1
 ```
 
-Sonra:
+Sonra elle eklenecekler:
 
-2. [Docker Desktop Installer.exe](https://www.docker.com/products/docker-desktop)'yi
-   indirip **`KurulumPaketi\`** klasörüne kopyalayın (script bunu indirmez).
-3. [Inno Setup 6](https://jrsoftware.org/isinfo.php) ile `installer\RestoranKurulum.iss`
-   dosyasını derleyin (IDE'de aç → *Compile*, ya da `ISCC.exe installer\RestoranKurulum.iss`).
+2. **`installer\nssm.exe`** — [nssm.cc/download](https://nssm.cc/download) →
+   `win64\nssm.exe`. Kurulum programının **içine gömülür**, bu yüzden Inno Setup
+   derlemesinden **önce** konmalı.
+3. **`SQLEXPR_x64_ENU.exe`** — Microsoft'tan "SQL Server 2022 Express" →
+   *Download Media* → *Express Core*. **`KurulumPaketi\`** klasörüne konur.
+4. **`node-vXX.X.X-x64.msi`** — hedef makinede Node.js yoksa gerekir.
+   **`KurulumPaketi\`** klasörüne konur.
+5. [Inno Setup 6](https://jrsoftware.org/isinfo.php) ile
+   `installer\RestoranKurulum.iss` derlenir (IDE'de aç → *Compile*).
    Çıkan `RestoranKurulumSihirbazi.exe` otomatik olarak `KurulumPaketi\` içine düşer.
-4. `KurulumPaketi\` klasörünün **tamamını** USB belleğe kopyalayın.
+6. **RESTO POS masaüstü paketi** ayrı derlenir:
+
+   ```powershell
+   npm run masaustu:derle
+   ```
+
+   Çıktı: `src-tauri\target\release\bundle\msi\` (ve `nsis\`).
+   Bu dosyayı da `KurulumPaketi\` klasörüne kopyalayın.
+7. `KurulumPaketi\` klasörünün **tamamını** USB belleğe kopyalayın.
 
 ---
 
-## 6. Geliştirici Notları
+## 7. Geliştirici Notları
 
 ### PowerShell script'leri UTF-8 **BOM ile** kaydedilmeli
 
 Windows PowerShell 5.1, `-File` ile çalıştırılan bir `.ps1` dosyasında BOM yoksa
-dosyayı sistem ANSI kod sayfasıyla okur. Bu durumda Türkçe karakterler bozulur
-(`Ã§`, `Ä±` gibi) ve bazı satırlarda **parse hatası** oluşur. Bir script'i
-düzenledikten sonra BOM'u geri koymak için:
+dosyayı sistem ANSI kod sayfasıyla okur. Türkçe karakterler bozulur (`Ã§`, `Ä±`)
+ve **parse hatası** oluşur — özellikle uzun tire (`—`) ANSI'de `â€"` olur ve
+içindeki tırnak dizeleri erkenden bitirir. Bir script'i düzenledikten sonra
+BOM'u geri koymak için:
 
 ```powershell
-$p = 'scripts\paketle-guncelle.ps1'
-$c = Get-Content $p -Raw -Encoding UTF8
+$p = 'installer\servis-kur.ps1'
+$c = [System.IO.File]::ReadAllText($p, (New-Object System.Text.UTF8Encoding($false)))
 [System.IO.File]::WriteAllText($p, $c, (New-Object System.Text.UTF8Encoding($true)))
+```
+
+### `$degisken:` — kapsam niteleyicisi tuzağı
+
+Çift tırnaklı dizede `"...\$servisAdi:(OI)"` yazarsanız PowerShell `$servisAdi:`
+kısmını **kapsam (scope) niteleyicisi** sanır ve sözdizimi hatası verir.
+İki nokta üst üste gelecekse `${degisken}` kullanın:
+
+```powershell
+icacls $klasor /grant "NT SERVICE\${servisAdi}:(OI)(CI)M" /T
 ```
 
 ### `[CmdletBinding()]` + `$PSScriptRoot` tuzağı
 
 Bu ortamda `[CmdletBinding()]` kullanılan script'lerde `$PSScriptRoot`,
-**parametre varsayılan değeri içinde boş gelir**. Bu yüzden script'lerde
-`$PSScriptRoot` doğrudan `param()` bloğunda kullanılmaz; gövdede
-`$MyInvocation.MyCommand.Path` yedeğiyle çözülür. Yeni script yazarken aynı
-kalıbı izleyin.
+**parametre varsayılan değeri içinde boş gelir**. Bu yüzden `$PSScriptRoot`
+doğrudan `param()` bloğunda kullanılmaz; gövdede
+`$MyInvocation.MyCommand.Path` yedeğiyle çözülür.
 
-### `docker compose config --images <servis>` filtrelemiyor
+### `PORT=4091` ve `/api` sabittir
 
-Kullanılan Compose sürümünde bu komut servis adına göre **süzmüyor**, tüm imajları
-döndürüyor. `paketle-guncelle.ps1` bu yüzden imaj etiketini
-`restoran-otomasyonu-<servis>:latest` kalıbından doğrudan üretir.
+RESTO POS masaüstü uygulaması, backend adresini (`http://localhost:4091/api`)
+**derleme anında** içine gömer (bkz. `scripts/masaustu-hazirla.mjs` — panel
+`VITE_API_URL` sabitlenerek derlenir) ve Tauri CSP'si de yalnızca bu adrese
+bağlanmaya izin verir. Portu ya da API yolunu değiştirmek **var olan tüm
+masaüstü kurulumlarını bozar**; değiştirilecekse panel de yeniden derlenip
+yeniden dağıtılmalıdır.
 
-### `docker-compose.yml` içindeki `name:` alanı sabit
+### Masaüstü uygulaması kendi backend'ini taşır
 
-`name: restoran-otomasyonu` **bilerek sabittir**. Paketleme makinesindeki klasör adı
-ile hedefteki `C:\RestoranOtomasyonu` farklı olduğu için, imaj etiketleri klasör adına
-göre türetilseydi `docker compose up -d` offline yüklenen imajları bulamaz, kurulum bozulurdu.
+`src-tauri/backend-dist` (backend kopyası) + `src-tauri/binaries/node-*.exe`
+(sidecar) uygulamanın içine paketlenir. `src-tauri/src/main.rs` açılışta 4091'i
+TCP ile yoklar; **cevap varsa kendi backend'ini başlatmaz**. Windows Servisi
+kuruluysa her zaman bu durumdadır.
+
+Dikkat: `backend-dist` içine `musteri-menu` ve `scripts/` **kopyalanmaz**.
+Yani servis kapalıyken uygulamanın kendi backend'i çalışırsa QR menüsü servis
+edilmez (sunucu logunda uyarı basar, çökmez).
 
 ### Tek elemanlı dizi + splat tuzağı
 
 `$dizi = $x | ForEach-Object {...}` tek eleman üretirse sonuç **dizi değil string**
-olur ve `@dizi` splat'i onu karakter karakter argümana böler. `@( ... )` ile
-sarmalayın.
+olur ve `@dizi` splat'i onu karakter karakter argümana böler. `@( ... )` ile sarmalayın.
 
 ---
 
-## 7. Faydalı Komutlar
+## 8. Faydalı Komutlar
 
-Hepsi `C:\RestoranOtomasyonu` klasöründe çalıştırılır.
+Yönetici PowerShell'de:
 
 ```powershell
-docker compose ps                  # servislerin durumu
-docker compose ps -a               # durmuş/çökmüş container'lar dahil
-docker compose logs backend        # backend logları
-docker compose logs db             # veritabanı logları
-docker compose restart backend     # tek servisi yeniden başlat
-docker compose up -d               # duran servisleri kaldır
-docker compose down                # hepsini durdur (VERİ SİLİNMEZ)
-docker compose run --rm backend npm run migrate   # migration'ları elle uygula
+# --- Sunucu servisi ---
+Get-Service RestoranBackend                     # durum
+Restart-Service RestoranBackend                 # yeniden başlat
+Stop-Service RestoranBackend                    # durdur
+Get-Content C:\RestoranOtomasyonu\logs\servis-hata.log -Tail 40    # hata logu
+Get-Content C:\RestoranOtomasyonu\logs\servis-cikti.log -Tail 40   # çıktı logu
+
+# --- Veritabanı ---
+Get-Service 'MSSQL$SQLEXPRESS'
+sqlcmd -S localhost\SQLEXPRESS -U sa -P "<sifre>" -Q "SELECT name FROM sys.databases"
+
+# --- Bakım ---
+cd C:\RestoranOtomasyonu
+node scripts\migrate.js                         # migration'ları elle uygula
+node scripts\createFirstAdmin.js "Ad" "kadi" "1234"
+
+# --- Kim 4091'i tutuyor? ---
+Get-NetTCPConnection -LocalPort 4091 -State Listen |
+  Select-Object OwningProcess, @{n='Ad';e={(Get-Process -Id $_.OwningProcess).ProcessName}}
 ```
 
-> `docker compose down` verileri silmez — veriler Docker volume'lerinde durur.
-> Volume'leri de silen `docker compose down -v` komutunu **kullanmayın**,
-> tüm veritabanı gider.
+> Yedekler `C:\RestoranOtomasyonu\db-backups\` klasöründedir. Bu klasörü
+> düzenli olarak harici bir diske kopyalayın — otomatik yedek aynı bilgisayarda durur.
 
 ---
 
-## 8. Bilinen Sınırlama: QR menü sadece yerel ağda çalışır
+## 9. Bilinen Sınırlama: QR menü sadece yerel ağda çalışır
 
-Masa QR kodları şu an panelde `VITE_CUSTOMER_MENU_URL` adresinden üretilir
-(varsayılan `http://localhost:8081`). Bu adres **yalnızca restoranın kendi
-ağındaki** cihazlardan açılabilir:
+Müşteri menüsü sunucunun 4091 portundan yayınlanır. Bu adres **yalnızca
+restoranın kendi ağındaki** cihazlardan açılabilir:
 
-- Müşteri restoranın **WiFi'sine bağlıysa** çalışır (QR adresinin `localhost`
-  değil, bilgisayarın yerel IP'si olacak şekilde ayarlanması gerekir, örn.
-  `http://192.168.1.50:8081`).
-- Müşteri **mobil veri (4G/5G)** kullanıyorsa **çalışmaz** — bu adrese internetten
-  ulaşılamaz.
+- Müşteri restoranın **Wi-Fi'sine bağlıysa** çalışır.
+- Müşteri **mobil veri (4G/5G)** kullanıyorsa **çalışmaz.**
 
-Mobil veriyle de çalışması için sistemin internete güvenli şekilde açılması gerekir
-(Cloudflare Tunnel veya router'da port yönlendirme + dinamik DNS). Bu henüz
-yapılandırılmamıştır.
+### ⚠️ Mobil veriye açacaksanız
 
-Garson çağırma özelliği ise **hazırdır**: müşteri menüsünden gönderilen istekler
-(garson çağır, hesap, su, peçete, çatal-bıçak) panelde **Müşteri İstekleri**
-sayfasında canlı olarak görünür ve personel "hallettim" ile kapatabilir.
+Docker döneminde menü ayrı bir nginx konteynerindeydi ve o nginx **yalnızca**
+anonim müşteri uçlarını (`/api/public/*`, `GET /api/settings`) dışarı veriyordu;
+yönetim API'si internete hiç çıkmıyordu. **O filtre katmanı artık yok** — menü ve
+yönetim API'si aynı portu paylaşıyor.
+
+Bu yüzden **4091'i olduğu gibi port yönlendirme/tünel ile internete açmayın**;
+tüm yönetim API'si de açılmış olur. Tünel veya ters proxy kullanacaksanız
+yalnızca şu yollara izin verin:
+
+```
+/                 (menü sayfası ve /assets)
+/api/public/*     (anonim müşteri uçları)
+/api/settings     (yalnızca GET)
+/uploads/*        (ürün görselleri)
+```
+
+Ayrıca yerel ağda her telefon backend'e kendi IP'siyle bağlandığı için hız
+limitleri kişi başına işler; tünel arkasında tüm müşteriler tek IP'ye düşer ve
+`middleware/rateLimiters.js` içindeki `apiLimiter` (15 dakikada 1000 istek)
+yaklaşık 9 telefonda devreye girer — o senaryoda bu değer yükseltilmelidir.
+
+### Garson çağırma hazır
+
+Müşteri menüsünden gönderilen istekler (garson çağır, hesap, su, peçete,
+çatal-bıçak) panelde **Müşteri İstekleri** sayfasında canlı görünür ve personel
+"hallettim" ile kapatabilir.

@@ -218,38 +218,46 @@ Bağlantı JWT ile doğrulanır: `io(url, { auth: { token } })`. Origin, `CORS_O
 
 ---
 
-## Docker ile Dağıtım
+## Dağıtım
 
-Tam yığın (MSSQL + backend + panel + müşteri QR menüsü) `docker-compose.yml` ile gelir.
+Üretim kurulumu **Docker kullanmaz**. Kasa/POS bilgisayarına iki paket kurulur:
+
+| # | Paket | Ne kurar |
+|---|---|---|
+| 1 | `RestoranKurulumSihirbazi.exe` (Inno Setup) | SQL Server Express + `RestoranDB` + backend'i **Windows Servisi** olarak (NSSM) + müşteri QR menüsü |
+| 2 | `RESTO POS ...msi` (Tauri) | Yönetim paneli — masaüstü uygulaması |
+
+- **Backend + QR menü:** tek süreç, tek port. Backend `musteri-menu/dist`'i statik
+  servis eder (bkz. `server.js`), ayrı bir web sunucusu yoktur.
+  Menü adresi: `http://<sunucu-ip>:4091/<masa-qr-kodu>`
+- **Panel:** Tauri uygulaması kendi içinde bir backend kopyası ve `node.exe`
+  sidecar'ı taşır. Açılışta 4091'i yoklar; **cevap varsa kendi backend'ini
+  başlatmaz**, Windows Servisi'ne bağlanır. Bu yüzden ikisi çakışmaz —
+  kurulum sırası: **önce sunucu, sonra panel**.
+- **`PORT=4091` ve `/api` sabittir.** Panel bu adresi build anında içine gömer
+  (`scripts/masaustu-hazirla.mjs`) ve Tauri CSP'si yalnızca ona izin verir;
+  değiştirilirse panel yeniden derlenip yeniden dağıtılmalıdır.
+
+Ayrıntılı kurulum/güncelleme/sorun giderme: [`BENIOKU.md`](BENIOKU.md) ·
+Paket hazırlama ve mimari gerekçeler: [`installer/README.md`](installer/README.md)
+
+### Geliştirme
 
 ```bash
-# 1) Kök dizinde .env oluştur (en az JWT_SECRET ve DB_PASSWORD gerekli)
-cp .env.example .env
-#    DB_PASSWORD güçlü olmalı (MSSQL politikası: büyük/küçük harf + rakam + sembol)
+cp .env.example .env       # JWT_SECRET ve DB_* zorunlu
+npm install
+npm run migrate            # şemayı kur
+node scripts/createFirstAdmin.js "Ad Soyad" "kullaniciadi" "1234"
+node server.js             # :4091
 
-# 2) Ayağa kaldır
-docker compose up -d --build
-
-# 3) İlk kurulumda bir kez: veritabanını oluştur + migration'ları uygula
-docker compose exec db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa \
-  -P "$DB_PASSWORD" -C -Q "IF DB_ID('RestoranDB') IS NULL CREATE DATABASE RestoranDB"
-docker compose run --rm backend npm run migrate
-
-# 4) İlk kurulumda bir kez: panele giriş yapabilecek ilk Admin kullanıcısını oluştur
-#    (Users tablosu migration sonrası boştur, /register ucu sadece Admin'e açık —
-#    bu script o döngüyü tek seferlik kırar; bkz. scripts/createFirstAdmin.js)
-docker compose exec backend node scripts/createFirstAdmin.js "Ad Soyad" "kullaniciadi" "1234"
+cd restoran-panel && npm run dev    # :5173  (panel)
+cd musteri-menu  && npm run dev     # :5174  (QR menü, /api'yi 4091'e proxy'ler)
+npm run masaustu           # Tauri kabuğuyla masaüstü modunda
 ```
 
-- **Panel:** http://localhost:8080  ·  **Müşteri Menü:** http://localhost:8081  ·  **Backend:** http://localhost:4091
-- `VITE_API_URL` (her iki panel imajına) ve `VITE_CUSTOMER_MENU_URL` (sadece panel'e — masa QR
-  kodlarının işaret edeceği adres) **build anında** gömülür — üretimde gerçek adresleri `.env`'de
-  ayarlayın, ilgili imaj(lar)ı yeniden build edin.
-- Ürün görselleri `uploads` volume'unda kalıcıdır; MSSQL verisi `mssql-data` volume'unda.
-- Panel'i/müşteri menüsünü Docker'sız çalıştırmak için ilgili klasörde `.env` içinde
-  `VITE_API_URL` (ve panel için `VITE_CUSTOMER_MENU_URL`) ayarlayıp `npm run build`/`npm run dev` kullanın.
-- **İnternetsiz (USB'den) kurulum:** internet bağlantısı olmayan bir kasa/POS bilgisayarına tek bir
-  çift-tıklamalı Türkçe sihirbazla kurmak için bkz. [`installer/README.md`](installer/README.md).
+`docker-compose.yml` hâlâ duruyor ama **yalnızca geliştirme içindir** ve
+installer tarafından artık kopyalanmaz; `customer-menu` ile `cloudflared`
+servisleri kaldırılmıştır (gerekçe dosyanın içinde).
 
 ## Proje Yapısı
 
