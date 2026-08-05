@@ -625,10 +625,17 @@ fn main() {
             //   3) Hiçbiri olmadıysa                -> gömülü kopyayı başlat
             // 2. adım olmadan, duran bir servis sessizce ESKİ gömülü backend'in
             // devreye girmesine yol açıyordu.
-            let mut kaynak = "servis";
+            let mut kaynak = "dis";
 
             if backend_hazir_mi() {
-                println!("[resto] backend zaten çalışıyor, yeni süreç başlatılmadı");
+                // 4091'i dinleyen HER ZAMAN servis olmayabilir: geliştiricinin
+                // elle başlattığı bir node, ya da önceki oturumdan kalmış öksüz
+                // bir süreç de olabilir. Tanılama doğru olsun diye ayırt edilir.
+                kaynak = match servis_durumu(SERVIS_ADI).as_deref() {
+                    Some("RUNNING") => "servis",
+                    _ => "dis",
+                };
+                println!("[resto] backend zaten çalışıyor ({kaynak}), yeni süreç başlatılmadı");
             } else {
                 let servis = servis_durumu(SERVIS_ADI);
                 let servis_kurulu = servis.is_some();

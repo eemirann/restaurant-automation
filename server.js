@@ -153,8 +153,10 @@ app.use('/api/logs', logsRoutes);
 const { MENU_DIST_DIR } = require('./utils/paths');
 if (fs.existsSync(path.join(MENU_DIST_DIR, 'index.html'))) {
     app.use(express.static(MENU_DIST_DIR));
-    app.get(/^\/(?!api\/|uploads\/).*/, (req, res, next) => {
-        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    // Önekler HEM '/api/x' HEM de tam '/api' biçiminde dışlanır: yalnızca
+    // 'api\/' yazılsaydı eğik çizgisiz '/api' isteği SPA'ya düşer ve istemci
+    // 404 JSON yerine index.html alırdı (hata ayıklamayı zorlaştırır).
+    app.get(/^\/(?!(?:api|uploads)(?:\/|$)).*/, (req, res) => {
         res.sendFile(path.join(MENU_DIST_DIR, 'index.html'));
     });
 } else {
