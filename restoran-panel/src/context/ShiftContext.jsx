@@ -1,11 +1,17 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client';
 import { getSocket } from '../api/socket';
 import { useAuth } from './AuthContext';
 
-// Vardiya açması gereken roller (kasa/servis). Yönetici (Admin) muaf —
+// Vardiya kaydı tutulan roller (kasa/servis/mutfak). Yönetici (Admin) muaf —
 // gözetim/override yapar, kendi kasası olmadan panele erişebilir.
-export const SHIFT_ROLES = ['Cashier', 'Waiter'];
+//
+// ÖNEMLİ: Bu roller artık kasa açılış/kapanış tutarı SORULMAZ. Vardiya,
+// giriş yapılır yapılmaz 0 açılış kasasıyla otomatik açılır ve çıkışta
+// sayım istenmeden sessizce kapatılır. Kayıt yalnızca MESAİ TAKİBİ için
+// tutulur (Vardiya / Aktif Vardiya ekranlarında süre görünür). Nakit
+// sayımı gerektiğinde yönetici Aktif Vardiya ekranından yapabilir.
+export const SHIFT_ROLES = ['Cashier', 'Waiter', 'Kitchen'];
 
 const ShiftContext = createContext(null);
 
@@ -56,10 +62,27 @@ export function ShiftProvider({ children }) {
   }, [refresh]);
 
   const closeShift = useCallback(async (CountedCash, Note) => {
-    const res = await client.post('/shifts/close', { CountedCash, Note: Note || undefined });
+    const res = await client.post('/shifts/close', {
+      CountedCash: typeof CountedCash === 'number' ? CountedCash : undefined,
+      Note: Note || undefined,
+    });
     setShift(null);
     return res.data;
   }, []);
+
+  // Otomatik vardiya açılışı — kullanıcıya hiçbir şey sorulmadan 0 açılış
+  // kasasıyla açılır. Sunucu aynı kullanıcı için ikinci bir açık vardiyayı
+  // 409 ile reddettiğinden çift açma riski yok; yine de ref ile aynı oturumda
+  // tek deneme yapılır (refresh 20 sn'de bir çalışıyor, döngüye girmesin).
+  const autoOpening = useRef(false);
+  useEffect(() => {
+    if (loading || shift || !user || !SHIFT_ROLES.includes(user.role)) return;
+    if (autoOpening.current) return;
+    autoOpening.current = true;
+    openShift(0)
+      .catch(() => { /* 409 = zaten açık; ağ hatası ise sonraki refresh toparlar */ })
+      .finally(() => { autoOpening.current = false; });
+  }, [loading, shift, user, openShift]);
 
   return (
     <ShiftContext.Provider value={{ shift, loading, refresh, openShift, closeShift }}>

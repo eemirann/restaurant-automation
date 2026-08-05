@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
-import { useShift, SHIFT_ROLES } from '../context/ShiftContext';
-import { OpenShiftModal, CloseShiftModal } from './ShiftWorkflow';
+import { useShift } from '../context/ShiftContext';
 import CommandPalette from './CommandPalette';
 import NotificationCenter from './NotificationCenter';
 import client from '../api/client';
+import { ROLE_LABELS } from '../constants/roles';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Panel', roles: null, icon: '📊' },
+  // Panel (Dashboard) yalnızca yöneticide — kasiyer/garson/mutfak kendi
+  // ekranıyla başlar (bkz. constants/roles.js > ROLE_HOME).
+  { to: '/', label: 'Panel', roles: ['Admin'], icon: '📊' },
   { to: '/orders', label: 'Siparişler', roles: null, icon: '🧾' },
   { to: '/tables', label: 'Masalar', roles: null, icon: '🍽️' },
   { to: '/reservations', label: 'Rezervasyonlar', roles: null, icon: '📅' },
@@ -34,11 +36,13 @@ const NAV_ITEMS = [
   { to: '/settings', label: 'Ayarlar', roles: ['Admin'], icon: '⚙️' },
 ];
 
-const ROLE_LABELS = {
-  Admin: 'Yönetici',
-  Cashier: 'Kasiyer',
-  Waiter: 'Garson',
-};
+// Mutfak rolü kiosk/tablet gibi çalışır: yalnızca Mutfak (KDS) ekranı.
+// Rota tarafındaki karşılığı: ProtectedRoute.jsx (başka adrese giderse /kds'e döner).
+const KITCHEN_PATHS = ['/kds'];
+
+// Bu sayfalar TAM EKRAN açılır: sol menü ve üst çubuk gizlenir, içerik
+// ekranın tamamını kaplar. Sağ alttaki yüzen düğme menüyü geri getirir.
+const FULLSCREEN_PATHS = ['/tables'];
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
 
@@ -46,9 +50,16 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { RestaurantName } = useSettings();
-  const { shift, loading: shiftLoading } = useShift();
+  const { shift, closeShift } = useShift();
   const navigate = useNavigate();
-  const [showClose, setShowClose] = useState(false);
+  const location = useLocation();
+
+  // Tam ekran sayfalarda kabuk (sol menü + üst çubuk) gizli başlar; yüzen
+  // düğmeyle geçici olarak açılır, sayfa değişince yine gizlenir.
+  const isFullscreenPage = FULLSCREEN_PATHS.includes(location.pathname);
+  const [chromeOpen, setChromeOpen] = useState(false);
+  useEffect(() => { setChromeOpen(false); }, [location.pathname]);
+  const hideChrome = isFullscreenPage && !chromeOpen;
 
   // Komut paleti — global Ctrl/Cmd+K kısayolu (bkz. CommandPalette.jsx).
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -75,30 +86,26 @@ export default function Layout({ children }) {
     });
   };
 
-  // Sadece kasa/servis rolleri (Cashier, Waiter) vardiya açmak zorunda.
-  // Admin muaf — kendi kasası olmadan panele erişir, gözetim/override yapar.
-  const requiresShift = !!user && SHIFT_ROLES.includes(user.role);
-  const mustOpenShift = requiresShift && !shiftLoading && !shift;
-
-  const doLogout = async () => {
+  // Çıkış: açık vardiya varsa kasa sayımı SORULMADAN sessizce kapatılır
+  // (mesai kaydı kapanış saatiyle birlikte kalır, bkz. ShiftContext.jsx).
+  const handleLogout = async () => {
+    if (shift) {
+      try { await closeShift(); } catch { /* kapatılamazsa da çıkışı engelleme */ }
+    }
     try { await client.post('/auth/logout'); } catch { /* best-effort audit */ }
     logout();
     navigate('/login');
   };
 
-  const handleLogout = () => {
-    // Vardiyası açık kasiyer/garson kapatmadan çıkamaz.
-    if (requiresShift && shift) { setShowClose(true); return; }
-    doLogout();
-  };
-
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.roles || item.roles.includes(user?.role)
-  );
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (user?.role === 'Kitchen') return KITCHEN_PATHS.includes(item.to);
+    return !item.roles || item.roles.includes(user?.role);
+  });
 
   return (
     <div className="min-h-screen bg-charcoal font-body flex">
-      {/* Sidebar */}
+      {/* Sidebar — tam ekran sayfalarda gizlenir */}
+      {!hideChrome && (
       <aside className={`relative bg-ink text-cream flex flex-col shrink-0 transition-[width] duration-200 ${collapsed ? 'w-16' : 'w-60'}`}>
         <button
           onClick={toggleCollapsed}
@@ -185,9 +192,11 @@ export default function Layout({ children }) {
           </button>
         </div>
       </aside>
+      )}
 
       {/* İçerik */}
       <main className="flex-1 overflow-auto flex flex-col">
+        {!hideChrome && (
         <header className="h-14 shrink-0 border-b border-hairline flex items-center justify-end gap-2 px-6">
           <button
             onClick={() => setPaletteOpen(true)}
@@ -199,14 +208,25 @@ export default function Layout({ children }) {
           </button>
           <NotificationCenter />
         </header>
+        )}
         <div className="flex-1 overflow-auto">{children}</div>
       </main>
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={visibleItems} />
+      {/* Tam ekran sayfalarda menüyü aç/kapat (Masalar planı için).
+          z-40: sayfa içeriğinin üstünde ama modalların (z-50) ALTINDA —
+          masa/menü ekranı tam ekran açıkken bu düğme görünmez. */}
+      {isFullscreenPage && (
+        <button
+          onClick={() => setChromeOpen((v) => !v)}
+          title={hideChrome ? 'Menüyü göster' : 'Tam ekran'}
+          className="fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full bg-ink text-cream border border-cream/20
+                     shadow-lg hover:border-ember hover:text-ember transition-colors flex items-center justify-center text-lg"
+        >
+          {hideChrome ? '☰' : '⛶'}
+        </button>
+      )}
 
-      {/* Vardiya iş akışı katmanı (yüzen kart kaldırıldı — vardiya bilgisi Dashboard'da) */}
-      {mustOpenShift && <OpenShiftModal />}
-      {showClose && <CloseShiftModal onCancel={() => setShowClose(false)} onClosed={doLogout} />}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={visibleItems} />
     </div>
   );
 }

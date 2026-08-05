@@ -31,18 +31,9 @@ const QUICK_AMOUNTS = [
   { label: '−100', delta: -100 },
 ];
 
-// Ürün adından tutarlı bir avatar rengi (sadece görsel).
-const AVATAR_TINTS = [
-  'bg-ember/15 text-ember',
-  'bg-azure/15 text-azure',
-  'bg-moss/15 text-moss',
-  'bg-amber-500/15 text-amber-500',
-];
-const tintFor = (str) => {
-  let h = 0;
-  for (let i = 0; i < String(str).length; i++) h = (h * 31 + str.charCodeAt(i)) % AVATAR_TINTS.length;
-  return AVATAR_TINTS[h];
-};
+// Sipariş özeti ızgarası: adet · ürün · birim · tutar · öde(−/+).
+// Başlık satırı ile kalem satırları AYNI şablonu kullanır ki sütunlar hizalı kalsın.
+const SUMMARY_COLS = 'grid-cols-[2rem_1fr_4.5rem_5.5rem_8rem]';
 
 // Değeri her değiştiğinde kısa bir "pulse" ile canlanan para göstergesi.
 function AnimatedMoney({ value, className = '' }) {
@@ -190,6 +181,26 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
     socket.on('tables:changed', handleChanged);
     return () => socket.off('tables:changed', handleChanged);
   }, [open, loadBalance, loadOrder]);
+
+  // Çekmece açıkken arka plan SABİT kalır: body scroll kilitlenir ve kaybolan
+  // kaydırma çubuğunun genişliği padding ile telafi edilir (yoksa arkadaki
+  // masa/sipariş ekranı yana "zıplar"). Kapanınca eski değerler geri yüklenir.
+  useEffect(() => {
+    if (!open) return undefined;
+    const { body } = document;
+    const prevOverflow = body.style.overflow;
+    const prevPaddingRight = body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      const current = parseFloat(window.getComputedStyle(body).paddingRight) || 0;
+      body.style.paddingRight = `${current + scrollbarWidth}px`;
+    }
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPaddingRight;
+    };
+  }, [open]);
 
   // Taze veri gelince seçili adetleri gerçek kalan ödenmemiş adede göre uzlaştır.
   useEffect(() => {
@@ -440,12 +451,12 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
       )}
 
       {open && (
-        <div className="fixed inset-0 z-[60] flex justify-end">
+        <div className="fixed inset-0 z-[60] flex justify-end overscroll-contain">
           <style>{KEYFRAMES}</style>
 
           <div
             className="absolute inset-0 bg-ink/60 backdrop-blur-sm"
-            style={{ animation: 'pdFadeIn 0.2s ease-out' }}
+            style={{ animation: 'pdFadeIn 0.2s ease-out', touchAction: 'none' }}
             onClick={() => !submitting && close()}
           />
 
@@ -485,29 +496,35 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
               <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1.5fr_1fr]">
                 {/* ================= SOL: büyük sipariş özeti ================= */}
                 <section className="min-h-0 flex flex-col lg:border-r border-hairline">
-                  <div className="px-6 pt-4 pb-2 shrink-0 flex items-center justify-between">
-                    <div>
-                      <h3 className="font-display text-xl font-semibold text-paper leading-none">Sipariş Özeti</h3>
-                      <p className="font-mono text-[11px] text-slate mt-1">Ödemeden önce müşteriyle teyit edin</p>
+                  <div className="px-5 pt-3 pb-2 shrink-0 flex items-baseline justify-between gap-3">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <h3 className="font-display text-lg font-semibold text-paper leading-none">Sipariş Özeti</h3>
+                      <span className="font-mono text-[11px] text-slate shrink-0">{items.length} kalem</span>
                     </div>
-                    {hasSelection && (
-                      <button type="button" onClick={clearSelection} className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember">
+                    {hasSelection ? (
+                      <button type="button" onClick={clearSelection} className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember shrink-0">
                         Seçimi Temizle
                       </button>
+                    ) : (
+                      <span className="font-mono text-[10px] uppercase tracking-wide text-slate/60 shrink-0">− / + ile kısmi öde</span>
                     )}
                   </div>
 
-                  {/* Sütun başlıkları */}
-                  <div className="px-6 shrink-0">
-                    <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-4 pb-2 font-mono text-[10px] uppercase tracking-wider text-slate/70 border-b border-hairline">
+                  {/* Sütun başlıkları — satır ızgarasıyla birebir aynı şablon */}
+                  <div className="px-5 shrink-0">
+                    <div className={`grid ${SUMMARY_COLS} gap-2 items-center px-3 pb-1.5 font-mono text-[10px] uppercase tracking-wider text-slate/70 border-b border-hairline`}>
+                      <span>Ad</span>
                       <span>Ürün</span>
-                      <span className="w-24 text-right">Birim</span>
-                      <span className="w-28 text-right">Tutar</span>
+                      <span className="text-right">Birim</span>
+                      <span className="text-right">Tutar</span>
+                      <span className="text-center">Öde</span>
                     </div>
                   </div>
 
-                  {/* Ürün listesi — büyük ve okunaklı. Tek ekranda kalır; taşarsa sadece bu alan kayar. */}
-                  <div className="flex-1 min-h-0 overflow-y-auto px-6 py-2 space-y-2">
+                  {/* Ürün listesi — her kalem TEK satır, 8 satır tek ekranda sığar.
+                      Fazlası taşarsa yalnızca bu alan kayar (overscroll-contain:
+                      kaydırma arkadaki masa ekranına sıçramaz). */}
+                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-1.5 space-y-1.5">
                     {items.length === 0 ? (
                       <p className="text-slate text-sm font-mono py-6 text-center">Ürün bulunamadı.</p>
                     ) : (
@@ -516,59 +533,60 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                         const qty = selectedQty[key] || 0;
                         const name = resolveProductName ? resolveProductName(item.ProductId) : `Ürün #${item.ProductId}`;
                         const selectable = !splitMode;
+                        // Ekstra/şurup/not tek bir kısaltılmış alt satırda toplanır —
+                        // satır yüksekliği sabit kalsın diye (8 satır hedefi).
+                        const options = [
+                          ...(item.Extras || []).map((e) => `${e.Quantity}x ${e.ExtraName}`),
+                          ...(item.Syrups || []).map((s) => `${s.Quantity}x ${s.SyrupName}`),
+                        ];
+                        const hasMeta = options.length > 0 || !!item.Note || item.PaidQuantity > 0;
                         return (
                           <div
                             key={key}
-                            className={`rounded-xl border px-4 py-3.5 transition-all ${qty > 0 ? 'border-ember/50 bg-ember/5 ring-1 ring-ember/20' : 'border-hairline bg-panel'}`}
+                            className={`rounded-lg border px-3 py-1.5 transition-colors ${qty > 0 ? 'border-ember/60 bg-ember/5' : 'border-hairline bg-panel'}`}
                           >
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-4 items-center">
-                              {/* Ürün: adet rozeti + isim */}
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-display text-lg font-bold shrink-0 ${tintFor(name)}`}>
-                                  {item.Quantity}×
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-base text-paper font-semibold truncate leading-tight">{name}</p>
-                                  {item.Note && <p className="font-mono text-[11px] text-azure/90 truncate mt-0.5">📝 {item.Note}</p>}
-                                  {((item.Extras?.length > 0) || (item.Syrups?.length > 0)) && (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {(item.Extras || []).map((extra) => (
-                                        <span key={`extra-${extra.ExtraProductId}`} className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5">
-                                          {extra.Quantity}x {extra.ExtraName}
-                                        </span>
-                                      ))}
-                                      {(item.Syrups || []).map((syrup) => (
-                                        <span key={`syrup-${syrup.SyrupProductId}`} className="font-mono text-[10px] text-slate border border-hairline rounded-full px-1.5 py-0.5">
-                                          {syrup.Quantity}x {syrup.SyrupName}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {item.PaidQuantity > 0 && <p className="font-mono text-[10px] text-moss mt-0.5">{item.PaidQuantity} adet ödendi</p>}
-                                </div>
-                              </div>
-                              {/* Birim fiyat */}
-                              <div className="w-24 text-right">
-                                <p className="font-mono text-sm text-slate tabular-nums">{money(item.UnitPrice)}</p>
-                              </div>
-                              {/* Satır tutarı */}
-                              <div className="w-28 text-right">
-                                <p className="font-mono text-lg text-paper font-semibold tabular-nums">{money(item.Quantity * item.UnitPrice)}</p>
-                              </div>
-                            </div>
+                            <div className={`grid ${SUMMARY_COLS} gap-2 items-center`}>
+                              {/* Adet */}
+                              <span className="font-display text-base font-bold text-paper tabular-nums leading-none">{item.Quantity}×</span>
 
-                            {/* Kısmi ödeme seçici (opsiyonel) — büyük listeyi bozmadan alt satırda */}
-                            <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-hairline/50">
-                              <span className="font-mono text-[10px] uppercase tracking-wide text-slate/70 mr-auto">Bu üründen öde</span>
-                              {qty > 0 && (
-                                <button type="button" onClick={() => setItemQty(key, item.RemainingQuantity, 0)} disabled={!selectable}
-                                  className="font-mono text-[10px] uppercase text-slate hover:text-ember mr-1 disabled:opacity-30">Kaldır</button>
-                              )}
-                              <button type="button" disabled={!selectable || qty <= 0} onClick={() => setItemQty(key, item.RemainingQuantity, qty - 1)}
-                                className="w-8 h-8 flex items-center justify-center font-mono text-base text-slate hover:text-ember border border-hairline rounded-lg select-none disabled:opacity-30 transition-colors">−</button>
-                              <span className="font-mono text-sm text-paper w-6 text-center tabular-nums">{qty}</span>
-                              <button type="button" disabled={!selectable || qty >= item.RemainingQuantity} onClick={() => setItemQty(key, item.RemainingQuantity, qty + 1)}
-                                className="w-8 h-8 flex items-center justify-center font-mono text-base text-cream bg-ember hover:bg-ember/90 rounded-lg select-none disabled:opacity-40 transition-colors">+</button>
+                              {/* Ürün adı + (varsa) tek satırlık ayrıntı */}
+                              <div className="min-w-0">
+                                <p className="text-sm text-paper font-semibold truncate leading-tight">{name}</p>
+                                {hasMeta && (
+                                  <p className="font-mono text-[10px] truncate leading-tight mt-0.5">
+                                    {item.PaidQuantity > 0 && <span className="text-moss">{item.PaidQuantity} ödendi · </span>}
+                                    {options.length > 0 && <span className="text-slate">{options.join(' · ')}</span>}
+                                    {item.Note && <span className="text-azure/90">{options.length > 0 ? ' · ' : ''}📝 {item.Note}</span>}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Birim fiyat */}
+                              <p className="font-mono text-xs text-slate tabular-nums text-right">{money(item.UnitPrice)}</p>
+
+                              {/* Satır tutarı */}
+                              <p className="font-mono text-sm text-paper font-semibold tabular-nums text-right">{money(item.Quantity * item.UnitPrice)}</p>
+
+                              {/* Kısmi ödeme seçici — dokunmatik için 44×44 px hedefler */}
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button" aria-label={`${name} adet azalt`}
+                                  disabled={!selectable || qty <= 0}
+                                  onClick={() => setItemQty(key, item.RemainingQuantity, qty - 1)}
+                                  className="w-11 h-11 flex items-center justify-center font-mono text-lg text-slate hover:text-ember active:bg-charcoal border border-hairline rounded-lg select-none touch-manipulation disabled:opacity-25 transition-colors"
+                                >
+                                  −
+                                </button>
+                                <span className="font-mono text-sm text-paper w-6 text-center tabular-nums">{qty}</span>
+                                <button
+                                  type="button" aria-label={`${name} adet artır`}
+                                  disabled={!selectable || qty >= item.RemainingQuantity}
+                                  onClick={() => setItemQty(key, item.RemainingQuantity, qty + 1)}
+                                  className="w-11 h-11 flex items-center justify-center font-mono text-lg text-cream bg-ember hover:bg-ember/90 active:bg-ember/80 rounded-lg select-none touch-manipulation disabled:opacity-30 transition-colors"
+                                >
+                                  +
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -577,7 +595,7 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                   </div>
 
                   {/* Toplam çubuğu */}
-                  <div className="px-6 py-4 border-t border-hairline shrink-0 bg-panel/60">
+                  <div className="px-5 py-3 border-t border-hairline shrink-0 bg-panel/60">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs uppercase tracking-widest text-slate">{hasSelection ? 'Seçili Tutar' : 'Sipariş Toplamı'}</span>
                       <AnimatedMoney value={hasSelection ? selectedTotal : totalAmount} className="font-display text-3xl font-bold text-paper tabular-nums leading-none" />
@@ -671,7 +689,7 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                     </div>
                   ) : (
                     <>
-                      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-visible px-5 py-4 space-y-3">
+                      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain lg:overflow-visible px-5 py-4 space-y-3">
                         {/* Ödeme özeti kartı */}
                         <div className="rounded-2xl bg-ink text-cream p-4 shadow-lg shadow-ink/20 shrink-0">
                           <div className="flex items-center justify-between">

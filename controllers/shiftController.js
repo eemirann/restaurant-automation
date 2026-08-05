@@ -180,11 +180,17 @@ async function closeShiftRecord(pool, shift, countedCash, note) {
     return { updated: result.recordset[0], expectedCash, difference };
 }
 
-// POST /api/shifts/close  body: { CountedCash, Note? } — kendi vardiyasını kapatır
+// POST /api/shifts/close  body: { CountedCash?, Note? } — kendi vardiyasını kapatır
+//
+// CountedCash OPSİYONELDİR: panel artık çıkışta kasa sayım ekranı göstermeden
+// vardiyayı sessizce kapatır (vardiya kaydı yalnızca mesai takibi için tutulur,
+// bkz. restoran-panel/src/context/ShiftContext.jsx). Sayım girilmediğinde
+// CountedCash/Difference NULL kalır — closeShiftRecord bunu zaten destekliyor.
 async function closeShift(req, res) {
     try {
-        const { CountedCash, Note } = req.body;
-        if (typeof CountedCash !== 'number' || CountedCash < 0) {
+        const { CountedCash, Note } = req.body || {};
+        if (CountedCash !== undefined && CountedCash !== null
+            && (typeof CountedCash !== 'number' || CountedCash < 0)) {
             return res.status(400).json({ error: 'Sayılan nakit negatif olmayan bir sayı olmalı' });
         }
 

@@ -1,16 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
-
-// Backend rol değerleri (DB/API kontratı) -> ekranda gösterilen Türkçe etiketler
-const ROLE_LABELS = {
-  Admin: 'Yönetici',
-  Cashier: 'Kasiyer',
-  Waiter: 'Garson',
-};
-
-// Yeni kullanıcı / rol değiştirme seçeneklerinde kullanılan sıra
-const ROLE_OPTIONS = ['Waiter', 'Cashier', 'Admin'];
+import { ROLE_LABELS, ROLE_OPTIONS } from '../constants/roles';
 
 const FILTERS = [
   { value: '', label: 'Tümü' },
