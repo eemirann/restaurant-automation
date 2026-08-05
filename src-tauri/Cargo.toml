@@ -28,6 +28,9 @@ getrandom = "0.3"
 windows-sys = { version = "0.60", features = [
     "Win32_Foundation",
     "Win32_System_JobObjects",
+    # CREATE_NO_WINDOW: 'sc query/start' çağrılarında konsol penceresi açılmasın
+    # (servis durumu kontrolü, bkz. main.rs > servis_durumu).
+    "Win32_System_Threading",
 ] }
 
 [features]

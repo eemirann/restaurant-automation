@@ -341,6 +341,118 @@ fn backend_hazir_mi() -> bool {
 }
 
 // ============================================================
+// Windows Servisi ile birlikte yaşama
+//
+// Sunucu kurulumu (installer/) backend'i 'RestoranBackend' adlı bir Windows
+// Servisi olarak kaydeder. Uygulama açılışta 4091'i yoklar ve cevap varsa
+// kendi kopyasını başlatmaz — normalde servis zaten ayakta olduğu için hep
+// böyle olur.
+//
+// SORUN: Servis herhangi bir nedenle DURMUŞSA (elle durdurulmuş, çökmüş,
+// güncelleme yarıda kalmış) uygulama sessizce KENDİ GÖMÜLÜ kopyasını
+// başlatıyordu. O kopya uygulama derlendiği andaki sürümdür; sunucudaki
+// backend daha yeni olabilir ve ikisi de AYNI veritabanına bağlanır — sessiz
+// bir sürüm uyuşmazlığı.
+//
+// ÇÖZÜM: Servis KURULU ama cevap vermiyorsa, önce onu başlatmayı deneriz.
+// Ancak bu başarısız olursa (yönetici hakkı yok, servis bozuk) gömülü kopyaya
+// düşeriz ve hangi kaynağın kullanıldığını kaydederiz — panel bunu
+// backend_bilgisi komutuyla okuyup kullanıcıyı uyarabilir.
+// ============================================================
+
+/// installer/servis-kur.ps1'in kaydettiği servis adı.
+const SERVIS_ADI: &str = "RestoranBackend";
+
+/// Hangi backend kullanılıyor: "servis" | "gomulu" | "bilinmiyor"
+struct BackendKaynagi(Mutex<String>);
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackendBilgisi {
+    hazir: bool,
+    kaynak: String,
+    gomulu_surum: Option<String>,
+    /// "RUNNING" | "STOPPED" | None (servis kurulu değil)
+    servis_durumu: Option<String>,
+}
+
+/// Paketlenen backend kopyasının sürümü (masaustu-hazirla.mjs yazar).
+fn gomulu_backend_surumu(app: &AppHandle) -> Option<String> {
+    let (calisma_dizini, _) = backend_yollari(app);
+    let icerik = std::fs::read_to_string(calisma_dizini.join("SURUM.json")).ok()?;
+    let veri: serde_json::Value = serde_json::from_str(&icerik).ok()?;
+    veri.get("surum")?.as_str().map(str::to_string)
+}
+
+/// Servisin durumunu `sc query` ile okur. None => servis kurulu değil.
+#[cfg(windows)]
+fn servis_durumu(ad: &str) -> Option<String> {
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    let cikti = Command::new("sc.exe")
+        .args(["query", ad])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+
+    if !cikti.status.success() {
+        return None; // 1060 = belirtilen servis mevcut değil
+    }
+
+    // `sc query` çıktısında "STATE : 4 RUNNING" gibi bir satır olur.
+    let metin = String::from_utf8_lossy(&cikti.stdout);
+    let satir = metin.lines().find(|s| s.contains("STATE"))?;
+    for durum in ["RUNNING", "STOPPED", "START_PENDING", "STOP_PENDING", "PAUSED"] {
+        if satir.contains(durum) {
+            return Some(durum.to_string());
+        }
+    }
+    Some("BILINMIYOR".to_string())
+}
+
+#[cfg(not(windows))]
+fn servis_durumu(_ad: &str) -> Option<String> {
+    None
+}
+
+/// Duran servisi başlatmayı dener ve portun açılmasını kısa süre bekler.
+/// Yönetici hakkı yoksa sessizce başarısız olur — çağıran gömülü kopyaya düşer.
+#[cfg(windows)]
+fn servisi_baslatmayi_dene() -> bool {
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    println!("[resto] '{SERVIS_ADI}' servisi kurulu ama cevap vermiyor, başlatılmaya çalışılıyor...");
+
+    let sonuc = Command::new("sc.exe")
+        .args(["start", SERVIS_ADI])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    if let Err(e) = sonuc {
+        eprintln!("[resto] sc start çalıştırılamadı: {e}");
+        return false;
+    }
+
+    // Servis başlarken backend'in DB'ye bağlanması da zaman alır.
+    let baslangic = Instant::now();
+    while baslangic.elapsed() < Duration::from_secs(20) {
+        if backend_hazir_mi() {
+            println!("[resto] servis ayağa kalktı, gömülü backend başlatılmayacak");
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    eprintln!("[resto] servis başlatılamadı (yönetici hakkı gerekebilir) — gömülü backend'e düşülüyor");
+    false
+}
+
+#[cfg(not(windows))]
+fn servisi_baslatmayi_dene() -> bool {
+    false
+}
+
+// ============================================================
 // Pencere yardımcıları
 // ============================================================
 
@@ -410,6 +522,28 @@ fn backend_durumu() -> bool {
     backend_hazir_mi()
 }
 
+/// Hangi backend'in kullanıldığını ve sürümünü frontend'e bildirir.
+///
+/// NEDEN: Uygulama, 4091 cevap vermiyorsa KENDİ gömülü backend kopyasını
+/// başlatır. O kopya uygulama derlendiği andaki sürümdür; sunucuya ayrıca
+/// kurulmuş olan backend daha yeni olabilir ve İKİSİ DE AYNI VERİTABANINA
+/// bağlanır. Eskiden bu tamamen sessizdi. Artık panel durumu okuyup
+/// kullanıcıyı uyarabilir.
+#[tauri::command]
+fn backend_bilgisi(app: AppHandle) -> BackendBilgisi {
+    let kaynak = app
+        .try_state::<BackendKaynagi>()
+        .and_then(|d| d.0.lock().ok().map(|k| k.clone()))
+        .unwrap_or_else(|| "bilinmiyor".to_string());
+
+    BackendBilgisi {
+        hazir: backend_hazir_mi(),
+        kaynak,
+        gomulu_surum: gomulu_backend_surumu(&app),
+        servis_durumu: servis_durumu(SERVIS_ADI),
+    }
+}
+
 // ============================================================
 // Uygulama girişi
 // ============================================================
@@ -422,11 +556,13 @@ fn main() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(BackendSureci(Mutex::new(None)))
+        .manage(BackendKaynagi(Mutex::new("bilinmiyor".to_string())))
         .manage(CikisOnayi(Mutex::new(false)))
         .invoke_handler(tauri::generate_handler![
             tam_ekran_degistir,
             tepsiye_gizle,
             uygulamadan_cik,
+            backend_bilgisi,
             backend_durumu,
         ])
         .setup(|app| {
@@ -439,17 +575,48 @@ fn main() {
             #[cfg(windows)]
             let is_nesnesi = is_nesnesi_olustur();
 
+            // Sıra ÖNEMLİ (bkz. servisi_baslatmayi_dene yorumları):
+            //   1) 4091 cevap veriyor mu?           -> ona bağlan
+            //   2) Servis kurulu ama duruyor mu?    -> önce servisi başlatmayı dene
+            //   3) Hiçbiri olmadıysa                -> gömülü kopyayı başlat
+            // 2. adım olmadan, duran bir servis sessizce ESKİ gömülü backend'in
+            // devreye girmesine yol açıyordu.
+            let mut kaynak = "servis";
+
             if backend_hazir_mi() {
                 println!("[resto] backend zaten çalışıyor, yeni süreç başlatılmadı");
-            } else if let Some(child) = backend_baslat(&handle) {
-                #[cfg(windows)]
-                if let Some(job) = &is_nesnesi {
-                    is_nesnesine_ekle(job, &child);
+            } else {
+                let servis = servis_durumu(SERVIS_ADI);
+                let servis_kurulu = servis.is_some();
+                if let Some(d) = &servis {
+                    println!("[resto] '{SERVIS_ADI}' servis durumu: {d}");
                 }
-                if let Some(durum) = handle.try_state::<BackendSureci>() {
-                    if let Ok(mut k) = durum.0.lock() {
-                        *k = Some(child);
+
+                if !(servis_kurulu && servisi_baslatmayi_dene()) {
+                    kaynak = "gomulu";
+                    if servis_kurulu {
+                        eprintln!(
+                            "[resto] UYARI: servis kurulu ama başlatılamadı; uygulamanın GÖMÜLÜ \
+                             backend'i kullanılacak. Sunucudaki sürüm daha yeniyse uyuşmazlık olabilir."
+                        );
                     }
+                    if let Some(child) = backend_baslat(&handle) {
+                        #[cfg(windows)]
+                        if let Some(job) = &is_nesnesi {
+                            is_nesnesine_ekle(job, &child);
+                        }
+                        if let Some(durum) = handle.try_state::<BackendSureci>() {
+                            if let Ok(mut k) = durum.0.lock() {
+                                *k = Some(child);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(durum) = handle.try_state::<BackendKaynagi>() {
+                if let Ok(mut k) = durum.0.lock() {
+                    *k = kaynak.to_string();
                 }
             }
 

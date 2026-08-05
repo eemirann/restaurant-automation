@@ -383,13 +383,28 @@ yeniden dağıtılmalıdır.
 ### Masaüstü uygulaması kendi backend'ini taşır
 
 `src-tauri/backend-dist` (backend kopyası) + `src-tauri/binaries/node-*.exe`
-(sidecar) uygulamanın içine paketlenir. `src-tauri/src/main.rs` açılışta 4091'i
-TCP ile yoklar; **cevap varsa kendi backend'ini başlatmaz**. Windows Servisi
-kuruluysa her zaman bu durumdadır.
+(sidecar) uygulamanın içine paketlenir (`scripts/masaustu-hazirla.mjs`).
 
-Dikkat: `backend-dist` içine `musteri-menu` ve `scripts/` **kopyalanmaz**.
-Yani servis kapalıyken uygulamanın kendi backend'i çalışırsa QR menüsü servis
-edilmez (sunucu logunda uyarı basar, çökmez).
+`src-tauri/src/main.rs` açılışta şu sırayı izler:
+
+1. **4091 cevap veriyor mu?** → ona bağlan, kendi kopyasını başlatma.
+2. **`RestoranBackend` servisi kurulu ama duruyor mu?** → `sc start` ile
+   başlatmayı dene, portun açılmasını 20 sn bekle.
+3. Hiçbiri olmadıysa → gömülü kopyayı başlat.
+
+2. adım olmadan, duran bir servis sessizce **eski** gömülü backend'in devreye
+girmesine yol açıyordu (ikisi de aynı veritabanına bağlanır). 2. adım da
+başarısız olursa (yönetici hakkı yok) gömülü kopyaya düşülür ama bu durum
+kaydedilir: panel `backend_bilgisi` komutuyla hangi kaynağın kullanıldığını,
+gömülü sürümü ve servis durumunu okuyabilir.
+
+`backend-dist` içine `musteri-menu/dist`, `scripts/migrate.js` ve
+`scripts/createFirstAdmin.js` de kopyalanır — gömülü backend devreye girdiğinde
+QR menüsü ve `npm run migrate` çalışsın diye. `scripts/` klasörünün tamamı
+kopyalanmaz (paketleme araçları pakete girmemeli).
+
+Sürüm damgası: `backend-dist/SURUM.json` derleme anında yazılır
+(`{ surum, derlemeZamani }`).
 
 ### Tek elemanlı dizi + splat tuzağı
 
