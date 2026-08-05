@@ -418,13 +418,13 @@ fn servis_durumu(_ad: &str) -> Option<String> {
 /// Duran servisi başlatmayı dener ve portun açılmasını kısa süre bekler.
 /// Yönetici hakkı yoksa sessizce başarısız olur — çağıran gömülü kopyaya düşer.
 #[cfg(windows)]
-fn servisi_baslatmayi_dene() -> bool {
+fn servisi_baslatmayi_dene(ad: &str) -> bool {
     use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
 
-    println!("[resto] '{SERVIS_ADI}' servisi kurulu ama cevap vermiyor, başlatılmaya çalışılıyor...");
+    println!("[resto] '{ad}' servisi kurulu ama cevap vermiyor, başlatılmaya çalışılıyor...");
 
     let sonuc = Command::new("sc.exe")
-        .args(["start", SERVIS_ADI])
+        .args(["start", ad])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
@@ -448,8 +448,52 @@ fn servisi_baslatmayi_dene() -> bool {
 }
 
 #[cfg(not(windows))]
-fn servisi_baslatmayi_dene() -> bool {
+fn servisi_baslatmayi_dene(_ad: &str) -> bool {
     false
+}
+
+// ============================================================
+// Testler
+//
+// servis_durumu() `sc.exe query` çıktısını METİN olarak ayrıştırır; bu kırılgan
+// bir yaklaşımdır ve yanlış çalışırsa uygulama duran bir servisi "kurulu değil"
+// sanıp sessizce gömülü backend'e düşer — düzeltmeye çalıştığımız hatanın ta
+// kendisi. Bu yüzden gerçek Windows servislerine karşı doğrulanır.
+//
+// ÖNEMLİ BULGU: `sc query` alan adlarını (STATE/RUNNING/STOPPED) Türkçe
+// Windows'ta da İNGİLİZCE basar; yalnızca hata metinleri yerelleşir. Var
+// olmayan servis için çıkış kodu 1060'tır (success() false).
+// ============================================================
+#[cfg(all(test, windows))]
+mod testler {
+    use super::*;
+
+    #[test]
+    fn var_olmayan_servis_none_doner() {
+        assert_eq!(servis_durumu("BoyleBirServisKesinlikleYok_XYZ"), None);
+    }
+
+    #[test]
+    fn calisan_servis_running_doner() {
+        // Her Windows kurulumunda bulunan, her zaman çalışan bir servis.
+        assert_eq!(servis_durumu("Schedule"), Some("RUNNING".to_string()));
+    }
+
+    #[test]
+    fn kurulu_servis_bir_durum_doner() {
+        // Durumu ne olursa olsun (RUNNING/STOPPED), kurulu bir servis için
+        // None DÖNMEMELİ — None "kurulu değil" anlamına gelir ve uygulamanın
+        // servisi başlatmayı denemeden gömülü backend'e düşmesine yol açar.
+        let durum = servis_durumu("EventLog");
+        assert!(durum.is_some(), "kurulu servis için None döndü");
+    }
+
+    #[test]
+    fn baslatilamayan_servis_false_doner() {
+        // Var olmayan bir servis başlatılamaz; fonksiyon panik atmadan
+        // false dönmeli (çağıran gömülü backend'e düşer).
+        assert!(!servisi_baslatmayi_dene("BoyleBirServisKesinlikleYok_XYZ"));
+    }
 }
 
 // ============================================================
@@ -592,7 +636,7 @@ fn main() {
                     println!("[resto] '{SERVIS_ADI}' servis durumu: {d}");
                 }
 
-                if !(servis_kurulu && servisi_baslatmayi_dene()) {
+                if !(servis_kurulu && servisi_baslatmayi_dene(SERVIS_ADI)) {
                     kaynak = "gomulu";
                     if servis_kurulu {
                         eprintln!(
