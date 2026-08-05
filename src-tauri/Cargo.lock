@@ -2828,7 +2828,7 @@ dependencies = [
 
 [[package]]
 name = "resto-pos"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "getrandom 0.3.4",
  "serde",

@@ -23,7 +23,11 @@
 ; ============================================================
 
 #define MyAppName "Restoran Otomasyonu"
-#define MyAppVersion "2.0"
+; Sürüm TEK KAYNAKTAN yürür: package.json, src-tauri/Cargo.toml ve
+; src-tauri/tauri.conf.json ile AYNI olmalı. Sunucu ve panel ayrı
+; kurulduğu için, destek isterken hangi sürümlerin eşleştiğini görebilmek
+; buna bağlı.
+#define MyAppVersion "2.0.0"
 #define MyAppURL "http://localhost:4091"
 
 [Setup]
