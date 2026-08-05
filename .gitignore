@@ -22,6 +22,11 @@ node-v*-x64.msi
 # NSSM (https://nssm.cc/download > win64\nssm.exe) — kurulum programına
 # gömülen üçüncü parti ikili; repoda tutulmaz, elle indirilir.
 installer/nssm.exe
+# Taşınabilir Node.js — kurulum programına gömülür (backend'i sistemdeki
+# Node.js'ten bağımsız çalıştırmak için). ~88 MB, repoda tutulmaz;
+# scripts/masaustu-hazirla.mjs'in ürettiği src-tauri/binaries/node-*.exe
+# dosyasından kopyalanır.
+installer/node.exe
 
 # Offline GÜNCELLEME paketi (scripts/paketle-guncelle.ps1 ile her seferinde
 # yeniden üretilir): içindeki migrations/ ve guncelle.ps1 dosyaları repodaki

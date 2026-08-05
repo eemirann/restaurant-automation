@@ -33,6 +33,11 @@ yeniden derlenmesi gerekir. Bu yüzden:
 2. **nssm.exe** — [nssm.cc/download](https://nssm.cc/download) adresinden
    `win64\nssm.exe` indirilip **`installer\nssm.exe`** olarak kopyalanır
    (kurulum programının içine gömülür).
+2b. **node.exe** — `scripts\masaustu-hazirla.mjs` çalıştıktan sonra oluşan
+   `src-tauri\binaries\node-*.exe` dosyası **`installer\node.exe`** olarak
+   kopyalanır (~88 MB, kurulum programının içine gömülür).
+   Böylece hedef makinede Node.js kurulu olması **gerekmez** ve servis,
+   sistemdeki Node sürümü değişse bile etkilenmez.
 3. **Sihirbazı derleme** — [Inno Setup 6](https://jrsoftware.org/isinfo.php)
    ile `installer\RestoranKurulum.iss` derlenir (IDE'de aç → *Compile*, ya da
    `ISCC.exe installer\RestoranKurulum.iss`). Çıktı `OutputDir` gereği
@@ -42,7 +47,8 @@ yeniden derlenmesi gerekir. Bu yüzden:
    - `SQLEXPR_x64_ENU.exe` — SQL Server 2022 Express > *Download Media* >
      *Express Core*. **Zorunlu.** (Küçük indirici `SQL2022-SSEI-Expr.exe` de
      çalışır ama internet ister — USB kurulumu için tam paket kullanın.)
-   - `node-vXX.X.X-x64.msi` — hedef makinede Node.js yoksa zorunlu.
+   - Node.js MSI'ına **GEREK YOKTUR** — taşınabilir `node.exe` kurulum
+     programının içinde gelir (yukarıdaki 2b adımı).
 5. `KurulumPaketi\` klasörünün **tamamı** USB belleğe kopyalanır. Hedef
    bilgisayarda `RestoranKurulumSihirbazi.exe` çift tıklanır.
 

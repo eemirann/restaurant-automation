@@ -65,19 +65,36 @@ if (-not (Test-Path $serverJs)) {
 }
 
 # ---------- node.exe ----------
-$nodeExe = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
-if (-not $nodeExe) {
-    foreach ($aday in @("$env:ProgramFiles\nodejs\node.exe", "${env:ProgramFiles(x86)}\nodejs\node.exe")) {
-        if (Test-Path $aday) { $nodeExe = $aday; break }
+# ÖNCELİK: kurulum klasöründeki taşınabilir node.exe > sistemdeki Node.js.
+#
+# Gömülü olan bilerek tercih edilir: servis YILLARCA çalışacak ve sistemdeki
+# Node.js sonradan güncellenir/kaldırılırsa servis sessizce bozulurdu. Kendi
+# kopyamızı çalıştırınca sürüm sabit kalır ve internetsiz kurulumda ek bir
+# Node.js MSI'ına gerek kalmaz.
+$nodeExe = $null
+$gomuluNode = Join-Path $UygulamaKlasoru 'node.exe'
+if (Test-Path $gomuluNode) {
+    $nodeExe = $gomuluNode
+} else {
+    $nodeExe = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
+    if (-not $nodeExe) {
+        foreach ($aday in @("$env:ProgramFiles\nodejs\node.exe", "${env:ProgramFiles(x86)}\nodejs\node.exe")) {
+            if (Test-Path $aday) { $nodeExe = $aday; break }
+        }
     }
 }
 if (-not $nodeExe) {
-    Basarisiz @'
-node.exe bulunamadı. Node.js kurulu olmalı (LTS sürümü önerilir).
+    Basarisiz @"
+node.exe bulunamadı.
 
-Offline kurulumda Node.js MSI'ı (node-vXX-x64.msi) kurulum paketiyle birlikte
-gelmelidir; https://nodejs.org adresinden indirilir.
-'@
+Normalde kurulum programı taşınabilir bir node.exe'yi şuraya yerleştirir:
+  $gomuluNode
+Bu dosya yoksa kurulum paketi eksik derlenmiş demektir (geliştirici
+makinesinde installer\node.exe konup sihirbaz yeniden derlenmeli).
+
+Geçici çözüm: https://nodejs.org adresinden Node.js LTS kurup bu script'i
+tekrar çalıştırın.
+"@
 }
 Write-Host "node.exe: $nodeExe"
 

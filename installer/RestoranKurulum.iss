@@ -78,6 +78,19 @@ Source: "servis-kur.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; NSSM (Non-Sucking Service Manager) — backend'i Windows Servisi yapmak için.
 ; https://nssm.cc/download > win64\nssm.exe dosyası installer\ klasörüne konur.
 Source: "nssm.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; TAŞINABİLİR NODE.JS — kurulum programının içine gömülür.
+;
+; NEDEN: Backend 'node server.js' olarak çalışır, yani hedef makinede bir
+; Node.js gerekir. Eskiden ayrıca bir node MSI'ı kurulması bekleniyordu; bu
+; hem internet/ek dosya bağımlılığı yaratıyordu hem de makinedeki Node
+; sürümü değişirse backend'i etkiliyordu. Artık kendi node.exe'mizi taşıyoruz
+; ve servis DOĞRUDAN onu çalıştırıyor (bkz. servis-kur.ps1) — sistemdeki
+; Node.js'ten tamamen bağımsız, sürüm sürprizi yok.
+;
+; Dosya scripts\masaustu-hazirla.mjs'in indirdiği sidecar'ın kopyasıdır
+; (src-tauri\binaries\node-*.exe). Yoksa kurulum yine derlenir ve
+; postinstall.ps1 sistemdeki Node.js'e geri düşer.
+Source: "node.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Code]
 var

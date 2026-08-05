@@ -321,8 +321,10 @@ Sonra elle eklenecekler:
    derlemesinden **önce** konmalı.
 3. **`SQLEXPR_x64_ENU.exe`** — Microsoft'tan "SQL Server 2022 Express" →
    *Download Media* → *Express Core*. **`KurulumPaketi\`** klasörüne konur.
-4. **`node-vXX.X.X-x64.msi`** — hedef makinede Node.js yoksa gerekir.
-   **`KurulumPaketi\`** klasörüne konur.
+4. **`installer\node.exe`** — `scripts\masaustu-hazirla.mjs` çalıştıktan sonra
+   oluşan `src-tauri\binaries\node-*.exe` buraya kopyalanır (~88 MB).
+   Kurulum programının **içine gömülür**, bu yüzden Inno Setup derlemesinden
+   **önce** konmalı. Hedef makinede Node.js kurulu olmasına gerek kalmaz.
 5. [Inno Setup 6](https://jrsoftware.org/isinfo.php) ile
    `installer\RestoranKurulum.iss` derlenir (IDE'de aç → *Compile*).
    Çıkan `RestoranKurulumSihirbazi.exe` otomatik olarak `KurulumPaketi\` içine düşer.

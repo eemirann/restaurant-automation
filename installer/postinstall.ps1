@@ -96,7 +96,19 @@ if (-not $yedekKlasoru) { $yedekKlasoru = Join-Path $InstallDir 'db-backups' }
 # 1) Node.js
 # ============================================================
 Adim 'Node.js kontrol ediliyor...'
-$nodeExe = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
+
+# ÖNCELİK SIRASI: kurulumla gelen taşınabilir node.exe > sistemdeki Node.js.
+# Gömülü olanı tercih ederiz çünkü sürümü bilinir ve sabittir; sistemdeki
+# Node.js sonradan güncellenip/kaldırılıp backend'i bozamaz. Ayrıca
+# internetsiz kurulumda ek bir MSI'a ihtiyaç kalmaz.
+$nodeExe = $null
+$gomuluNode = Join-Path $InstallDir 'node.exe'
+if (Test-Path $gomuluNode) {
+    $nodeExe = $gomuluNode
+    Write-Host 'Kurulumla gelen taşınabilir Node.js kullanılacak.'
+}
+
+if (-not $nodeExe) { $nodeExe = (Get-Command node.exe -ErrorAction SilentlyContinue).Source }
 if (-not $nodeExe) {
     foreach ($aday in @("$env:ProgramFiles\nodejs\node.exe", "${env:ProgramFiles(x86)}\nodejs\node.exe")) {
         if (Test-Path $aday) { $nodeExe = $aday; break }
@@ -127,8 +139,20 @@ kurun, ardından bu script'i tekrar çalıştırın:
 }
 Write-Host "node.exe: $nodeExe"
 
-$npmCmd = Join-Path (Split-Path -Parent $nodeExe) 'npm.cmd'
-if (-not (Test-Path $npmCmd)) { Basarisiz "npm.cmd bulunamadı ($npmCmd)." }
+# npm ARTIK ZORUNLU DEĞİL: hem node_modules hem musteri-menu\dist kurulum
+# programının içine gömülü geldiği için normal akışta npm hiç çağrılmaz.
+# Yalnızca bu ikisi eksikse (kaynaktan elle kurulum) gerekir. Taşınabilir
+# node.exe'nin yanında npm.cmd bulunmaz — bu yüzden burada hata verilmez,
+# ihtiyaç duyulan yerde kontrol edilir.
+$npmCmd = $null
+foreach ($aday in @(
+    (Join-Path (Split-Path -Parent $nodeExe) 'npm.cmd'),
+    "$env:ProgramFiles\nodejs\npm.cmd",
+    "${env:ProgramFiles(x86)}\nodejs\npm.cmd"
+)) {
+    if ($aday -and (Test-Path $aday)) { $npmCmd = $aday; break }
+}
+if (-not $npmCmd) { $npmCmd = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source }
 
 # ============================================================
 # 2) SQL Server Express
@@ -151,12 +175,20 @@ if ($LASTEXITCODE -ne 0) {
 # ============================================================
 if (Test-Path (Join-Path $InstallDir 'node_modules\express')) {
     Adim 'Backend bağımlılıkları hazır (node_modules mevcut) — npm adımı atlanıyor.'
-} else {
+} elseif ($npmCmd) {
     Adim 'Backend bağımlılıkları kuruluyor (npm ci --omit=dev)... internet gerekir.'
     & $npmCmd ci --omit=dev
     if ($LASTEXITCODE -ne 0) {
         Basarisiz 'npm ci başarısız oldu. İnternet bağlantısı yoksa, node_modules klasörünü hazır olarak kurulum paketine ekleyin.'
     }
+} else {
+    Basarisiz @"
+Backend bağımlılıkları (node_modules) yok ve npm de bulunamadı.
+
+Normalde node_modules kurulum programının içine gömülü gelir; bu hata
+kurulum paketinin eksik derlendiğini gösterir. Geliştirici makinesinde
+scripts\paketle.ps1 çalıştırılıp sihirbaz yeniden derlenmeli.
+"@
 }
 
 # ============================================================
@@ -172,7 +204,7 @@ $menuDist = Join-Path $menuKlasoru 'dist\index.html'
 
 if (Test-Path $menuDist) {
     Adim 'Müşteri menüsü zaten derlenmiş (musteri-menu\dist) — derleme atlanıyor.'
-} elseif (Test-Path (Join-Path $menuKlasoru 'package.json')) {
+} elseif ($npmCmd -and (Test-Path (Join-Path $menuKlasoru 'package.json'))) {
     Adim 'Müşteri menüsü derleniyor (musteri-menu)...'
     # Menü derlenemezse kurulum DURMAZ: backend ve panel bundan bağımsız
     # çalışır, sadece QR menüsü servis edilmez (sonradan derlenebilir).

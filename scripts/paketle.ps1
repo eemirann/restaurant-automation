@@ -24,8 +24,10 @@
     Bu script'in İNDİRMEDİĞİ, kullanıcının KENDİSİNİN KurulumPaketi\ klasörüne
     koyması gereken dosyalar (script sonunda hatırlatılır):
       - SQLEXPR_x64_ENU.exe   (SQL Server Express tam/offline paketi)
-      - node-vXX.X.X-x64.msi  (Node.js LTS — hedef makinede Node yoksa)
       - nssm.exe              (https://nssm.cc/download > win64) -> installer\ klasörüne
+      - node.exe              (src-tauri\binaries\node-*.exe kopyası) -> installer\ klasörüne
+    Not: Node.js MSI'ına gerek yok; taşınabilir node.exe kurulum programının
+    içine gömülür.
 
     KurulumPaketi\ hazır olduktan sonra installer\RestoranKurulum.iss Inno Setup
     ile derlenir; çıktı da OutputDir gereği aynı klasöre düşer. O klasörün
@@ -130,8 +132,9 @@ tutulmuyor, buraya elle indirilir):
    (Microsoft'un indirme sayfasından. Küçük indirici SQL2022-SSEI-Expr.exe
    de çalışır ama İNTERNET İSTER — USB kurulumu için TAM paketi kullanın.)
 
-2) node-vXX.X.X-x64.msi  -- Hedef makinede Node.js yoksa ZORUNLU
-   https://nodejs.org > LTS > Windows Installer (.msi) 64-bit
+2) installer\node.exe    -- ZORUNLU (bu klasore DEGIL, kaynak klasore)
+   src-tauri\binaries\node-*.exe dosyasinin kopyasi (~88 MB).
+   Kurulum programinin ICINE gomulur; Node.js MSI'ina gerek yoktur.
 
 3) RestoranKurulumSihirbazi.exe
    installer\RestoranKurulum.iss dosyasını Inno Setup ile derleyin (Compile);
@@ -163,7 +166,9 @@ Write-Host ''
 Write-Host 'SONRAKİ ADIMLAR:' -ForegroundColor Yellow
 Write-Host " 1) nssm.exe'yi (https://nssm.cc/download > win64) şuraya kopyala:"
 Write-Host "    $kokDizin\installer\nssm.exe"
-Write-Host " 2) SQLEXPR_x64_ENU.exe ve (gerekiyorsa) node-vXX-x64.msi dosyalarını şuraya kopyala:"
+Write-Host " 1b) Taşınabilir Node'u şuraya kopyala (Node.js MSI'ına gerek yok):"
+Write-Host "    copy src-tauri\binaries\node-*.exe  installer\node.exe"
+Write-Host " 2) SQLEXPR_x64_ENU.exe dosyasını şuraya kopyala:"
 Write-Host "    $CikisKlasoru"
 Write-Host ' 3) installer\RestoranKurulum.iss dosyasını Inno Setup ile derle (Compile).'
 Write-Host "    Derlenen kurulum programı otomatik olarak $CikisKlasoru içine düşecek."
