@@ -105,6 +105,19 @@ export default function Shifts() {
   // Vardiya ekranı); personel için vardiya yalnızca mesai kaydıdır.
   const expected = Number(shift?.ExpectedCash) || 0;
 
+  // ============================================================
+  // AÇILIŞ KASASI ALANLARI SIFIRSA GİZLENİR.
+  //
+  // Vardiya girişte otomatik ve 0 açılış kasasıyla açıldığı için bu alan
+  // normalde hep ₺0,00 gösterir — bilgi taşımayan bir sütun/kutu olur.
+  // Ama HER ZAMAN 0 DEĞİLDİR: yönetici, Aktif Vardiya ekranındaki "Vardiya
+  // Aç" (open-for) akışıyla personel adına gerçek bir açılış kasası
+  // girebilir. O yüzden alan tamamen silinmiyor, yalnızca değer sıfırken
+  // gizleniyor — yöneticinin girdiği tutar kaybolmaz.
+  // ============================================================
+  const hasFloat = Number(shift?.OpeningFloat) > 0;
+  const historyHasFloat = history.some((s) => Number(s.OpeningFloat) > 0);
+
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-6">
@@ -135,10 +148,16 @@ export default function Shifts() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mt-5">
-              <div><p className="font-mono text-[9px] uppercase tracking-wider text-cream/40">Açılış Kasası</p><p className="font-mono text-sm font-semibold mt-0.5">{money(shift.OpeningFloat)}</p></div>
+              {hasFloat && (
+                <div><p className="font-mono text-[9px] uppercase tracking-wider text-cream/40">Açılış Kasası</p><p className="font-mono text-sm font-semibold mt-0.5">{money(shift.OpeningFloat)}</p></div>
+              )}
               <div><p className="font-mono text-[9px] uppercase tracking-wider text-cream/40">Açılış Zamanı</p><p className="font-mono text-sm font-semibold mt-0.5">{dt(shift.OpenedAt)}</p></div>
             </div>
-            <p className="font-mono text-[10px] text-cream/40 mt-4">Beklenen = açılış kasası + bu vardiyada aldığın net nakit ödemeler.</p>
+            <p className="font-mono text-[10px] text-cream/40 mt-4">
+              {hasFloat
+                ? 'Beklenen = açılış kasası + bu vardiyada aldığın net nakit ödemeler.'
+                : 'Beklenen = bu vardiyada aldığın net nakit ödemeler.'}
+            </p>
           </div>
 
           <div className="rounded-2xl border border-hairline bg-panel p-6">
@@ -203,7 +222,7 @@ export default function Shifts() {
                   <th className="px-4 py-2.5">Açılış</th>
                   <th className="px-4 py-2.5">Kapanış</th>
                   <th className="px-4 py-2.5">Süre</th>
-                  <th className="px-4 py-2.5 text-right">Açılış Kasası</th>
+                  {historyHasFloat && <th className="px-4 py-2.5 text-right">Açılış Kasası</th>}
                   <th className="px-4 py-2.5 text-right">Beklenen</th>
                   <th className="px-4 py-2.5 text-right">Sayılan</th>
                   <th className="px-4 py-2.5 text-right">Fark</th>
@@ -217,7 +236,7 @@ export default function Shifts() {
                     <td className="px-4 py-2.5 font-mono text-xs text-slate">{dt(s.OpenedAt)}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-slate">{s.Status === 'Open' ? '— (açık)' : dt(s.ClosedAt)}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-paper">{durFromMinutes(s.DurationMinutes)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-xs text-paper">{money(s.OpeningFloat)}</td>
+                    {historyHasFloat && <td className="px-4 py-2.5 text-right font-mono text-xs text-paper">{money(s.OpeningFloat)}</td>}
                     <td className="px-4 py-2.5 text-right font-mono text-xs text-paper">{s.ExpectedCash == null ? '—' : money(s.ExpectedCash)}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-xs text-paper">{s.CountedCash == null ? '—' : money(s.CountedCash)}</td>
                     <td className={`px-4 py-2.5 text-right font-mono text-xs font-semibold ${s.Difference == null ? 'text-slate' : Math.abs(Number(s.Difference)) < 0.005 ? 'text-moss' : 'text-red-500'}`}>

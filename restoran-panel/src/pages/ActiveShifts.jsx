@@ -111,7 +111,10 @@ export default function ActiveShifts() {
                 <Cell label="Ciro" value={money(s.CurrentSales)} />
                 <Cell label="Beklenen Nakit" value={money(s.ExpectedCash)} tone="text-moss" />
                 <Cell label="Açık Masa" value={s.CurrentTables ?? 0} />
-                <Cell label="Açılış" value={money(s.OpeningFloat)} />
+                {/* Açılış kasası vardiya girişte otomatik açıldığı için normalde 0'dır
+                    ve bilgi taşımaz; yalnızca yönetici "Vardiya Aç" (open-for) ile
+                    gerçek bir tutar girdiyse gösterilir (bkz. pages/Shifts.jsx). */}
+                {Number(s.OpeningFloat) > 0 && <Cell label="Açılış" value={money(s.OpeningFloat)} />}
                 <Cell label="Son Aktivite" value={s.LastActivity ? clock(s.LastActivity) : '—'} small />
               </div>
 
