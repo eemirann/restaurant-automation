@@ -23,8 +23,10 @@
 #      kurulu 'mssql-tools' imajlarında hâlâ /opt/mssql-tools/bin/sqlcmd
 #      olabilir, -C bayrağı sertifika güvenini kabul eder.)
 #   Panel:         http://localhost:8080
-#   Müşteri Menü:  http://localhost:8081
 #   Backend:       http://localhost:4091
+#   Müşteri Menü:  ayrı servis YOK — backend servis eder:
+#                  http://localhost:4091/<masa-qr-kodu>
+#                  (geliştirmede: cd musteri-menu && npm run dev -> :5174)
 # ============================================================
 # 'name' SABİT tutulur (klasör adına göre otomatik türetilmez): scripts/
 # paketle.ps1 ile offline paketlenen imaj etiketleri (<name>-backend vb.)
@@ -81,49 +83,24 @@ services:
       - backend
     restart: unless-stopped
 
-  customer-menu:
-    build:
-      context: ./musteri-menu
-      # BOŞ BIRAKILIYOR (bilerek): boş olduğunda menü API'yi göreli '/api'
-      # adresinden çağırır ve kendi nginx'i backend'e proxy'ler. Böylece aynı
-      # imaj hem yerel IP hem Cloudflare alan adı üzerinden çalışır. Buraya
-      # mutlak bir adres yazmak menüyü tek bir adrese kilitler ve telefondan
-      # (yerel IP ya da internet) erişimi bozar. Ayrıntı: musteri-menu/nginx.conf.
-      args:
-        VITE_API_URL: "${CUSTOMER_MENU_API_URL:-}"
-    ports:
-      - "8081:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
   # ============================================================
-  # Cloudflare Tunnel — OPSİYONEL, VARSAYILAN OLARAK KAPALI.
+  # KALDIRILAN SERVİSLER: customer-menu ve cloudflared
   #
-  # Müşteri menüsünü mobil veriyle (4G/5G) de erişilebilir hale getirir.
-  # 'profiles' sayesinde normal 'docker compose up -d' ile BAŞLAMAZ;
-  # sadece açıkça istendiğinde çalışır:
-  #     docker compose --profile tunnel up -d
+  # customer-menu — müşteri QR menüsünü servis eden nginx konteyneriydi
+  # (:8081) ve '/api'yi backend'e proxy'liyordu. Menüyü artık backend'in
+  # kendisi statik olarak servis ediyor (server.js), bu yüzden
+  # musteri-menu/Dockerfile ve musteri-menu/nginx.conf silindi. Menüye
+  # geliştirmede 'cd musteri-menu && npm run dev' (:5174) ile,
+  # üretimde http://<sunucu>:4091/<qrToken> ile erişilir.
   #
-  # GÜVENLİK: Tünel yalnızca 'customer-menu' konteynerine bağlanır
-  # (Cloudflare panelinde public hostname -> http://customer-menu:80).
-  # Yönetim paneli (8080), backend (4091) ve veritabanı (1433) internete
-  # HİÇ çıkmaz. Menü konteyneri de backend'in sadece anonim müşteri
-  # uçlarını proxy'ler (bkz. musteri-menu/nginx.conf).
-  #
-  # NOT: Bu imaj images.tar'a dahil DEĞİLDİR (offline pakette yer kaplamasın
-  # diye) — ilk çalıştırmada internetten indirilir. Zaten tünel kurmak için
-  # internet gerektiği için bu bir kısıt oluşturmaz.
+  # cloudflared — menüyü mobil veriye açan opsiyonel tüneldi ve GÜVENLİĞİ
+  # customer-menu konteynerine bağlanmaktan geliyordu: nginx yalnızca
+  # /api/public/* ve GET /api/settings uçlarını geçiriyor, yönetim API'si
+  # internete HİÇ çıkmıyordu. O filtre katmanı artık yok — 4091'i olduğu
+  # gibi tünellemek TÜM yönetim API'sini internete açar. Menüyü dışarı
+  # açmak gerekirse tüneli/ters proxy'yi yalnızca /public ve /uploads
+  # yollarına izin verecek şekilde yapılandırın.
   # ============================================================
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    # ':-' ile boş varsayılan: token .env'de tanımlı değilken (tünel
-    # kullanılmadığında) compose her komutta uyarı basmasın.
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
-    depends_on:
-      - customer-menu
-    restart: unless-stopped
-    profiles: ["tunnel"]
 
 volumes:
   mssql-data:

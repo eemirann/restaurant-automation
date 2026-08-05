@@ -6,10 +6,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5174,
-    // Üretimde bu proxy'yi nginx yapar (bkz. musteri-menu/nginx.conf).
-    // Geliştirmede de aynı GÖRELİ '/api' adresinin çalışması için vite
-    // dev sunucusu istekleri backend'e iletir — böylece geliştirme ile
-    // üretim aynı kod yolunu kullanır (bkz. src/api/client.js).
+    // Üretimde proxy YOKTUR: menüyü backend'in kendisi servis eder, yani
+    // göreli '/api' zaten aynı origin'deki API'ye gider (bkz. server.js).
+    // Geliştirmede menü 5174'te, backend 4091'de ayrı çalıştığı için aynı
+    // göreli adresin çalışması adına vite dev sunucusu istekleri iletir —
+    // böylece geliştirme ile üretim aynı kod yolunu kullanır
+    // (bkz. src/api/client.js).
     proxy: {
       '/api': 'http://localhost:4091',
       '/uploads': 'http://localhost:4091',

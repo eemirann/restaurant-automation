@@ -104,6 +104,43 @@ linkleri her zaman bir token içerdiği için menü bundan etkilenmez.
 Kurulumdan sonra panelde **Ayarlar → Müşteri Menü Adresi** alanına
 `http://<sunucu-ip>:4091` yazılmalıdır; masa QR kodları bu adrese göre üretilir.
 
+### ⚠️ 4091'i internete AÇMAYIN
+
+Docker kurulumunda menü ayrı bir nginx konteynerindeydi ve o nginx yalnızca
+`/api/public/*` ile `GET /api/settings` uçlarını geçiriyordu. Cloudflare tüneli
+de sadece o konteynere bağlandığı için **yönetim API'si internete hiç
+çıkmıyordu.** Bu filtre katmanı artık yok: menü ve yönetim API'si aynı portu
+(4091) paylaşıyor.
+
+Yerel ağda durum değişmedi (backend 4091 zaten doğrudan erişilebilirdi), ama
+menüyü mobil veriye açmak için 4091'i olduğu gibi tünellemek/port yönlendirmek
+**tüm yönetim API'sini internete açar.** Gerekirse tüneli ya da ters proxy'yi
+yalnızca şu yollara izin verecek şekilde yapılandırın:
+
+```
+/                 (menü SPA'sı ve /assets)
+/api/public/*     (anonim müşteri uçları)
+/api/settings     (yalnızca GET)
+/uploads/*        (ürün görselleri)
+```
+
+### Hız limiti notu
+
+`server.js` tüm `/api` trafiğine `apiLimiter`'ı uyguluyor (IP başına
+15 dakikada 1000 istek) ve bu, müşteri menüsü için ayrıca hesaplanmış
+`publicMenuViewLimiter`'dan (5 dakikada 8000) **daha dardır** — yani menüde
+fiilen bağlayıcı olan limit `apiLimiter`'dır.
+
+Docker'sız kurulumda bu bir sorun değil, hatta düzelme: her telefon backend'e
+kendi yerel IP'siyle bağlandığı için limit kişi başına işliyor (8 sn'lik durum
+yoklamasıyla telefon başına ~112 istek/15dk). Docker'da ise TÜM menü trafiği
+nginx konteynerinin tek IP'siyle geliyordu ve ~9 telefonda tavan doluyordu.
+
+Ancak menüyü bir tünel/ters proxy arkasına alırsanız tüm müşteriler yine tek
+IP'ye düşer ve `apiLimiter` ~9 telefonda devreye girer. O senaryoda
+`middleware/rateLimiters.js` içindeki `apiLimiter.max` değeri yükseltilmeli
+(`publicMenuViewLimiter` ile tutarlı olacak şekilde).
+
 ## Güncelleme
 
 `installer\guncelle.ps1`: servisi durdurur → `node scripts\migrate.js` →
