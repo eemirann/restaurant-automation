@@ -1,4 +1,16 @@
 # ============================================================
+# !!! ÜRETİM KURULUMU ARTIK DOCKER KULLANMIYOR !!!
+#
+# Kasa/POS bilgisayarına kurulum SQL Server Express + Windows Servisi ile
+# yapılır (bkz. installer\README.md). Bu compose dosyası SADECE GELİŞTİRME
+# içindir ve installer tarafından ARTIK KOPYALANMAZ.
+#
+# Üretimdeki karşılıkları:
+#   db            -> SQL Server Express (installer\kurulum-sql-express.ps1)
+#   backend       -> 'RestoranBackend' Windows Servisi (installer\servis-kur.ps1)
+#   customer-menu -> backend'in kendisi (server.js, musteri-menu\dist statik)
+#   panel         -> Tauri masaüstü .exe (ayrı dağıtılır)
+# ============================================================
 # Restoran POS — tam yığın (MSSQL + backend + panel)
 # Kullanım:
 #   1) Kök dizinde .env oluşturun (JWT_SECRET, DB_PASSWORD zorunlu)

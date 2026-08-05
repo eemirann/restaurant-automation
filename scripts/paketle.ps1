@@ -1,25 +1,35 @@
 ﻿<#
 .SYNOPSIS
     Restoran Otomasyonu'nu offline (USB'den, internetsiz) kurulum için paketler.
+    (Docker YOK — SQL Server Express + Windows Servisi mimarisi.)
 
 .DESCRIPTION
     Evde/ofiste, İNTERNET BAĞLANTISI OLAN bir geliştirici makinesinde BİR KEZ
     çalıştırılır. Şunları yapar:
-      1) docker compose build ile backend/panel/customer-menu imajlarını derler.
-      2) mcr.microsoft.com/mssql/server:2022-latest imajını indirir.
-      3) 4 imajı da TEK BİR images.tar dosyasına aktarır (docker save).
-      4) Küçük proje dosyalarını (migrations/, scripts/, docker-compose.yml,
-         .env.example — node_modules HARİÇ, imajların içinde zaten var) +
-         images.tar dosyasını KurulumPaketi\ klasöründe toplar.
+      1) Backend üretim bağımlılıklarını kurar (npm ci --omit=dev) — hedef
+         makinede internet olmayabileceği için node_modules HAZIR gider.
+      2) Müşteri QR menüsünü derler (musteri-menu: npm ci + npm run build).
+         Backend bu dist'i statik olarak servis eder (bkz. server.js).
+      3) KurulumPaketi\ klasörünü hazırlar ve içine README yazar.
 
-    Bu script Docker Desktop Installer.exe'yi İNDİRMEZ — kullanıcı bunu
-    https://www.docker.com/products/docker-desktop adresinden ayrıca indirip
-    KurulumPaketi\ klasörüne KENDİSİ koymalıdır (script sonunda hatırlatılır).
+    ARTIK YAPILMAYANLAR (Docker'dan çıkıldı):
+      - docker compose build / docker save / images.tar
+      - Docker Desktop Installer.exe
 
-    KurulumPaketi\ klasörü hazır olduktan sonra installer\RestoranKurulum.iss
-    Inno Setup ile derlenir (Inno Setup IDE'de aç + Compile, ya da ISCC.exe ile);
-    derlenen kurulum programı da OutputDir ayarı gereği aynı KurulumPaketi\
-    klasörüne düşer. O klasörün TAMAMI USB'ye kopyalanır.
+    restoran-panel BU PAKETE GİRMEZ: Tauri ile ayrı bir masaüstü .exe olarak
+    paketlenip dağıtılıyor (npm run masaustu:derle). Backend adresi
+    (http://localhost:4091) o exe'nin İÇİNE build anında gömülü olduğu için
+    backend'in portu ASLA değiştirilmemelidir.
+
+    Bu script'in İNDİRMEDİĞİ, kullanıcının KENDİSİNİN KurulumPaketi\ klasörüne
+    koyması gereken dosyalar (script sonunda hatırlatılır):
+      - SQLEXPR_x64_ENU.exe   (SQL Server Express tam/offline paketi)
+      - node-vXX.X.X-x64.msi  (Node.js LTS — hedef makinede Node yoksa)
+      - nssm.exe              (https://nssm.cc/download > win64) -> installer\ klasörüne
+
+    KurulumPaketi\ hazır olduktan sonra installer\RestoranKurulum.iss Inno Setup
+    ile derlenir; çıktı da OutputDir gereği aynı klasöre düşer. O klasörün
+    TAMAMI USB'ye kopyalanır.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\paketle.ps1
@@ -53,70 +63,114 @@ function Basarisiz($mesaj) {
 }
 
 # ---------- 0) Ön kontroller ----------
-Adim 'Docker kontrol ediliyor...'
-$dockerVar = Get-Command docker -ErrorAction SilentlyContinue
-if (-not $dockerVar) {
-    Basarisiz 'Docker bulunamadı. Bu script, imajları DERLEMEK için bu makinede Docker Desktop kurulu ve ÇALIŞIYOR olmalı (paketleme makinesi internete bağlı olmalı; hedef/USB ile kurulacak makine internetsiz kalabilir).'
+Adim 'Node.js kontrol ediliyor...'
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Basarisiz 'Node.js bulunamadı. Paketleme makinesinde Node.js (LTS) kurulu olmalı.'
 }
-try {
-    docker info *> $null
-} catch {
-    Basarisiz 'Docker Desktop çalışmıyor gibi görünüyor. Docker Desktop''u başlatıp tekrar deneyin.'
-}
+Write-Host "node $(node --version)"
 
 Set-Location $kokDizin
 
-# ---------- 1) İmajları derle + indir ----------
-Adim 'backend/panel/customer-menu imajları derleniyor (docker compose build)...'
-docker compose build
-if ($LASTEXITCODE -ne 0) { Basarisiz 'docker compose build başarısız oldu.' }
+# ---------- 1) Backend üretim bağımlılıkları ----------
+# --omit=dev: jest/nodemon/sharp/tauri-cli gibi geliştirme paketleri hedef
+# makinede gereksiz (ve sharp/tauri yüzlerce MB tutuyor).
+Adim 'Backend üretim bağımlılıkları kuruluyor (npm ci --omit=dev)...'
+npm ci --omit=dev
+if ($LASTEXITCODE -ne 0) { Basarisiz 'npm ci --omit=dev başarısız oldu.' }
 
-Adim 'MSSQL imajı indiriliyor (docker pull mcr.microsoft.com/mssql/server:2022-latest)...'
-docker pull mcr.microsoft.com/mssql/server:2022-latest
-if ($LASTEXITCODE -ne 0) { Basarisiz 'docker pull başarısız oldu.' }
+# ---------- 2) Müşteri menüsünü derle ----------
+Adim 'Müşteri QR menüsü derleniyor (musteri-menu)...'
+$menuKlasoru = Join-Path $kokDizin 'musteri-menu'
+if (-not (Test-Path (Join-Path $menuKlasoru 'package.json'))) {
+    Basarisiz "musteri-menu klasörü bulunamadı ($menuKlasoru)."
+}
+Push-Location $menuKlasoru
+try {
+    npm ci
+    if ($LASTEXITCODE -ne 0) { throw 'musteri-menu npm ci başarısız.' }
+    # VITE_API_URL BİLEREK BOŞ: menü API'yi GÖRELİ '/api' adresinden çağırır.
+    # Backend menüyü kendisi servis ettiği için bu adres her zaman doğru
+    # sunucuyu gösterir — menü hangi IP/alan adından açılırsa açılsın.
+    # (bkz. musteri-menu/src/api/client.js)
+    $env:VITE_API_URL = ''
+    npm run build
+    if ($LASTEXITCODE -ne 0) { throw 'musteri-menu npm run build başarısız.' }
+} catch {
+    Pop-Location
+    Basarisiz $_.Exception.Message
+}
+Pop-Location
 
-# ---------- 2) Çıkış klasörünü hazırla ----------
+if (-not (Test-Path (Join-Path $menuKlasoru 'dist\index.html'))) {
+    Basarisiz 'musteri-menu\dist\index.html üretilmedi.'
+}
+
+# ---------- 3) Çıkış klasörünü hazırla ----------
 Adim "Çıkış klasörü hazırlanıyor: $CikisKlasoru"
 if (Test-Path $CikisKlasoru) {
     Remove-Item $CikisKlasoru -Recurse -Force
 }
 New-Item -ItemType Directory -Path $CikisKlasoru | Out-Null
 
-# ---------- 3) Tüm imajları TEK bir tar dosyasına aktar ----------
-Adim 'İmaj etiketleri belirleniyor (docker compose config --images)...'
-$imajlar = docker compose config --images
-if ($LASTEXITCODE -ne 0 -or -not $imajlar) { Basarisiz 'İmaj listesi alınamadı (docker compose config --images).' }
-Write-Host ($imajlar -join "`n")
+# Proje dosyalarının KOPYALANMASINA GEREK YOK: installer\RestoranKurulum.iss
+# hepsini (server.js, config\, controllers\, routes\, utils\, migrations\,
+# scripts\, node_modules\, musteri-menu\dist\) doğrudan repodan GÖMÜYOR.
+# Bu klasöre sadece Inno Setup çıktısı ve büyük ikili dosyalar (SQL Express
+# kurulumu, Node.js MSI) konur.
 
-$tarYolu = Join-Path $CikisKlasoru 'images.tar'
-Adim "İmajlar TEK bir dosyaya aktarılıyor: $tarYolu (bu birkaç dakika sürebilir)"
-docker save -o $tarYolu @imajlar
-if ($LASTEXITCODE -ne 0) { Basarisiz 'docker save başarısız oldu.' }
+$okuBeni = @"
+RESTORAN OTOMASYONU - KURULUM PAKETİ
+====================================
 
-# ---------- 4) Küçük proje dosyalarını kopyala (node_modules HARİÇ) ----------
-Adim 'Proje dosyaları kopyalanıyor (migrations/, scripts/, docker-compose.yml, .env.example)...'
-Copy-Item (Join-Path $kokDizin 'migrations') (Join-Path $CikisKlasoru 'migrations') -Recurse
-Copy-Item (Join-Path $kokDizin 'scripts') (Join-Path $CikisKlasoru 'scripts') -Recurse -Exclude 'paketle.ps1'
-Copy-Item (Join-Path $kokDizin 'docker-compose.yml') $CikisKlasoru
-Copy-Item (Join-Path $kokDizin '.env.example') $CikisKlasoru
+Bu klasöre KOPYALANMASI GEREKEN dosyalar (büyük oldukları için repoda
+tutulmuyor, buraya elle indirilir):
 
-# node_modules zaten kopyalanmadı (yukarıda hiç referans verilmedi) — imajların
-# içinde zaten kurulu, host'ta migrate.js/createFirstAdmin.js'i host'tan
-# ÇALIŞTIRMIYORUZ (bkz. installer/postinstall.ps1 -> docker compose exec/run,
-# script'ler KONTEYNER İÇİNDE çalışır), o yüzden host'ta node_modules gerekmiyor.
+1) SQLEXPR_x64_ENU.exe   -- ZORUNLU
+   SQL Server 2022 Express > Download Media > Express Core
+   (Microsoft'un indirme sayfasından. Küçük indirici SQL2022-SSEI-Expr.exe
+   de çalışır ama İNTERNET İSTER — USB kurulumu için TAM paketi kullanın.)
 
-# ---------- 5) Özet ----------
-$tarBoyutMB = [math]::Round((Get-Item $tarYolu).Length / 1MB, 1)
+2) node-vXX.X.X-x64.msi  -- Hedef makinede Node.js yoksa ZORUNLU
+   https://nodejs.org > LTS > Windows Installer (.msi) 64-bit
+
+3) RestoranKurulumSihirbazi.exe
+   installer\RestoranKurulum.iss dosyasını Inno Setup ile derleyin (Compile);
+   çıktı otomatik olarak bu klasöre düşer.
+
+AYRICA (repo tarafında, derlemeden ÖNCE):
+   installer\nssm.exe  -- https://nssm.cc/download > win64\nssm.exe
+   Bu dosya kurulum programının İÇİNE gömülür.
+
+Sonra bu klasörün TAMAMINI USB belleğe kopyalayın.
+
+NOT: Yönetim paneli (RESTO POS) bu pakette DEĞİLDİR — Tauri ile ayrı bir
+masaüstü .exe olarak derlenip (npm run masaustu:derle) ayrıca dağıtılır.
+"@
+Set-Content -Path (Join-Path $CikisKlasoru 'OKUBENI.txt') -Value $okuBeni -Encoding utf8
+
+# ---------- 4) Özet ----------
+$menuBoyutMB = [math]::Round(((Get-ChildItem (Join-Path $menuKlasoru 'dist') -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
+$nmBoyutMB = [math]::Round(((Get-ChildItem (Join-Path $kokDizin 'node_modules') -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
+
 Write-Host ''
 Write-Host '==================================================================' -ForegroundColor Green
-Write-Host " Paketleme tamamlandı: $CikisKlasoru" -ForegroundColor Green
-Write-Host " images.tar: $tarBoyutMB MB" -ForegroundColor Green
+Write-Host " Paketlemeye hazır." -ForegroundColor Green
+Write-Host " musteri-menu\dist : $menuBoyutMB MB" -ForegroundColor Green
+Write-Host " node_modules      : $nmBoyutMB MB (kurulum programına gömülecek)" -ForegroundColor Green
+Write-Host " Çıkış klasörü     : $CikisKlasoru" -ForegroundColor Green
 Write-Host '==================================================================' -ForegroundColor Green
 Write-Host ''
 Write-Host 'SONRAKİ ADIMLAR:' -ForegroundColor Yellow
-Write-Host " 1) ""Docker Desktop Installer.exe""'yi https://www.docker.com/products/docker-desktop adresinden indirip"
-Write-Host "    şu klasöre KENDİN kopyala: $CikisKlasoru"
-Write-Host ' 2) installer\RestoranKurulum.iss dosyasını Inno Setup ile derle (Compile).'
+Write-Host " 1) nssm.exe'yi (https://nssm.cc/download > win64) şuraya kopyala:"
+Write-Host "    $kokDizin\installer\nssm.exe"
+Write-Host " 2) SQLEXPR_x64_ENU.exe ve (gerekiyorsa) node-vXX-x64.msi dosyalarını şuraya kopyala:"
+Write-Host "    $CikisKlasoru"
+Write-Host ' 3) installer\RestoranKurulum.iss dosyasını Inno Setup ile derle (Compile).'
 Write-Host "    Derlenen kurulum programı otomatik olarak $CikisKlasoru içine düşecek."
-Write-Host " 3) $CikisKlasoru klasörünün TAMAMINI USB belleğe kopyala."
+Write-Host " 4) $CikisKlasoru klasörünün TAMAMINI USB belleğe kopyala."
+Write-Host ''
+Write-Host 'AYRINTI: KurulumPaketi\OKUBENI.txt' -ForegroundColor Yellow
+Write-Host ''
+Write-Host 'UYARI: npm ci --omit=dev çalıştığı için geliştirme paketleri (jest, tauri)' -ForegroundColor Yellow
+Write-Host 'artık kurulu değil. Geliştirmeye dönmek için: npm install' -ForegroundColor Yellow
 Write-Host ''

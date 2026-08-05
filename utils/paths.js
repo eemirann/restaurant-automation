@@ -19,8 +19,15 @@ const path = require('path');
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, '..', 'logs');
 
+// Müşteri QR menüsünün derlenmiş (vite build) çıktısı. Docker'da menü ayrı bir
+// nginx konteynerinden servis ediliyordu; Windows Servisi kurulumunda ayrı bir
+// web sunucusu YOK, bu yüzden backend menüyü kendisi servis eder (bkz.
+// server.js). Klasör yoksa servis etme adımı sessizce atlanır.
+const MENU_DIST_DIR = process.env.MENU_DIST_DIR
+    || path.join(__dirname, '..', 'musteri-menu', 'dist');
+
 // Ürün görsellerinin fiziksel klasörü. URL yolu ('/uploads/products/...')
 // bundan BAĞIMSIZDIR ve değişmez — istemciler etkilenmez.
 const PRODUCT_IMAGE_DIR = path.join(UPLOAD_DIR, 'products');
 
-module.exports = { UPLOAD_DIR, LOG_DIR, PRODUCT_IMAGE_DIR };
+module.exports = { UPLOAD_DIR, LOG_DIR, PRODUCT_IMAGE_DIR, MENU_DIST_DIR };

@@ -11,11 +11,13 @@ if (!process.env.JWT_SECRET) {
 }
 
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const { corsOrigin } = require('./config/cors');
+const { corsOptionsDelegate } = require('./config/cors');
 const { apiLimiter } = require('./middleware/rateLimiters');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const productRoutes = require('./routes/products');
@@ -76,7 +78,9 @@ app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(cors({ origin: corsOrigin }));
+// Delegate biçimi: aynı-origin istekler (müşteri menüsü artık backend ile aynı
+// origin'den servis ediliyor) whitelist'e takılmadan geçer — bkz. config/cors.js.
+app.use(cors(corsOptionsDelegate));
 // Varsayılan 100kb limiti, menü içe aktarma JSON'u (POST /api/products/import
 // — tüm kategoriler/ürünler/varyantlar/reçeteler + base64 ürün görselleri tek
 // body'de) için yetersiz kalabilir; diğer route'lar bundan etkilenmez, sadece
@@ -120,6 +124,42 @@ app.use('/api/service-requests', serviceRequestRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/logs', logsRoutes);
+
+// ============================================================
+// MÜŞTERİ QR MENÜSÜ (musteri-menu/dist) — statik servis
+//
+// NEDEN BURADA: Docker kurulumunda menüyü ayrı bir nginx konteyneri
+// (customer-menu, :8081) servis ediyordu. SQL Express + Windows Servisi
+// kurulumunda ayrı bir web sunucusu yok, ama menü müşterinin TELEFONUNDAN
+// tarayıcıyla açılıyor — yani bir HTTP sunucusuna ihtiyacı var. Panel'in
+// (restoran-panel) böyle bir ihtiyacı YOK: o Tauri'nin kendi WebView'inde,
+// exe'nin içine gömülü olarak çalışır ve buraya hiç uğramaz.
+//
+// NEDEN KÖK ('/') ALTINDA, '/menu' DEĞİL: musteri-menu build çıktısı
+// varlıklarını MUTLAK yollarla ('/assets/...') çağırır ve React Router'ı
+// basename'siz, QR rotasını da doğrudan kökte ('/:qrToken') tanımlar. Bir
+// alt yola taşımak musteri-menu'nün vite base + router basename ayarlarının
+// DEĞİŞTİRİLİP YENİDEN DERLENMESİNİ gerektirirdi; bu geçişin kapsamı
+// dışında (uygulama kodu değişmez). Kökte servis edilince QR linkleri
+// http://<sunucu-ip>:4091/<qrToken> şeklinde çalışır — panelin Ayarlar >
+// "Müşteri Menü Adresi" alanına bu adres yazılır.
+//
+// SIRALAMA ÖNEMLİ: /api ve /uploads YUKARIDA kayıtlı olduğu için buraya
+// hiç düşmez; SPA fallback'i de bu önekleri açıkça dışarıda bırakır ki
+// bilinmeyen bir API yolu index.html yerine 404 JSON'u alsın.
+// GET '/' ise sağlık ucu olarak KALIR (yukarıda tanımlı) — QR linkleri
+// her zaman bir token içerdiği için menü bundan etkilenmez.
+// ============================================================
+const { MENU_DIST_DIR } = require('./utils/paths');
+if (fs.existsSync(path.join(MENU_DIST_DIR, 'index.html'))) {
+    app.use(express.static(MENU_DIST_DIR));
+    app.get(/^\/(?!api\/|uploads\/).*/, (req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+        res.sendFile(path.join(MENU_DIST_DIR, 'index.html'));
+    });
+} else {
+    console.warn(`Müşteri menüsü derlenmemiş (${MENU_DIST_DIR} yok) — menü servis edilmeyecek. "cd musteri-menu && npm run build" ile derleyin.`);
+}
 
 // Hata yönetimi (TÜM route'lardan SONRA olmalı)
 app.use(notFoundHandler);

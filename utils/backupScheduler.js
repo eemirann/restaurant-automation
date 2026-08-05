@@ -3,12 +3,21 @@ const path = require('path');
 const cron = require('node-cron');
 const { sql, connectDB } = require('../config/db');
 
-// docker-compose.yml: aynı named volume (db-backups) iki farklı serviste iki
-// farklı mount noktasına bağlanır — SQL Server BACKUP DATABASE T-SQL'i
-// BACKUP_DISK_DIR'e yazar, bu Node süreci ise AYNI fiziksel veriye
-// BACKUP_FS_DIR üzerinden (fs.readdir/unlink) erişir.
-const BACKUP_DISK_DIR = '/var/opt/mssql/backup'; // SQL Server konteynerindeki path (T-SQL DISK = ...)
-const BACKUP_FS_DIR = process.env.BACKUP_FS_DIR || '/app/db-backups'; // backend konteynerindeki aynı volume
+// İKİ AYRI YOL, AYNI FİZİKSEL KLASÖR:
+//   BACKUP_DISK_DIR -> SQL Server sürecinin gördüğü yol (T-SQL: BACKUP ... TO DISK)
+//   BACKUP_FS_DIR   -> bu Node sürecinin gördüğü yol (fs.readdir/unlink)
+//
+// Docker'da bunlar FARKLIYDI: aynı named volume (db-backups) db ve backend
+// konteynerlerinde iki farklı mount noktasına bağlanıyordu — varsayılanlar
+// bu yüzden Linux konteyner yollarıdır ve compose kurulumu aynen çalışır.
+//
+// SQL Server Express + Windows Servisi kurulumunda ikisi de AYNI Windows
+// klasörünü gösterir (ör. C:\RestoranOtomasyonu\db-backups) ve installer
+// tarafından .env'e yazılır. O klasöre SQL Server servis hesabının
+// (NT SERVICE\MSSQL$SQLEXPRESS) YAZMA izni verilmelidir — bunu
+// installer/kurulum-sql-express.ps1 yapar.
+const BACKUP_DISK_DIR = process.env.BACKUP_DISK_DIR || '/var/opt/mssql/backup';
+const BACKUP_FS_DIR = process.env.BACKUP_FS_DIR || '/app/db-backups';
 
 function backupFileName(date = new Date()) {
     return `RestoranDB_${date.toISOString().slice(0, 10)}.bak`;
@@ -22,7 +31,10 @@ function backupFileName(date = new Date()) {
 async function runBackup() {
     const pool = await connectDB();
     const fileName = backupFileName();
-    const diskPath = `${BACKUP_DISK_DIR}/${fileName}`;
+    // Ayırıcı hedefe göre seçilir: Windows yolu (C:\...) ise '\', Linux
+    // konteyner yolu (/var/opt/mssql/backup) ise '/'.
+    const ayirici = /^[A-Za-z]:\\/.test(BACKUP_DISK_DIR) ? '\\' : '/';
+    const diskPath = `${BACKUP_DISK_DIR.replace(/[\\/]+$/, '')}${ayirici}${fileName}`;
 
     await pool.request().query(`BACKUP DATABASE RestoranDB TO DISK = N'${diskPath}'`);
 

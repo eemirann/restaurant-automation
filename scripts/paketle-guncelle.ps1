@@ -1,39 +1,48 @@
 ﻿<#
 .SYNOPSIS
-    Var olan (USB'den offline kurulmuş) bir Restoran Otomasyonu kurulumunu
-    GÜNCELLEMEK için küçük bir paket hazırlar (paketle.ps1'in aksine, tüm
-    imajları değil sadece DEĞİŞEN servisleri paketler — çok daha hızlı).
+    Var olan bir Restoran Otomasyonu kurulumunu GÜNCELLEMEK için küçük bir
+    paket hazırlar (paketle.ps1'in aksine node_modules'ü ve SQL Express
+    kurulum dosyasını içermez — çok daha küçük ve hızlı).
 
 .DESCRIPTION
     Bu (internete bağlı, kod değişikliğinin yapıldığı) geliştirici
-    makinesinde çalıştırılır. Şunları yapar:
-      1) Belirtilen servisleri derler (docker compose build).
-      2) Sadece o servislerin imajlarını TEK bir guncelleme.tar dosyasına
-         aktarır (docker save) — veritabanı (db) imajı hiç dokunulmadığı
-         için pakete dahil edilmez.
-      3) migrations\ klasörünü de pakete ekler (yeni migration dosyası
-         eklenmiş olabilir; küçük olduğu için her zaman dahil edilir).
-      4) installer\guncelle.ps1'i de pakete ekler.
+    makinesinde çalıştırılır. Guncelleme\ klasörüne şunları koyar:
+      1) Değişen backend kaynak dosyaları (server.js, config\, controllers\,
+         middleware\, routes\, utils\, scripts\)
+      2) migrations\  (yeni migration eklenmiş olabilir; küçük olduğu için
+         her zaman dahil edilir — migrate.js idempotent)
+      3) musteri-menu\dist\  (istenirse yeniden derlenir)
+      4) installer\guncelle.ps1
+
+    node_modules DAHİL EDİLMEZ: bağımlılık değişmediyse hedef makinede zaten
+    kurulu. package.json'daki bağımlılıklar değiştiyse -BagimliliklarDegisti
+    ile node_modules'ü de pakete ekleyin.
 
     Çıkan Guncelleme\ klasörünün TAMAMI USB ile hedef bilgisayara taşınır;
-    orada C:\RestoranOtomasyonu (ya da kurulumun yapıldığı klasör) içine
-    kopyalanıp guncelle.ps1 çalıştırılır.
+    orada C:\RestoranOtomasyonu (kurulumun yapıldığı klasör) içine kopyalanıp
+    guncelle.ps1 YÖNETİCİ olarak çalıştırılır.
+
+    NOT: Yönetim paneli (RESTO POS / Tauri exe) bu paketin KAPSAMI DIŞINDA —
+    ayrı derlenip ayrı dağıtılır.
 
 .EXAMPLE
-    # Sadece paneli değiştirdiyseniz:
-    powershell -ExecutionPolicy Bypass -File scripts\paketle-guncelle.ps1 -Servisler panel
-
-    # Backend + panel değiştiyse (varsayılan: ikisi de + customer-menu):
     powershell -ExecutionPolicy Bypass -File scripts\paketle-guncelle.ps1
+
+.EXAMPLE
+    # Müşteri menüsü de değiştiyse yeniden derle:
+    powershell -ExecutionPolicy Bypass -File scripts\paketle-guncelle.ps1 -MenuyuDerle
 #>
 
 [CmdletBinding()]
 param(
-    # Hangi servisler yeniden derlenip pakete dahil edilecek.
-    [string[]]$Servisler = @('backend', 'panel', 'customer-menu'),
-
     # Çıkış klasörü (varsayılan: proje kökünde Guncelleme\).
-    [string]$CikisKlasoru
+    [string]$CikisKlasoru,
+
+    # musteri-menu'yü yeniden derleyip pakete ekle.
+    [switch]$MenuyuDerle,
+
+    # package.json bağımlılıkları değiştiyse node_modules'ü de pakete ekle.
+    [switch]$BagimliliklarDegisti
 )
 
 $ScriptKlasoru = $PSScriptRoot
@@ -57,71 +66,86 @@ function Basarisiz($mesaj) {
     exit 1
 }
 
-# ---------- 0) Ön kontroller ----------
-Adim 'Docker kontrol ediliyor...'
-$dockerVar = Get-Command docker -ErrorAction SilentlyContinue
-if (-not $dockerVar) {
-    Basarisiz 'Docker bulunamadı. Bu makinede Docker Desktop kurulu ve çalışıyor olmalı.'
-}
-try {
-    docker info *> $null
-} catch {}
-if ($LASTEXITCODE -ne 0) {
-    Basarisiz 'Docker Desktop çalışmıyor gibi görünüyor. Docker Desktop''u başlatıp tekrar deneyin.'
-}
-
 Set-Location $kokDizin
 
-# ---------- 1) Belirtilen servisleri derle ----------
-Adim "Servisler derleniyor (docker compose build $($Servisler -join ' '))..."
-docker compose build @Servisler
-if ($LASTEXITCODE -ne 0) { Basarisiz 'docker compose build başarısız oldu.' }
-
-# ---------- 2) Çıkış klasörünü hazırla ----------
+# ---------- 1) Çıkış klasörünü hazırla ----------
 Adim "Çıkış klasörü hazırlanıyor: $CikisKlasoru"
 if (Test-Path $CikisKlasoru) {
     Remove-Item $CikisKlasoru -Recurse -Force
 }
 New-Item -ItemType Directory -Path $CikisKlasoru | Out-Null
 
-# ---------- 3) Sadece bu servislerin imajlarını tek dosyaya aktar ----------
-# NOT: 'docker compose config --images <servis>' bu compose sürümünde servis
-# adına göre FİLTRELEME yapmıyor (tüm imajları döndürüyor) — bu yüzden imaj
-# etiketini docker-compose.yml'deki SABİT proje adından ('name: restoran-otomasyonu')
-# doğrudan türetiyoruz: <proje-adı>-<servis>:latest.
-Adim 'İmaj etiketleri belirleniyor...'
-if ($Servisler -contains 'db') {
-    Basarisiz "'db' servisi (mcr.microsoft.com/mssql/server) bu script ile güncellenmez — veritabanı imajı zaten değişmiyor."
+# ---------- 2) Müşteri menüsünü (istenirse) derle ----------
+$menuKlasoru = Join-Path $kokDizin 'musteri-menu'
+if ($MenuyuDerle) {
+    Adim 'Müşteri QR menüsü derleniyor...'
+    Push-Location $menuKlasoru
+    try {
+        if (-not (Test-Path (Join-Path $menuKlasoru 'node_modules'))) {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'musteri-menu npm ci başarısız.' }
+        }
+        # VITE_API_URL bilerek boş — menü API'yi göreli '/api' ile çağırır.
+        $env:VITE_API_URL = ''
+        npm run build
+        if ($LASTEXITCODE -ne 0) { throw 'musteri-menu npm run build başarısız.' }
+    } catch {
+        Pop-Location
+        Basarisiz $_.Exception.Message
+    }
+    Pop-Location
 }
-$imajlar = @($Servisler | ForEach-Object { "restoran-otomasyonu-${_}:latest" })
-foreach ($imaj in $imajlar) {
-    docker image inspect $imaj *> $null
-    if ($LASTEXITCODE -ne 0) { Basarisiz "'$imaj' imajı bulunamadı — 'docker compose build' başarılı oldu mu kontrol edin." }
+
+# ---------- 3) Dosyaları kopyala ----------
+Adim 'Backend kaynak dosyaları kopyalanıyor...'
+
+$klasorler = @('config', 'controllers', 'middleware', 'routes', 'utils', 'scripts', 'migrations')
+foreach ($k in $klasorler) {
+    $kaynak = Join-Path $kokDizin $k
+    if (Test-Path $kaynak) {
+        Copy-Item $kaynak (Join-Path $CikisKlasoru $k) -Recurse
+    }
 }
-Write-Host ($imajlar -join "`n")
+# paketle*.ps1 hedef makinede işe yaramaz — pakete girmesin.
+Get-ChildItem (Join-Path $CikisKlasoru 'scripts') -Filter 'paketle*.ps1' -ErrorAction SilentlyContinue |
+    Remove-Item -Force
 
-$tarYolu = Join-Path $CikisKlasoru 'guncelleme.tar'
-Adim "İmajlar tek bir dosyaya aktarılıyor: $tarYolu"
-docker save -o $tarYolu @imajlar
-if ($LASTEXITCODE -ne 0) { Basarisiz 'docker save başarısız oldu.' }
+foreach ($d in @('server.js', 'package.json', 'package-lock.json', '.env.example')) {
+    $kaynak = Join-Path $kokDizin $d
+    if (Test-Path $kaynak) { Copy-Item $kaynak $CikisKlasoru }
+}
 
-# ---------- 4) migrations\ ve guncelle.ps1'i pakete ekle ----------
-Adim 'migrations\ klasörü ve guncelle.ps1 kopyalanıyor...'
-Copy-Item (Join-Path $kokDizin 'migrations') (Join-Path $CikisKlasoru 'migrations') -Recurse
+if (Test-Path (Join-Path $menuKlasoru 'dist\index.html')) {
+    Adim 'Müşteri menüsü (musteri-menu\dist) kopyalanıyor...'
+    New-Item -ItemType Directory -Force -Path (Join-Path $CikisKlasoru 'musteri-menu') | Out-Null
+    Copy-Item (Join-Path $menuKlasoru 'dist') (Join-Path $CikisKlasoru 'musteri-menu\dist') -Recurse
+} else {
+    Write-Host 'UYARI: musteri-menu\dist bulunamadı — menü pakete eklenmedi (-MenuyuDerle ile derleyebilirsiniz).' -ForegroundColor Yellow
+}
+
+if ($BagimliliklarDegisti) {
+    Adim 'node_modules kopyalanıyor (bağımlılıklar değişti)... bu biraz sürebilir.'
+    if (-not (Test-Path (Join-Path $kokDizin 'node_modules'))) {
+        Basarisiz 'node_modules bulunamadı. Önce: npm ci --omit=dev'
+    }
+    Copy-Item (Join-Path $kokDizin 'node_modules') (Join-Path $CikisKlasoru 'node_modules') -Recurse
+}
+
 Copy-Item (Join-Path $kokDizin 'installer\guncelle.ps1') $CikisKlasoru
 
-# ---------- 5) Özet ----------
-$tarBoyutMB = [math]::Round((Get-Item $tarYolu).Length / 1MB, 1)
+# ---------- 4) Özet ----------
+$boyutMB = [math]::Round(((Get-ChildItem $CikisKlasoru -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
 Write-Host ''
 Write-Host '==================================================================' -ForegroundColor Green
 Write-Host " Güncelleme paketi hazır: $CikisKlasoru" -ForegroundColor Green
-Write-Host " guncelleme.tar: $tarBoyutMB MB  (servisler: $($Servisler -join ', '))" -ForegroundColor Green
+Write-Host " Toplam boyut: $boyutMB MB" -ForegroundColor Green
 Write-Host '==================================================================' -ForegroundColor Green
 Write-Host ''
 Write-Host 'SONRAKİ ADIMLAR:' -ForegroundColor Yellow
 Write-Host " 1) $CikisKlasoru klasörünün TAMAMINI USB belleğe kopyala."
-Write-Host ' 2) Hedef bilgisayarda, USB''deki bu klasörün içeriğini kurulum klasörüne'
-Write-Host '    (ör. C:\RestoranOtomasyonu) kopyala (migrations\ ve guncelleme.tar üzerine yazılabilir).'
-Write-Host ' 3) Yönetici olarak PowerShell aç, şunu çalıştır:'
+Write-Host ' 2) Hedef bilgisayarda, USB''deki bu klasörün İÇERİĞİNİ kurulum klasörüne'
+Write-Host '    (ör. C:\RestoranOtomasyonu) kopyala — üzerine yazsın.'
+Write-Host '    ÖNEMLİ: .env dosyası pakette YOK, üzerine yazılmaz (şifreler korunur).'
+Write-Host ' 3) YÖNETİCİ olarak PowerShell aç, şunu çalıştır:'
 Write-Host '    powershell -ExecutionPolicy Bypass -File "C:\RestoranOtomasyonu\guncelle.ps1"'
 Write-Host ''

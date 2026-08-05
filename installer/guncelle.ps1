@@ -2,17 +2,21 @@
 .SYNOPSIS
     Var olan (USB'den offline kurulmuş) bir Restoran Otomasyonu kurulumunu
     yeni bir sürümle GÜNCELLER (yeniden kurulum yapmadan).
+    (Docker YOK — SQL Server Express + Windows Servisi mimarisi.)
 
 .DESCRIPTION
-    scripts\paketle-guncelle.ps1 ile hazırlanan Guncelleme\ paketinin
-    içeriği (guncelleme.tar + migrations\) bu script ile AYNI klasöre
-    (kurulumun yapıldığı yer, ör. C:\RestoranOtomasyonu) kopyalandıktan
-    sonra çalıştırılır. Şunları yapar:
-      1) guncelleme.tar'daki yeni imajları yükler (docker load).
-      2) Değişen servisleri yeni imajlarla yeniden oluşturur
-         (docker compose up -d --force-recreate) — veritabanı (db)
-         servisine DOKUNMAZ, verileriniz etkilenmez.
-      3) Varsa yeni migration'ları uygular.
+    scripts\paketle-guncelle.ps1 ile hazırlanan Guncelleme\ paketinin içeriği
+    (yeni kaynak dosyalar + migrations\) bu script ile AYNI klasöre (kurulumun
+    yapıldığı yer, ör. C:\RestoranOtomasyonu) kopyalandıktan sonra çalıştırılır.
+    Şunları yapar:
+      1) Backend Windows Servisini DURDURUR (dosyalar node.exe tarafından
+         kilitli olmasın diye).
+      2) Yeni migration'ları uygular (node scripts\migrate.js).
+      3) Servisi yeniden BAŞLATIR ve 4091'de yanıt verdiğini doğrular.
+
+    VERİTABANINA DOKUNULMAZ: SQL Server Express servisi hiç durdurulmaz,
+    RestoranDB olduğu gibi kalır — migration'lar zaten idempotenttir
+    (hepsi IF NOT EXISTS korumalı, bkz. scripts\migrate.js).
 
     Başarısızlıkta ayrıntılı Türkçe hata basar ve non-zero exit code döner.
 
@@ -23,9 +27,7 @@
 [CmdletBinding()]
 param(
     [string]$InstallDir = $PSScriptRoot,
-
-    # Yeniden oluşturulacak servisler (db HARİÇ — veritabanı container'ına dokunulmaz).
-    [string[]]$Servisler = @('backend', 'panel', 'customer-menu')
+    [string]$ServisAdi = 'RestoranBackend'
 )
 
 if (-not $InstallDir) {
@@ -50,74 +52,90 @@ function Basarisiz($mesaj) {
     exit 1
 }
 
-# ---------- .env'i oku (DB_PASSWORD, SQL hazır-mı kontrolü için gerekli) ----------
+$kimlik = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+if (-not $kimlik.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Basarisiz 'Bu script YÖNETİCİ olarak çalıştırılmalı (Windows Servisi durdurulup başlatılacak).'
+}
+
+# ---------- .env kontrolü ----------
 $envYolu = Join-Path $InstallDir '.env'
 if (-not (Test-Path $envYolu)) {
     Basarisiz ".env dosyası bulunamadı ($envYolu). Bu script'i kurulumun yapıldığı klasörde çalıştırdığınızdan emin olun."
 }
 
-$env_ = @{}
-Get-Content $envYolu | ForEach-Object {
-    if ($_ -match '^\s*#' -or $_ -notmatch '=') { return }
-    $parts = $_.Split('=', 2)
-    $env_[$parts[0].Trim()] = $parts[1].Trim()
+if (-not (Test-Path (Join-Path $InstallDir 'server.js'))) {
+    Basarisiz "server.js bulunamadı. Bu script kurulum klasöründe (ör. C:\RestoranOtomasyonu) çalıştırılmalı."
 }
-$dbSifre = $env_['DB_PASSWORD']
-if (-not $dbSifre) { Basarisiz '.env içinde DB_PASSWORD bulunamadı.' }
 
-# ---------- 1) Docker Desktop kontrolü ----------
-Adim 'Docker Desktop kontrol ediliyor...'
-$dockerHazir = $false
-for ($i = 0; $i -lt 3; $i++) {
+# ---------- node.exe ----------
+$nodeExe = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
+if (-not $nodeExe -and (Test-Path "$env:ProgramFiles\nodejs\node.exe")) {
+    $nodeExe = "$env:ProgramFiles\nodejs\node.exe"
+}
+if (-not $nodeExe) { Basarisiz 'node.exe bulunamadı. Node.js kurulu olmalı.' }
+
+# ---------- 1) Servisi durdur ----------
+Adim "Backend servisi ($ServisAdi) durduruluyor..."
+$servis = Get-Service -Name $ServisAdi -ErrorAction SilentlyContinue
+if (-not $servis) {
+    Basarisiz "'$ServisAdi' Windows Servisi bulunamadı. Kurulum tamamlanmamış olabilir — installer\postinstall.ps1'i çalıştırın."
+}
+if ($servis.Status -ne 'Stopped') {
+    Stop-Service -Name $ServisAdi -Force
+    for ($i = 0; $i -lt 20; $i++) {
+        if ((Get-Service -Name $ServisAdi).Status -eq 'Stopped') { break }
+        Start-Sleep -Seconds 1
+    }
+}
+
+# ---------- 2) Migration'ları uygula ----------
+# SQL Server servisi hiç durdurulmadı; yine de yeni açılmış olma ihtimaline
+# karşı birkaç kez denenir (migrate.js idempotent olduğu için güvenli).
+Adim 'Veritabanı şeması güncelleniyor (node scripts\migrate.js)...'
+$migrateTamam = $false
+for ($i = 0; $i -lt 5; $i++) {
+    & $nodeExe (Join-Path $InstallDir 'scripts\migrate.js')
+    if ($LASTEXITCODE -eq 0) { $migrateTamam = $true; break }
+    Write-Host "Migration başarısız, tekrar deneniyor... ($($i + 1)/5)" -ForegroundColor Yellow
+    Start-Sleep -Seconds 5
+}
+if (-not $migrateTamam) {
+    # Servisi geri başlat ki sistem güncellemesiz de olsa AYAKTA kalsın.
+    Start-Service -Name $ServisAdi -ErrorAction SilentlyContinue
+    Basarisiz @"
+Migration'lar uygulanamadı. Backend servisi eski şemayla yeniden başlatıldı.
+
+Elle denemek için:
+  cd "$InstallDir"
+  node scripts\migrate.js
+"@
+}
+
+# ---------- 3) Servisi başlat ve doğrula ----------
+Adim 'Backend servisi yeniden başlatılıyor...'
+Start-Service -Name $ServisAdi
+
+$yanitVerdi = $false
+for ($i = 0; $i -lt 30; $i++) {
     try {
-        docker info *> $null
+        $r = Invoke-WebRequest -Uri 'http://localhost:4091/' -UseBasicParsing -TimeoutSec 3
+        if ($r.StatusCode -eq 200) { $yanitVerdi = $true; break }
     } catch {}
-    if ($LASTEXITCODE -eq 0) { $dockerHazir = $true; break }
-    Write-Host "Docker motoru bekleniyor... ($($i + 1)/3, 20 saniye)"
-    Start-Sleep -Seconds 20
+    Start-Sleep -Seconds 2
 }
-if (-not $dockerHazir) {
-    Basarisiz 'Docker Desktop çalışır durumda değil. Docker Desktop''u elle açıp bu güncellemeyi tekrar çalıştırın.'
-}
+if (-not $yanitVerdi) {
+    Basarisiz @"
+Servis başlatıldı ama http://localhost:4091 yanıt vermiyor.
 
-# ---------- 2) Yeni imajları yükle ----------
-$tarYolu = Join-Path $InstallDir 'guncelleme.tar'
-if (-not (Test-Path $tarYolu)) {
-    Basarisiz "guncelleme.tar bulunamadı ($tarYolu). USB'deki Guncelleme paketinin içeriğinin bu klasöre kopyalandığından emin olun."
+Log dosyalarına bakın:
+  $InstallDir\logs\servis-hata.log
+  $InstallDir\logs\servis-cikti.log
+"@
 }
-Adim 'Yeni imajlar yükleniyor (docker load)...'
-docker load -i $tarYolu
-if ($LASTEXITCODE -ne 0) { Basarisiz 'docker load başarısız oldu.' }
-
-# ---------- 3) Değişen servisleri yeni imajla yeniden oluştur (db HARİÇ) ----------
-Adim "Servisler yeniden oluşturuluyor (docker compose up -d --force-recreate $($Servisler -join ' '))..."
-docker compose up -d --force-recreate @Servisler
-if ($LASTEXITCODE -ne 0) { Basarisiz 'docker compose up -d --force-recreate başarısız oldu.' }
-
-# ---------- 4) SQL Server'ın hazır olmasını bekle (en fazla ~60 sn) ----------
-# db servisine dokunmadık ama SQL Server henüz tam açılış aşamasında olabilir
-# (ör. bu güncellemeden hemen önce başlatılmışsa) — migrate'in erken denenip
-# başarısız olmasını önlemek için.
-Adim 'Veritabanı sunucusunun hazır olması bekleniyor (en fazla ~60 sn)...'
-$sqlHazir = $false
-for ($i = 0; $i -lt 20; $i++) {
-    try {
-        docker compose exec -T db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $dbSifre -C -Q "SELECT 1" *> $null
-    } catch {}
-    if ($LASTEXITCODE -eq 0) { $sqlHazir = $true; break }
-    Start-Sleep -Seconds 3
-}
-if (-not $sqlHazir) {
-    Basarisiz 'Veritabanı sunucusu 60 saniye içinde hazır olmadı. "docker compose logs db" ile ayrıntıya bakabilirsiniz.'
-}
-
-# ---------- 5) Yeni migration'ları uygula ----------
-Adim 'Veritabanı şeması güncelleniyor (migrate)...'
-docker compose run --rm backend npm run migrate
-if ($LASTEXITCODE -ne 0) { Basarisiz 'Migration''lar uygulanamadı.' }
 
 Write-Host ''
 Write-Host '==================================================================' -ForegroundColor Green
-Write-Host ' Güncelleme tamamlandı! Panel: http://localhost:8080' -ForegroundColor Green
+Write-Host ' Güncelleme tamamlandı! Backend: http://localhost:4091/api' -ForegroundColor Green
+Write-Host ' (Masaüstü panelini kapatıp yeniden açın.)' -ForegroundColor Green
 Write-Host '==================================================================' -ForegroundColor Green
 exit 0

@@ -11,12 +11,17 @@ logs/
 db-backups/
 
 # Offline USB kurulum paketi (scripts/paketle.ps1 ile HER SEFERİNDE yeniden
-# üretilir) — images.tar (GB'larca Docker imajı), Docker Desktop Installer.exe
-# ve derlenmiş Inno Setup çıktısı (installer/RestoranKurulum.iss OutputDir'i
-# bu klasörü hedefler) repoya ASLA commitlenmez.
+# üretilir) — SQL Server Express kurulumu, Node.js MSI'ı ve derlenmiş Inno
+# Setup çıktısı (installer/RestoranKurulum.iss OutputDir'i bu klasörü
+# hedefler) repoya ASLA commitlenmez.
 /KurulumPaketi/
 *.tar
-Docker Desktop Installer.exe
+SQLEXPR_x64_ENU.exe
+SQL20*-SSEI-Expr.exe
+node-v*-x64.msi
+# NSSM (https://nssm.cc/download > win64\nssm.exe) — kurulum programına
+# gömülen üçüncü parti ikili; repoda tutulmaz, elle indirilir.
+installer/nssm.exe
 
 # Offline GÜNCELLEME paketi (scripts/paketle-guncelle.ps1 ile her seferinde
 # yeniden üretilir): içindeki migrations/ ve guncelle.ps1 dosyaları repodaki

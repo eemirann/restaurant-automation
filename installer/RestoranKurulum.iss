@@ -1,21 +1,30 @@
 ; ============================================================
 ; Restoran Otomasyonu — Offline (USB, internetsiz) Kurulum Sihirbazı
 ;
-; Önce scripts\paketle.ps1 çalıştırılıp KurulumPaketi\ klasörü (images.tar +
-; Docker Desktop Installer.exe) hazırlanmalı. Bu script Inno Setup ile
-; derlenince (Compile), çıktısı da OutputDir ayarı gereği aynı KurulumPaketi\
-; klasörüne düşer — o klasörün TAMAMI USB'ye kopyalanır.
+; MİMARİ: Docker YOK. Veritabanı SQL Server Express (Windows'a doğrudan
+; kurulur), backend ise NSSM ile kaydedilen bir Windows Servisi olarak
+; çalışır. Müşteri QR menüsünü backend'in kendisi statik olarak servis
+; eder (ayrı nginx konteyneri yok).
 ;
-; Küçük proje dosyaları (migrations/, scripts/, docker-compose.yml,
-; .env.example) doğrudan repodan (..\) gömülür — images.tar ve Docker Desktop
-; Installer.exe ise BÜYÜK ikili dosyalar olduğu için gömülmez, kurulum
-; programının kendisiyle AYNI klasörde (KurulumPaketi\) sibling olarak
-; bulunmaları beklenir; Pascal kodu bunları çalışma anında oradan okur/kopyalar.
+; !!! PORT 4091 SABİTTİR — DEĞİŞTİRMEYİN !!!
+; restoran-panel, Tauri ile ayrı bir masaüstü .exe olarak paketlenmiştir ve
+; backend adresi (http://localhost:4091) exe'nin İÇİNE BUILD ANINDA
+; gömülüdür. Backend'in dinlediği port ya da API yolu (/api) değişirse var
+; olan exe backend'i bulamaz ve YENİDEN DERLENMESİ gerekir.
+;
+; KAPSAM DIŞI: restoran-panel. Bu sihirbaz paneli ne derler ne kurar —
+; Tauri exe'si AYRI dağıtılır ve kendi kurulumuna sahiptir.
+;
+; BÜYÜK İKİLİ DOSYALAR gömülmez; kurulum programının kendisiyle AYNI
+; klasörde (KurulumPaketi\) sibling olarak bulunmaları beklenir:
+;   - SQLEXPR_x64_ENU.exe   (SQL Server Express tam/offline paketi)
+;   - node-vXX.X.X-x64.msi  (Node.js LTS — makinede Node yoksa)
+; Küçük dosyalar (nssm.exe, migrations\, scripts\, ps1'ler) gömülür.
 ; ============================================================
 
 #define MyAppName "Restoran Otomasyonu"
-#define MyAppVersion "1.0"
-#define MyAppURL "http://localhost:8080"
+#define MyAppVersion "2.0"
+#define MyAppURL "http://localhost:4091"
 
 [Setup]
 AppId={{E7A2C9B4-6F3D-4A1E-9C8B-2D5F7A3E1B60}
@@ -38,38 +47,62 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Messages]
 turkish.WelcomeLabel1=Restoran Otomasyonu Kurulum Sihirbazına Hoş Geldiniz
-turkish.WelcomeLabel2=Bu sihirbaz, restoran otomasyon sistemini (veritabanı + sunucu + panel + müşteri menüsü) bu bilgisayara İNTERNET BAĞLANTISI GEREKMEDEN kuracak.%n%nDevam etmeden önce, kurulum programıyla aynı klasörde "images.tar" dosyasının bulunduğundan emin olun.
-turkish.FinishedLabel={#MyAppName} kuruldu.%n%nMasaüstündeki "Restoran Paneli" kısayoluna tıklayarak paneli açabilirsiniz. İlk girişte, az önce belirlediğiniz kullanıcı adı ve PIN'i kullanın.
+turkish.WelcomeLabel2=Bu sihirbaz, restoran otomasyon sisteminin VERİTABANINI (SQL Server Express) ve SUNUCUSUNU (Windows Servisi) bu bilgisayara kuracak.%n%nDevam etmeden önce, kurulum programıyla aynı klasörde "SQLEXPR_x64_ENU.exe" dosyasının bulunduğundan emin olun.%n%nNOT: Yönetim paneli (RESTO POS masaüstü uygulaması) AYRI olarak kurulur — bu sihirbaz onu kurmaz.
+turkish.FinishedLabel={#MyAppName} sunucusu kuruldu ve çalışıyor.%n%nYönetim paneli için RESTO POS masaüstü uygulamasını açın. İlk girişte, az önce belirlediğiniz kullanıcı adı ve PIN'i kullanın.
 
 [Files]
 Source: "..\migrations\*"; DestDir: "{app}\migrations"; Flags: recursesubdirs ignoreversion
-Source: "..\scripts\*"; DestDir: "{app}\scripts"; Excludes: "paketle.ps1"; Flags: recursesubdirs ignoreversion
-Source: "..\docker-compose.yml"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\scripts\*"; DestDir: "{app}\scripts"; Excludes: "paketle.ps1,paketle-guncelle.ps1"; Flags: recursesubdirs ignoreversion
+Source: "..\config\*"; DestDir: "{app}\config"; Flags: recursesubdirs ignoreversion
+Source: "..\controllers\*"; DestDir: "{app}\controllers"; Flags: recursesubdirs ignoreversion
+Source: "..\middleware\*"; DestDir: "{app}\middleware"; Flags: recursesubdirs ignoreversion
+Source: "..\routes\*"; DestDir: "{app}\routes"; Flags: recursesubdirs ignoreversion
+Source: "..\utils\*"; DestDir: "{app}\utils"; Flags: recursesubdirs ignoreversion
+Source: "..\server.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\package.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\package-lock.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\.env.example"; DestDir: "{app}"; Flags: ignoreversion
+; Müşteri QR menüsü — DERLENMİŞ çıktı gömülür (offline kurulumda npm build
+; çalıştırılamayabilir). Derleyip paketlemek scripts\paketle.ps1'in işidir.
+Source: "..\musteri-menu\dist\*"; DestDir: "{app}\musteri-menu\dist"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist
+; Backend bağımlılıkları — offline kurulum için hazır node_modules.
+Source: "..\node_modules\*"; DestDir: "{app}\node_modules"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist
+; Kurulum script'leri
 Source: "postinstall.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "kurulum-sql-express.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "servis-kur.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; NSSM (Non-Sucking Service Manager) — backend'i Windows Servisi yapmak için.
+; https://nssm.cc/download > win64\nssm.exe dosyası installer\ klasörüne konur.
+Source: "nssm.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Code]
 var
-  DockerPage: TWizardPage;
-  DockerStatusLabel: TNewStaticText;
-  DockerInstallButton: TNewButton;
+  SqlPage: TWizardPage;
+  SqlStatusLabel: TNewStaticText;
   DbPage: TInputQueryWizardPage;
   AdminPage: TInputQueryWizardPage;
 
 // ============================================================
-// Docker Desktop kurulu mu? (dosya + registry kontrolü)
+// SQL Server Express kurulum dosyası (kurulum programıyla sibling) var mı?
 // ============================================================
-function IsDockerInstalled(): Boolean;
+function SqlKurulumDosyasiYolu(): String;
 var
-  RegKey: String;
+  Klasor: String;
 begin
-  Result := FileExists(ExpandConstant('{localappdata}') + '\Programs\DockerDesktop\Docker Desktop.exe')
-    or FileExists('C:\Program Files\Docker\Docker\Docker Desktop.exe');
-  if not Result then
-  begin
-    RegKey := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Docker Desktop';
-    Result := RegKeyExists(HKLM, RegKey) or RegKeyExists(HKLM64, RegKey) or RegKeyExists(HKCU, RegKey);
-  end;
+  Klasor := ExtractFileDir(ExpandConstant('{srcexe}'));
+  Result := Klasor + '\SQLEXPR_x64_ENU.exe';
+  if FileExists(Result) then Exit;
+  Result := Klasor + '\SQL2022-SSEI-Expr.exe';
+  if FileExists(Result) then Exit;
+  Result := '';
+end;
+
+// SQL Server Express zaten kurulu mu? (MSSQL$SQLEXPRESS servisinin kayıt anahtarı)
+function IsSqlExpressInstalled(): Boolean;
+begin
+  Result := RegKeyExists(HKLM, 'SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL')
+    and (RegValueExists(HKLM, 'SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL', 'SQLEXPRESS')
+      or RegValueExists(HKLM64, 'SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL', 'SQLEXPRESS'));
 end;
 
 // Belirtilen uzunlukta rastgele (harf+rakam) dize üretir — JWT_SECRET için.
@@ -96,7 +129,9 @@ begin
   Havuz[0] := 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   Havuz[1] := 'abcdefghijkmnpqrstuvwxyz';
   Havuz[2] := '23456789';
-  Havuz[3] := '!@#%*-_';
+  // NOT: '%' ve '&' BİLEREK yok — .env'e yazılıp PowerShell/komut satırından
+  // geçen bir şifrede kaçış sorunlarına yol açabiliyorlar.
+  Havuz[3] := '!@#*-_';
 
   Temel := '';
   for i := 0 to 3 do
@@ -119,78 +154,36 @@ begin
   Result := Temel;
 end;
 
-// "Docker Desktop Kurulumunu Başlat" butonu — kurulum programıyla AYNI
-// klasördeki (USB'de sibling) Docker Desktop Installer.exe'yi çalıştırır.
-procedure DockerInstallButtonClick(Sender: TObject);
-var
-  KurulumDosyasi: String;
-  ResultCode: Integer;
-begin
-  KurulumDosyasi := ExtractFileDir(ExpandConstant('{srcexe}')) + '\Docker Desktop Installer.exe';
-  if not FileExists(KurulumDosyasi) then
-  begin
-    MsgBox('"Docker Desktop Installer.exe" bulunamadı.' + #13#10 + #13#10 +
-      'Bu dosyayı https://www.docker.com/products/docker-desktop adresinden indirip, ' +
-      'bu kurulum programıyla AYNI klasöre kopyalayıp sihirbazı tekrar başlatın.',
-      mbError, MB_OK);
-    Exit;
-  end;
-
-  if Exec(KurulumDosyasi, '', '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
-  begin
-    MsgBox('Docker Desktop kurulumu tamamlandı (ya da pencere kapatıldı).' + #13#10 + #13#10 +
-      'ÖNEMLİ: Docker Desktop kurulumu genellikle bilgisayarın YENİDEN BAŞLATILMASINI gerektirir. ' +
-      'Bilgisayarını yeniden başlattıktan SONRA bu kurulum sihirbazını TEKRAR ÇALIŞTIR.' + #13#10 + #13#10 +
-      'Eğer Docker Desktop kurulumu sırasında "sanallaştırma" / "virtualization" / "BIOS" ile ilgili ' +
-      'bir hata aldıysan: bilgisayarının BIOS ayarlarından Intel VT-x / AMD-V sanallaştırmayı, ve ' +
-      'Windows''ta "Windows Subsystem for Linux" ile "Virtual Machine Platform" özelliklerini ' +
-      '(Denetim Masası > Programlar > Windows özelliklerini aç/kapat) açman gerekir. ' +
-      'Bu sihirbaz bu ayarları senin için OTOMATİK DEĞİŞTİREMEZ.',
-      mbInformation, MB_OK);
-  end
-  else
-  begin
-    MsgBox('Docker Desktop kurulum programı başlatılamadı.', mbError, MB_OK);
-  end;
-
-  WizardForm.Close;
-end;
-
 procedure InitializeWizard();
 begin
-  // ---------- Docker Desktop kontrol sayfası ----------
-  DockerPage := CreateCustomPage(wpWelcome, 'Docker Desktop Kontrolü',
-    'Sistem gereksinimleri kontrol ediliyor');
+  // ---------- SQL Server Express ön kontrol sayfası ----------
+  SqlPage := CreateCustomPage(wpWelcome, 'Veritabanı Sunucusu',
+    'SQL Server Express kurulum dosyası kontrol ediliyor');
 
-  DockerStatusLabel := TNewStaticText.Create(DockerPage);
-  DockerStatusLabel.Parent := DockerPage.Surface;
-  DockerStatusLabel.Left := 0;
-  DockerStatusLabel.Top := 0;
-  DockerStatusLabel.Width := DockerPage.SurfaceWidth;
-  DockerStatusLabel.AutoSize := False;
-  DockerStatusLabel.WordWrap := True;
-  DockerStatusLabel.Height := 140;
-  DockerStatusLabel.Caption :=
-    'Docker Desktop bu bilgisayarda bulunamadı.' + #13#10 + #13#10 +
-    'Restoran Otomasyonu, Docker Desktop üzerinde çalışır. Aşağıdaki butona tıklayarak ' +
-    'kurulum paketindeki Docker Desktop kurulumunu başlatabilirsin.' + #13#10 + #13#10 +
-    'Docker Desktop kurulumu genellikle bilgisayarın yeniden başlatılmasını gerektirir — ' +
-    'kurulum bitip bilgisayarı yeniden başlattıktan SONRA bu sihirbazı tekrar çalıştır.';
-
-  DockerInstallButton := TNewButton.Create(DockerPage);
-  DockerInstallButton.Parent := DockerPage.Surface;
-  DockerInstallButton.Left := 0;
-  DockerInstallButton.Top := DockerStatusLabel.Top + DockerStatusLabel.Height + 16;
-  DockerInstallButton.Width := 260;
-  DockerInstallButton.Height := 28;
-  DockerInstallButton.Caption := 'Docker Desktop Kurulumunu Başlat';
-  DockerInstallButton.OnClick := @DockerInstallButtonClick;
+  SqlStatusLabel := TNewStaticText.Create(SqlPage);
+  SqlStatusLabel.Parent := SqlPage.Surface;
+  SqlStatusLabel.Left := 0;
+  SqlStatusLabel.Top := 0;
+  SqlStatusLabel.Width := SqlPage.SurfaceWidth;
+  SqlStatusLabel.AutoSize := False;
+  SqlStatusLabel.WordWrap := True;
+  SqlStatusLabel.Height := 180;
+  SqlStatusLabel.Caption :=
+    'Bu bilgisayarda SQL Server Express bulunamadı ve kurulum dosyası da yok.' + #13#10 + #13#10 +
+    '"SQLEXPR_x64_ENU.exe" dosyasını bu kurulum programıyla AYNI klasöre kopyalayıp ' +
+    'sihirbazı tekrar başlatın.' + #13#10 + #13#10 +
+    'Dosya Microsoft''un sitesinden indirilir:' + #13#10 +
+    'SQL Server 2022 Express > Download Media > Express Core (SQLEXPR_x64_ENU.exe)' + #13#10 + #13#10 +
+    'Sihirbaz SQL Server Express''i SESSİZCE kurar; TCP/IP protokolünü, Mixed Mode ' +
+    'kimlik doğrulamasını ve sa şifresini otomatik yapılandırır.';
 
   // ---------- Veritabanı şifresi sayfası ----------
   DbPage := CreateInputQueryPage(wpSelectDir,
     'Veritabanı Şifresi', 'Veritabanı yönetici (sa) şifresini belirleyin',
     'Aşağıda güçlü bir şifre otomatik oluşturuldu. Bu şifreyi NOT ALIN (veritabanına doğrudan ' +
-    'erişim gerekirse lazım olur). Dilersen üzerine yazıp kendi şifreni de kullanabilirsin.');
+    'erişim gerekirse lazım olur). Dilersen üzerine yazıp kendi şifreni de kullanabilirsin — ' +
+    'SQL Server parola politikası gereği en az 8 karakter olmalı ve büyük harf, küçük harf, ' +
+    'rakam ile sembol içermeli.');
   DbPage.Add('Veritabanı Şifresi:', False);
   DbPage.Values[0] := GucluSifreUret();
 
@@ -204,12 +197,13 @@ begin
   AdminPage.Add('PIN (4-6 haneli rakam):', False);
 end;
 
-// Docker kurulu ise kontrol sayfası hiç gösterilmez.
+// SQL Express zaten kuruluysa ya da kurulum dosyası hazırsa uyarı sayfası
+// hiç gösterilmez.
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
-  if PageID = DockerPage.ID then
-    Result := IsDockerInstalled();
+  if PageID = SqlPage.ID then
+    Result := IsSqlExpressInstalled() or (SqlKurulumDosyasiYolu() <> '');
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -220,14 +214,13 @@ var
 begin
   Result := True;
 
-  if CurPageID = DockerPage.ID then
+  if CurPageID = SqlPage.ID then
   begin
-    if not IsDockerInstalled() then
+    if not (IsSqlExpressInstalled() or (SqlKurulumDosyasiYolu() <> '')) then
     begin
-      MsgBox('Devam etmeden önce Docker Desktop kurulu olmalı.' + #13#10 +
-        '"Docker Desktop Kurulumunu Başlat" butonuna tıklayıp kurulumu tamamladıktan ve ' +
-        'bilgisayarını yeniden başlattıktan sonra bu sihirbazı tekrar çalıştır.',
-        mbError, MB_OK);
+      MsgBox('Devam edilemiyor: SQL Server Express ne kurulu ne de kurulum dosyası bulundu.' + #13#10 + #13#10 +
+        '"SQLEXPR_x64_ENU.exe" dosyasını bu kurulum programıyla aynı klasöre kopyalayıp ' +
+        'sihirbazı tekrar başlatın.', mbError, MB_OK);
       Result := False;
     end;
     Exit;
@@ -235,9 +228,9 @@ begin
 
   if CurPageID = DbPage.ID then
   begin
-    if Trim(DbPage.Values[0]) = '' then
+    if Length(Trim(DbPage.Values[0])) < 8 then
     begin
-      MsgBox('Veritabanı şifresi boş olamaz.', mbError, MB_OK);
+      MsgBox('Veritabanı şifresi en az 8 karakter olmalı (SQL Server parola politikası).', mbError, MB_OK);
       Result := False;
     end;
     Exit;
@@ -275,32 +268,61 @@ begin
 end;
 
 // ============================================================
-// Kurulum sonrası: .env yaz, images.tar'ı kopyala, postinstall.ps1'i
-// çalıştır (docker load + compose up + migrate + ilk admin), masaüstü
-// kısayolunu oluştur.
+// Kurulum öncesi: eski Windows Servisi çalışıyorsa durdur — aksi halde
+// node.exe dosyaları kilitler ve üzerine yazılamaz (yeniden kurulum/güncelleme).
+// ============================================================
+procedure DurdurEskiServis();
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop RestoranBackend', '', SW_HIDE,
+    ewWaitUntilTerminated, ResultCode);
+  // Servisin gerçekten durması için kısa bekleme.
+  Sleep(3000);
+end;
+
+// ============================================================
+// Kurulum sonrası: .env yaz, SQL Express kurulum dosyasını kopyala,
+// postinstall.ps1'i çalıştır (SQL Express + migrate + ilk admin + servis).
 // ============================================================
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  KaynakKlasor, TarKaynak: String;
+  KaynakKlasor, SqlKaynak, SqlHedef: String;
   DbSifre, AdminAd, AdminKullanici, AdminPin, JwtSecret, EnvIcerik: String;
   PsYolu, PsParametreleri: String;
   ResultCode: Integer;
-  Wsh, Kisayol: Variant;
-  ChromeYolu, EdgeYolu, TarayiciYolu, MasaustuYolu: String;
+  FindRec: TFindRec;
 begin
+  if CurStep = ssInstall then
+  begin
+    DurdurEskiServis();
+    Exit;
+  end;
+
   if CurStep = ssPostInstall then
   begin
-    // ---------- images.tar'ı kurulum klasörüne kopyala (USB'de sibling dosya) ----------
     KaynakKlasor := ExtractFileDir(ExpandConstant('{srcexe}'));
-    TarKaynak := KaynakKlasor + '\images.tar';
-    if FileExists(TarKaynak) then
-      CopyFile(TarKaynak, ExpandConstant('{app}\images.tar'), False)
-    else
+
+    // ---------- SQL Express kurulum dosyasını kurulum klasörüne kopyala ----------
+    // (postinstall.ps1 / kurulum-sql-express.ps1 onu {app} içinde arar.)
+    SqlKaynak := SqlKurulumDosyasiYolu();
+    if SqlKaynak <> '' then
     begin
-      MsgBox('"images.tar" bulunamadı (' + KaynakKlasor + ').' + #13#10 +
-        'Kurulum programının bulunduğu klasörde bu dosya olmalı — kurulum sonrası adımlar ' +
-        '(docker load) başarısız olacak, dosyayı ekleyip installer\postinstall.ps1''i elle ' +
-        'çalıştırabilirsin.', mbError, MB_OK);
+      SqlHedef := ExpandConstant('{app}\') + ExtractFileName(SqlKaynak);
+      CopyFile(SqlKaynak, SqlHedef, False);
+    end;
+
+    // ---------- Node.js MSI'ı varsa kopyala (makinede Node yoksa lazım) ----------
+    if FindFirst(KaynakKlasor + '\node-v*-x64.msi', FindRec) then
+    begin
+      try
+        repeat
+          CopyFile(KaynakKlasor + '\' + FindRec.Name,
+                   ExpandConstant('{app}\') + FindRec.Name, False);
+        until not FindNext(FindRec);
+      finally
+        FindClose(FindRec);
+      end;
     end;
 
     // ---------- .env dosyasını yaz ----------
@@ -310,8 +332,11 @@ begin
     AdminPin := AdminPage.Values[2];
     JwtSecret := RastgeleDizeUret(48);
 
+    // DB_SERVER: adlandırılmış instance (SQL Server Express'in kurulum şekli).
+    // config/db.js bu biçimi tanıyıp tedious'a instanceName olarak geçirir.
+    // PORT=4091 SABİT — Tauri exe'si bu adrese gömülü bağlanıyor.
     EnvIcerik :=
-      'DB_SERVER=db' + #13#10 +
+      'DB_SERVER=localhost\SQLEXPRESS' + #13#10 +
       'DB_DATABASE=RestoranDB' + #13#10 +
       'DB_USER=sa' + #13#10 +
       'DB_PASSWORD=' + DbSifre + #13#10 +
@@ -319,10 +344,15 @@ begin
       'JWT_SECRET=' + JwtSecret + #13#10 +
       'PORT=4091' + #13#10 +
       'NODE_ENV=production' + #13#10 +
-      'CORS_ORIGIN=http://localhost:8080,http://localhost:8081' + #13#10 +
-      'VITE_API_URL=http://localhost:4091/api' + #13#10 +
-      'VITE_CUSTOMER_MENU_URL=http://localhost:8081' + #13#10 +
-      '# Sihirbaz tarafından ilk admin oluşturmak için (postinstall.ps1 okur) - docker compose bunları yok sayar:' + #13#10 +
+      '# CORS: Tauri paneli (masaüstü exe) origin''leri config/cors.js''te HER ZAMAN' + #13#10 +
+      '# eklidir. Buradaki liste müşteri menüsü ve yerel tarayıcı erişimi içindir;' + #13#10 +
+      '# menü artık backend ile AYNI origin''den (4091) servis edildiği için CORS''a' + #13#10 +
+      '# takılmaz.' + #13#10 +
+      'CORS_ORIGIN=http://localhost:4091' + #13#10 +
+      '# Yedekleme: SQL Server ve backend AYNI makinede olduğu için iki yol da aynı klasör.' + #13#10 +
+      'BACKUP_FS_DIR=' + ExpandConstant('{app}\db-backups') + #13#10 +
+      'BACKUP_DISK_DIR=' + ExpandConstant('{app}\db-backups') + #13#10 +
+      '# Sihirbaz tarafından ilk admin oluşturmak için (postinstall.ps1 okur):' + #13#10 +
       'INSTALLER_ADMIN_FULLNAME=' + AdminAd + #13#10 +
       'INSTALLER_ADMIN_USERNAME=' + AdminKullanici + #13#10 +
       'INSTALLER_ADMIN_PIN=' + AdminPin + #13#10;
@@ -341,7 +371,7 @@ begin
     else if ResultCode <> 0 then
     begin
       MsgBox('Kurulum sonrası adımlar sırasında bir hata oluştu (kod: ' + IntToStr(ResultCode) + ').' + #13#10 + #13#10 +
-        'Docker Desktop''un çalıştığından emin olup şu komutu Yönetici olarak PowerShell''de elle tekrar deneyebilirsin:' + #13#10 +
+        'Hata mesajını okumak için şu komutu Yönetici olarak PowerShell''de elle tekrar çalıştırabilirsin:' + #13#10 +
         'powershell -ExecutionPolicy Bypass -File "' + PsYolu + '"',
         mbError, MB_OK);
     end
@@ -350,42 +380,44 @@ begin
       MsgBox('Kurulum tamamlandı!' + #13#10 + #13#10 +
         'Veritabanı şifresi: ' + DbSifre + #13#10 +
         '(Bu şifreyi bir yere not al — sadece burada gösteriliyor.)' + #13#10 + #13#10 +
-        'Panel kullanıcı adı: ' + AdminKullanici + '   ·   PIN: ' + AdminPin,
+        'Panel kullanıcı adı: ' + AdminKullanici + '   ·   PIN: ' + AdminPin + #13#10 + #13#10 +
+        'Sunucu artık "RestoranBackend" adlı bir Windows Servisi olarak çalışıyor ve ' +
+        'bilgisayar her açıldığında otomatik başlar.' + #13#10 + #13#10 +
+        'Yönetim paneli için RESTO POS masaüstü uygulamasını kullanın.',
         mbInformation, MB_OK);
-
-      // ---------- Masaüstü kısayolu (Chrome/Edge --app modu, "native app" hissi) ----------
-      ChromeYolu := 'C:\Program Files\Google\Chrome\Application\chrome.exe';
-      if not FileExists(ChromeYolu) then
-        ChromeYolu := 'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe';
-      EdgeYolu := 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe';
-      if not FileExists(EdgeYolu) then
-        EdgeYolu := 'C:\Program Files\Microsoft\Edge\Application\msedge.exe';
-
-      TarayiciYolu := '';
-      if FileExists(ChromeYolu) then TarayiciYolu := ChromeYolu
-      else if FileExists(EdgeYolu) then TarayiciYolu := EdgeYolu;
-
-      MasaustuYolu := ExpandConstant('{commondesktop}') + '\Restoran Paneli.lnk';
-      try
-        Wsh := CreateOleObject('WScript.Shell');
-        Kisayol := Wsh.CreateShortcut(MasaustuYolu);
-        if TarayiciYolu <> '' then
-        begin
-          Kisayol.TargetPath := TarayiciYolu;
-          Kisayol.Arguments := '--app=http://localhost:8080';
-        end
-        else
-        begin
-          // Chrome/Edge bulunamadıysa varsayılan tarayıcıda normal bir kısayol.
-          Kisayol.TargetPath := 'http://localhost:8080';
-        end;
-        Kisayol.WorkingDirectory := ExpandConstant('{app}');
-        Kisayol.Description := 'Restoran Otomasyonu Paneli';
-        Kisayol.Save;
-      except
-        // Kısayol oluşturulamazsa kurulumu bozma — kullanıcı elle
-        // http://localhost:8080 adresini açabilir.
-      end;
     end;
+  end;
+end;
+
+// ============================================================
+// Kaldırma: Windows Servisini durdur ve kaydını sil. Bu yapılmazsa
+// "RestoranBackend" servisi kaldırma sonrası hayalet olarak kalır.
+// SQL Server Express ve veritabanı BİLEREK KALDIRILMAZ — restoranın tüm
+// verisi orada; silmek geri dönülemez veri kaybı olurdu.
+// ============================================================
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+  NssmYolu: String;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    Exec(ExpandConstant('{sys}\sc.exe'), 'stop RestoranBackend', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
+    Sleep(3000);
+
+    NssmYolu := ExpandConstant('{app}\nssm.exe');
+    if FileExists(NssmYolu) then
+      Exec(NssmYolu, 'remove RestoranBackend confirm', '', SW_HIDE,
+        ewWaitUntilTerminated, ResultCode)
+    else
+      Exec(ExpandConstant('{sys}\sc.exe'), 'delete RestoranBackend', '', SW_HIDE,
+        ewWaitUntilTerminated, ResultCode);
+
+    MsgBox('Sunucu kaldırıldı.' + #13#10 + #13#10 +
+      'NOT: SQL Server Express ve RestoranDB veritabanı BİLEREK KALDIRILMADI — ' +
+      'restoranın tüm verisi orada duruyor. Gerçekten silmek istiyorsan ' +
+      'Denetim Masası > Programlar''dan SQL Server''ı elle kaldır.',
+      mbInformation, MB_OK);
   end;
 end;
