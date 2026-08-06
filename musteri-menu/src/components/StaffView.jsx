@@ -25,7 +25,7 @@ const SERVICE_TYPE_KEYS = {
 
 // Personel çağırma + hızlı istekler + sipariş/istek durumu. Beyaz/premium
 // tasarım dili — restoran-panel'in koyu POS temasından bağımsız.
-export default function StaffView({ qrToken, tableNumber, status, onSendRequest, sending }) {
+export default function StaffView({ qrToken, tableNumber, status, onSendRequest, sending, loyalty }) {
   const { t } = useLanguage();
   const [justSent, setJustSent] = useState(null);
 
@@ -99,8 +99,38 @@ export default function StaffView({ qrToken, tableNumber, status, onSendRequest,
         </div>
       )}
 
-      <LoyaltyBalanceCard qrToken={qrToken} t={t} />
+      {loyalty?.account ? (
+        <LoggedInPointsCard loyalty={loyalty} t={t} />
+      ) : (
+        <LoyaltyBalanceCard qrToken={qrToken} t={t} />
+      )}
       <FeedbackCard qrToken={qrToken} t={t} />
+    </div>
+  );
+}
+
+// ============================================================
+// Giriş yapılmışsa: bakiye zaten hooks/useLoyaltyAccount.js tarafından
+// tutuluyor, tekrar kullanıcı adı sormaya gerek yok — sadece göster +
+// çıkış seçeneği sun.
+// ============================================================
+function LoggedInPointsCard({ loyalty, t }) {
+  return (
+    <div className="mt-7">
+      <p className="text-[11px] uppercase tracking-[0.2em] text-muted font-semibold mb-2.5">{t('myPointsTitle')}</p>
+      <div className="rounded-2xl bg-white shadow-card p-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm text-ink font-semibold">{loyalty.account.username}</p>
+          <p className="font-display text-lg font-semibold text-gold">{t('loyaltyPointsShort', { points: loyalty.account.points })}</p>
+        </div>
+        <button
+          type="button"
+          onClick={loyalty.logout}
+          className="text-xs uppercase tracking-[0.15em] font-semibold text-muted hover:text-danger transition-colors"
+        >
+          {t('loyaltyLogout')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -108,6 +138,8 @@ export default function StaffView({ qrToken, tableNumber, status, onSendRequest,
 // ============================================================
 // "Puanlarım" kartı — müşteri kullanıcı adını yazıp kendi sadaklık puan
 // bakiyesini görebilir (bkz. backend: getPublicMenuLoyaltyBalance).
+// Sadece hesaba giriş YAPILMAMIŞSA gösterilir (bkz. yukarıdaki
+// LoggedInPointsCard) — PIN'siz eski usul müşteriler için hâlâ çalışır.
 // ============================================================
 function LoyaltyBalanceCard({ qrToken, t }) {
   const [username, setUsername] = useState('');

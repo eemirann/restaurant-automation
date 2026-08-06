@@ -44,7 +44,7 @@ async function getProductById(req, res) {
 
 async function createProduct(req, res) {
     try {
-        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost } = req.body;
+        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost, VatRate } = req.body;
 
         if (!Name || Price === undefined || Price === null || !CategoryId) {
             return res.status(400).json({ error: 'Ürün adı, fiyat ve kategori zorunludur' });
@@ -64,6 +64,12 @@ async function createProduct(req, res) {
 
         if (LoyaltyPointCost !== undefined && LoyaltyPointCost !== null && (!Number.isInteger(LoyaltyPointCost) || LoyaltyPointCost < 0)) {
             return res.status(400).json({ error: 'LoyaltyPointCost negatif olmayan bir tam sayı olmalıdır' });
+        }
+
+        // VatRate opsiyoneldir — boş bırakılırsa fatura kesiminde genel oran
+        // (Ayarlar > e-Arşiv KDV Oranı) kullanılır (bkz. controllers/invoiceController.js).
+        if (VatRate !== undefined && VatRate !== null && (typeof VatRate !== 'number' || VatRate < 0 || VatRate > 100)) {
+            return res.status(400).json({ error: 'VatRate 0-100 arasında bir sayı olmalıdır' });
         }
 
         const pool = await connectDB();
@@ -77,9 +83,10 @@ async function createProduct(req, res) {
             .input('Barcode', sql.NVarChar(64), Barcode || null)
             .input('StockCount', sql.Int, StockCount ?? null)
             .input('LoyaltyPointCost', sql.Int, LoyaltyPointCost ?? null)
-            .query(`INSERT INTO Products (Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost)
+            .input('VatRate', sql.Decimal(5, 2), VatRate ?? null)
+            .query(`INSERT INTO Products (Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost, VatRate)
                     OUTPUT INSERTED.*
-                    VALUES (@Name, @Description, @Price, @CategoryId, @Cost, @IsPopular, @Barcode, @StockCount, @LoyaltyPointCost)`);
+                    VALUES (@Name, @Description, @Price, @CategoryId, @Cost, @IsPopular, @Barcode, @StockCount, @LoyaltyPointCost, @VatRate)`);
 
         res.status(201).json(result.recordset[0]);
     } catch (err) {
@@ -91,7 +98,7 @@ async function createProduct(req, res) {
 async function updateProduct(req, res) {
     try {
         const { id } = req.params;
-        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost } = req.body;
+        const { Name, Description, Price, CategoryId, Cost, IsPopular, Barcode, StockCount, LoyaltyPointCost, VatRate } = req.body;
 
         if (!Name || Price === undefined || Price === null || !CategoryId) {
             return res.status(400).json({ error: 'Ürün adı, fiyat ve kategori zorunludur' });
@@ -111,6 +118,10 @@ async function updateProduct(req, res) {
 
         if (LoyaltyPointCost !== undefined && LoyaltyPointCost !== null && (!Number.isInteger(LoyaltyPointCost) || LoyaltyPointCost < 0)) {
             return res.status(400).json({ error: 'LoyaltyPointCost negatif olmayan bir tam sayı olmalıdır' });
+        }
+
+        if (VatRate !== undefined && VatRate !== null && (typeof VatRate !== 'number' || VatRate < 0 || VatRate > 100)) {
+            return res.status(400).json({ error: 'VatRate 0-100 arasında bir sayı olmalıdır' });
         }
 
         const pool = await connectDB();
@@ -125,8 +136,10 @@ async function updateProduct(req, res) {
             .input('Barcode', sql.NVarChar(64), Barcode || null)
             .input('StockCount', sql.Int, StockCount ?? null)
             .input('LoyaltyPointCost', sql.Int, LoyaltyPointCost ?? null)
+            .input('VatRate', sql.Decimal(5, 2), VatRate ?? null)
             .query(`UPDATE Products SET Name = @Name, Description = @Description, Price = @Price, CategoryId = @CategoryId,
-                    Cost = @Cost, IsPopular = @IsPopular, Barcode = @Barcode, StockCount = @StockCount, LoyaltyPointCost = @LoyaltyPointCost
+                    Cost = @Cost, IsPopular = @IsPopular, Barcode = @Barcode, StockCount = @StockCount, LoyaltyPointCost = @LoyaltyPointCost,
+                    VatRate = @VatRate
                     OUTPUT INSERTED.* WHERE ProductId = @Id`);
 
         if (result.recordset.length === 0) {

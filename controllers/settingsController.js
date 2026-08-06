@@ -1,8 +1,13 @@
+const fs = require('fs');
+const path = require('path');
 const { sql, connectDB } = require('../config/db');
 const { runBackup } = require('../utils/backupScheduler');
 const { logAudit } = require('../utils/audit');
+const { LOGO_DIR } = require('../utils/paths');
 
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+// "HH:MM", 24 saat — bkz. utils/businessHours.js.
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // Opsiyonel metin alanları — hepsi null'lanabilir, tek tip doğrulama
 // (maks. uzunluk) yeterli. NOT: Bu tablo GET /api/settings ile (kimlik
@@ -27,11 +32,34 @@ const TEXT_FIELDS = [
     // için port, sunucunun portudur — ayrı bir menü servisi yoktur
     // (bkz. server.js). Gizli değildir — müşteri zaten tarayıcısında görür.
     { key: 'CustomerMenuBaseUrl', maxLen: 300 },
+    // Fiş yazıcı ETİKETLERİ — programatik yazıcı seçimi DEĞİLDİR (window.print
+    // bunu desteklemiyor, tüm tarayıcılarda güvenlik kısıtı). Sadece personelin
+    // OS yazdırma diyaloğunda hangi fiziksel yazıcıyı seçmesi gerektiğini
+    // hatırlatan bir isim/etikettir (bkz. utils/print.js, Tables.jsx,
+    // PaymentDrawer.jsx). Gerçek ağ/USB entegrasyonu ayrı bir iştir.
+    { key: 'KitchenPrinterName', maxLen: 100 },
+    { key: 'CustomerPrinterName', maxLen: 100 },
 ];
 
 const BOOL_FIELDS = ['ProductOptionsPopupEnabled', 'StockChartEnabled', 'KitchenAutoPrintEnabled', 'AutoBackupEnabled'];
 
-const ALL_COLUMNS = ['RestaurantName', 'ThemeColor', ...BOOL_FIELDS, 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays', ...TEXT_FIELDS.map((f) => f.key)];
+// OpeningTime/ClosingTime: PUT ile yazılabilir ama TEXT_FIELDS'ın genel
+// maxLen doğrulaması yetmiyor (HH:MM biçimi + "ikisi de dolu ya da ikisi de
+// boş" kuralı gerekiyor) — bu yüzden EArsivVatRate gibi kendi doğrulamasıyla
+// ayrı ele alınıyor (bkz. updateSettings).
+//
+// LogoUrl İSE BU LİSTEDE DEĞİL: PUT /api/settings ile YAZILAMAZ, sadece
+// POST/DELETE /api/settings/logo değiştirebilir (ürün resimlerinin
+// ProductController'daki createProduct/updateProduct'tan değil, ayrı bir
+// /image ucundan yönetilmesiyle AYNI desen). Yine de GET yanıtında dönmesi
+// ve PUT'un (değiştirmediği halde) yanıtından KAYBOLMAMASI için ALL_COLUMNS'a
+// dahil edilir.
+const ALL_COLUMNS = [
+    'RestaurantName', 'ThemeColor', ...BOOL_FIELDS,
+    'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays',
+    'OpeningTime', 'ClosingTime', 'LogoUrl',
+    ...TEXT_FIELDS.map((f) => f.key),
+];
 
 // ============================================================
 // GENEL AYARLAR — tek satırlık AppSettings tablosu, tüm kullanıcılar
@@ -50,6 +78,7 @@ async function getSettings(req, res) {
                 RestaurantName: 'Restoran', ThemeColor: '#FF4713', ProductOptionsPopupEnabled: true,
                 StockChartEnabled: true, KitchenAutoPrintEnabled: true, EArsivVatRate: 10, PrinterPaperWidth: 80,
                 LoyaltyPointsRate: 10, AutoBackupEnabled: false, AutoBackupRetentionDays: 7,
+                OpeningTime: null, ClosingTime: null, LogoUrl: null,
                 ...Object.fromEntries(TEXT_FIELDS.map((f) => [f.key, null])),
             });
         }
@@ -74,7 +103,7 @@ async function getSettings(req, res) {
 // ============================================================
 async function updateSettings(req, res) {
     try {
-        const { RestaurantName, ThemeColor, EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, AutoBackupRetentionDays } = req.body;
+        const { RestaurantName, ThemeColor, EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, AutoBackupRetentionDays, OpeningTime, ClosingTime } = req.body;
 
         if (!RestaurantName || typeof RestaurantName !== 'string' || !RestaurantName.trim()) {
             return res.status(400).json({ error: 'Restoran adı zorunludur' });
@@ -102,6 +131,12 @@ async function updateSettings(req, res) {
         if (AutoBackupRetentionDays !== undefined && (typeof AutoBackupRetentionDays !== 'number' || AutoBackupRetentionDays < 1 || AutoBackupRetentionDays > 365)) {
             return res.status(400).json({ error: 'AutoBackupRetentionDays 1-365 arasında bir sayı olmalıdır' });
         }
+        if (OpeningTime !== undefined && OpeningTime !== null && (typeof OpeningTime !== 'string' || !TIME_REGEX.test(OpeningTime))) {
+            return res.status(400).json({ error: 'OpeningTime "SS:DD" biçiminde olmalıdır (ör. 09:00)' });
+        }
+        if (ClosingTime !== undefined && ClosingTime !== null && (typeof ClosingTime !== 'string' || !TIME_REGEX.test(ClosingTime))) {
+            return res.status(400).json({ error: 'ClosingTime "SS:DD" biçiminde olmalıdır (ör. 23:00)' });
+        }
         for (const f of TEXT_FIELDS) {
             const v = req.body[f.key];
             if (v !== undefined && v !== null && (typeof v !== 'string' || v.length > f.maxLen)) {
@@ -114,13 +149,25 @@ async function updateSettings(req, res) {
         const existing = await pool.request().query(`SELECT AppSettingsId, ${ALL_COLUMNS.join(', ')} FROM AppSettings ORDER BY AppSettingsId ASC`);
         const existingRow = existing.recordset[0];
 
+        // İKİSİ DE dolu ya da İKİSİ DE boş olmalı — sadece biri girilirse
+        // utils/businessHours.js "kısıt yok" (her zaman açık) sayar ve bu,
+        // kullanıcının niyetiyle sessizce çelişebilir (ör. sadece kapanış
+        // saati girip açılışın boş kalması "hiç kapanmaz" anlamına gelirdi).
+        const resolvedOpeningTime = OpeningTime !== undefined ? OpeningTime : (existingRow ? existingRow.OpeningTime : null);
+        const resolvedClosingTime = ClosingTime !== undefined ? ClosingTime : (existingRow ? existingRow.ClosingTime : null);
+        if (Boolean(resolvedOpeningTime) !== Boolean(resolvedClosingTime)) {
+            return res.status(400).json({ error: 'Açılış ve kapanış saatinin ikisi de girilmeli ya da ikisi de boş bırakılmalıdır' });
+        }
+
         const request = pool.request()
             .input('RestaurantName', sql.NVarChar(100), RestaurantName.trim())
             .input('ThemeColor', sql.Char(7), ThemeColor.toUpperCase())
             .input('EArsivVatRate', sql.Decimal(5, 2), EArsivVatRate !== undefined ? EArsivVatRate : (existingRow ? Number(existingRow.EArsivVatRate) : 10))
             .input('PrinterPaperWidth', sql.Int, PrinterPaperWidth !== undefined ? PrinterPaperWidth : (existingRow ? Number(existingRow.PrinterPaperWidth) : 80))
             .input('LoyaltyPointsRate', sql.Decimal(5, 2), LoyaltyPointsRate !== undefined ? LoyaltyPointsRate : (existingRow ? Number(existingRow.LoyaltyPointsRate) : 10))
-            .input('AutoBackupRetentionDays', sql.Int, AutoBackupRetentionDays !== undefined ? AutoBackupRetentionDays : (existingRow ? Number(existingRow.AutoBackupRetentionDays) : 7));
+            .input('AutoBackupRetentionDays', sql.Int, AutoBackupRetentionDays !== undefined ? AutoBackupRetentionDays : (existingRow ? Number(existingRow.AutoBackupRetentionDays) : 7))
+            .input('OpeningTime', sql.NVarChar(5), resolvedOpeningTime || null)
+            .input('ClosingTime', sql.NVarChar(5), resolvedClosingTime || null);
 
         for (const key of BOOL_FIELDS) {
             const value = req.body[key] !== undefined ? req.body[key] : (existingRow ? Boolean(existingRow[key]) : true);
@@ -135,12 +182,20 @@ async function updateSettings(req, res) {
 
         const dynamicColumns = [...BOOL_FIELDS, ...TEXT_FIELDS.map((f) => f.key)];
         const setClause = dynamicColumns.map((k) => `${k} = @${k}`).join(', ');
-        const outputList = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays', ...dynamicColumns]
+        // NAMED_COLUMNS: yazılabilir ama özel doğrulaması olan alanlar.
+        const NAMED_COLUMNS = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays', 'OpeningTime', 'ClosingTime'];
+        // outputList'e LogoUrl de eklenir ama insertColumns/setClause'a EKLENMEZ:
+        // bu uç LogoUrl'i hiç YAZMAZ (sadece POST/DELETE /api/settings/logo
+        // yazar), OUTPUT INSERTED.LogoUrl sadece satırın GÜNCEL değerini okur.
+        // Bu olmasaydı PUT yanıtı LogoUrl'i içermez, panel context'i
+        // updateLocalSettings ile TÜM state'i bu yanıtla değiştirdiği için
+        // (bkz. SettingsContext.jsx) logo o an ekrandan KAYBOLURDU.
+        const outputList = [...NAMED_COLUMNS, 'LogoUrl', ...dynamicColumns]
             .map((k) => `INSERTED.${k}`).join(', ');
 
         let result;
         if (!existingRow) {
-            const insertColumns = ['RestaurantName', 'ThemeColor', 'EArsivVatRate', 'PrinterPaperWidth', 'LoyaltyPointsRate', 'AutoBackupRetentionDays', ...dynamicColumns];
+            const insertColumns = [...NAMED_COLUMNS, ...dynamicColumns];
             const insertParams = insertColumns.map((k) => `@${k}`).join(', ');
             result = await request.query(`
                 INSERT INTO AppSettings (${insertColumns.join(', ')})
@@ -155,6 +210,7 @@ async function updateSettings(req, res) {
                     SET RestaurantName = @RestaurantName, ThemeColor = @ThemeColor,
                         EArsivVatRate = @EArsivVatRate, PrinterPaperWidth = @PrinterPaperWidth,
                         LoyaltyPointsRate = @LoyaltyPointsRate, AutoBackupRetentionDays = @AutoBackupRetentionDays,
+                        OpeningTime = @OpeningTime, ClosingTime = @ClosingTime,
                         ${setClause}, UpdatedAt = GETDATE()
                     OUTPUT ${outputList}
                     WHERE AppSettingsId = @Id
@@ -214,4 +270,91 @@ async function getBackups(req, res) {
     }
 }
 
-module.exports = { getSettings, updateSettings, backupNow, getBackups };
+// AppSettings satırını döndürür (yoksa OLUŞTURUR) — uploadLogo/removeLogo
+// UPDATE ile yetinemez çünkü ilk kurulumda henüz hiç satır olmayabilir
+// (updateSettings zaten bu "satır yoksa INSERT" akışını yapıyor, ama Genel
+// sekmesi hiç kaydedilmeden doğrudan logo yüklenirse burada da aynı akış
+// gerekir — RestaurantName/ThemeColor NOT NULL olduğu için varsayılanlarla
+// oluşturulur).
+async function ensureSettingsRow(pool) {
+    const existing = await pool.request().query(`SELECT AppSettingsId, LogoUrl FROM AppSettings ORDER BY AppSettingsId ASC`);
+    if (existing.recordset.length > 0) return existing.recordset[0];
+
+    const inserted = await pool.request()
+        .input('RestaurantName', sql.NVarChar(100), 'Restoran')
+        .input('ThemeColor', sql.Char(7), '#FF4713')
+        .input('EArsivVatRate', sql.Decimal(5, 2), 10)
+        .input('PrinterPaperWidth', sql.Int, 80)
+        .input('LoyaltyPointsRate', sql.Decimal(5, 2), 10)
+        .input('AutoBackupRetentionDays', sql.Int, 7)
+        .query(`
+            INSERT INTO AppSettings (RestaurantName, ThemeColor, EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, AutoBackupRetentionDays)
+            OUTPUT INSERTED.AppSettingsId, INSERTED.LogoUrl
+            VALUES (@RestaurantName, @ThemeColor, @EArsivVatRate, @PrinterPaperWidth, @LoyaltyPointsRate, @AutoBackupRetentionDays)
+        `);
+    return inserted.recordset[0];
+}
+
+// ============================================================
+// LOGO YÜKLE (SADECE ADMIN) — sidebar, giriş ekranı, QR menü üstü, fişler.
+//
+// Ürün resmi yüklemesiyle (uploadProductImage) AYNI desen: ayrı bir
+// multipart uç, PUT /api/settings'in genel akışına dahil DEĞİL. Eski logo
+// dosyası SİLİNMEZ (ürün resimleri de silinmiyor — kod tabanındaki mevcut
+// davranış), sadece AppSettings.LogoUrl yeni dosyayı gösterecek şekilde
+// güncellenir.
+// ============================================================
+async function uploadLogo(req, res) {
+    if (!req.file) {
+        return res.status(400).json({ error: 'Logo dosyası gerekli' });
+    }
+
+    try {
+        const pool = await connectDB();
+        const row = await ensureSettingsRow(pool);
+        const logoUrl = `/uploads/logo/${req.file.filename}`;
+
+        await pool.request()
+            .input('Id', sql.Int, row.AppSettingsId)
+            .input('LogoUrl', sql.NVarChar(255), logoUrl)
+            .query(`UPDATE AppSettings SET LogoUrl = @LogoUrl WHERE AppSettingsId = @Id`);
+
+        res.status(200).json({ LogoUrl: logoUrl });
+    } catch (err) {
+        console.error('Logo yüklenirken hata:', err);
+        res.status(500).json({ error: 'Logo yüklenemedi' });
+    }
+}
+
+// ============================================================
+// LOGO KALDIR (SADECE ADMIN) — sidebar/giriş ekranı/QR menü/fişler tekrar
+// METİN moduna (RestaurantName'in ilk harfi) döner. Buradaki silme, upload
+// sırasında ESKİ dosyanın korunmasıyla ÇELİŞMEZ: kullanıcı burada AÇIKÇA
+// "kaldır" dediği için, artık hiçbir AppSettings satırının işaret etmediği
+// dosyayı diskte tutmanın anlamı yok.
+// ============================================================
+async function removeLogo(req, res) {
+    try {
+        const pool = await connectDB();
+        const row = await ensureSettingsRow(pool);
+
+        if (row.LogoUrl) {
+            const filePath = path.join(LOGO_DIR, path.basename(row.LogoUrl));
+            fs.unlink(filePath, () => {
+                // Dosya zaten yoksa/silinemiyorsa sessizce geç — kritik değil,
+                // veritabanı kaydı zaten NULL'a çekiliyor.
+            });
+        }
+
+        await pool.request()
+            .input('Id', sql.Int, row.AppSettingsId)
+            .query(`UPDATE AppSettings SET LogoUrl = NULL WHERE AppSettingsId = @Id`);
+
+        res.status(200).json({ LogoUrl: null });
+    } catch (err) {
+        console.error('Logo kaldırılırken hata:', err);
+        res.status(500).json({ error: 'Logo kaldırılamadı' });
+    }
+}
+
+module.exports = { getSettings, updateSettings, backupNow, getBackups, uploadLogo, removeLogo };

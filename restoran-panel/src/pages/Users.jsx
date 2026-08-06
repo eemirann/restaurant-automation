@@ -262,8 +262,14 @@ function CreateUserModal({ onClose, onCreated }) {
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('Waiter');
+  const [branchId, setBranchId] = useState('');
+  const [branches, setBranches] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    client.get('/branches').then((res) => setBranches(res.data)).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -289,6 +295,7 @@ function CreateUserModal({ onClose, onCreated }) {
         UserName: userName.trim(),
         Password: password,
         Role: role,
+        BranchId: branchId ? Number(branchId) : undefined,
       });
       onCreated();
     } catch (err) {
@@ -368,6 +375,23 @@ function CreateUserModal({ onClose, onCreated }) {
               </select>
             </div>
           </div>
+
+          {branches.length > 0 && (
+            <div>
+              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Şube</label>
+              <select
+                value={branchId}
+                onChange={(e) => setBranchId(e.target.value)}
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              >
+                <option value="">Varsayılan</option>
+                {branches.map((b) => (
+                  <option key={b.BranchId} value={b.BranchId}>{b.Name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {error && (
             <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{error}</p>

@@ -33,7 +33,7 @@ async function exportMenuData(req, res) {
         const productsResult = await pool.request().query(`
             SELECT p.Name, p.Description, p.Price, c.Name AS CategoryName,
                    p.IsExtra, p.IsSyrup, p.IsPopular, p.Barcode, p.LoyaltyPointCost,
-                   p.IsActive, p.IsAvailable, p.IsRawMaterial, p.Cost, p.StockCount, p.ImageUrl
+                   p.IsActive, p.IsAvailable, p.IsRawMaterial, p.Cost, p.StockCount, p.ImageUrl, p.VatRate
             FROM Products p
             LEFT JOIN Categories c ON c.CategoryId = p.CategoryId
             ORDER BY p.Name ASC
@@ -153,6 +153,9 @@ async function upsertProduct(transaction, prod, categoryId) {
         IsRawMaterial: prod.IsRawMaterial ? 1 : 0,
         Cost: typeof prod.Cost === 'number' ? prod.Cost : null,
         StockCount: typeof prod.StockCount === 'number' ? prod.StockCount : null,
+        // NULL bırakılırsa fatura kesiminde genel oran kullanılır
+        // (bkz. controllers/invoiceController.js).
+        VatRate: typeof prod.VatRate === 'number' ? prod.VatRate : null,
     };
 
     if (existing.recordset.length > 0) {
@@ -173,12 +176,13 @@ async function upsertProduct(transaction, prod, categoryId) {
             .input('IsRawMaterial', sql.Bit, fields.IsRawMaterial)
             .input('Cost', sql.Decimal(10, 2), fields.Cost)
             .input('StockCount', sql.Int, fields.StockCount)
+            .input('VatRate', sql.Decimal(5, 2), fields.VatRate)
             .query(`
                 UPDATE Products
                 SET Description = @Description, Price = @Price, CategoryId = @CategoryId,
                     IsExtra = @IsExtra, IsSyrup = @IsSyrup, IsPopular = @IsPopular, Barcode = @Barcode,
                     LoyaltyPointCost = @LoyaltyPointCost, IsActive = @IsActive, IsAvailable = @IsAvailable,
-                    IsRawMaterial = @IsRawMaterial, Cost = @Cost, StockCount = @StockCount
+                    IsRawMaterial = @IsRawMaterial, Cost = @Cost, StockCount = @StockCount, VatRate = @VatRate
                 WHERE ProductId = @Id
             `);
         return { productId, created: false };
@@ -199,12 +203,13 @@ async function upsertProduct(transaction, prod, categoryId) {
         .input('IsRawMaterial', sql.Bit, fields.IsRawMaterial)
         .input('Cost', sql.Decimal(10, 2), fields.Cost)
         .input('StockCount', sql.Int, fields.StockCount)
+        .input('VatRate', sql.Decimal(5, 2), fields.VatRate)
         .query(`
             INSERT INTO Products (Name, Description, Price, CategoryId, IsExtra, IsSyrup, IsPopular,
-                                   Barcode, LoyaltyPointCost, IsActive, IsAvailable, IsRawMaterial, Cost, StockCount)
+                                   Barcode, LoyaltyPointCost, IsActive, IsAvailable, IsRawMaterial, Cost, StockCount, VatRate)
             OUTPUT INSERTED.ProductId
             VALUES (@Name, @Description, @Price, @CategoryId, @IsExtra, @IsSyrup, @IsPopular,
-                    @Barcode, @LoyaltyPointCost, @IsActive, @IsAvailable, @IsRawMaterial, @Cost, @StockCount)
+                    @Barcode, @LoyaltyPointCost, @IsActive, @IsAvailable, @IsRawMaterial, @Cost, @StockCount, @VatRate)
         `);
     return { productId: inserted.recordset[0].ProductId, created: true };
 }

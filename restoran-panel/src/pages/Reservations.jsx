@@ -31,6 +31,35 @@ const toLocalInputValue = (date) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
+const DAY_NAMES = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+
+const startOfDay = (date) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+// Verilen tarihin içinde bulunduğu haftanın Pazartesi'sini döner.
+const startOfWeek = (date) => {
+  const d = startOfDay(date);
+  const dow = d.getDay(); // 0=Pazar, 1=Pazartesi, ...
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + diff);
+  return d;
+};
+
+const addDays = (date, n) => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+};
+
+const shortDate = (date) =>
+  date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
+
+const timeOnly = (iso) =>
+  iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—';
+
 export default function Reservations() {
   const { user } = useAuth();
   const canManage = ['Cashier', 'Admin'].includes(user?.role);
@@ -43,6 +72,8 @@ export default function Reservations() {
   const [actionError, setActionError] = useState('');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
 
   const fetchReservations = useCallback(async () => {
     setLoading(true);
@@ -125,21 +156,41 @@ export default function Reservations() {
         ))}
       </div>
 
-      {/* Filtre sekmeleri */}
-      <div className="flex gap-1 mb-6 border-b border-hairline overflow-x-auto">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => setFilter(f.value)}
-            className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
-              filter === f.value
-                ? 'border-ember text-paper font-semibold'
-                : 'border-transparent text-slate hover:text-paper'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      {/* Filtre sekmeleri + görünüm anahtarı */}
+      <div className="flex items-center justify-between gap-4 mb-6 border-b border-hairline">
+        <div className="flex gap-1 overflow-x-auto">
+          {FILTERS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setFilter(f.value)}
+              className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
+                filter === f.value
+                  ? 'border-ember text-paper font-semibold'
+                  : 'border-transparent text-slate hover:text-paper'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 shrink-0 mb-2">
+          {[
+            { key: 'list', label: 'Liste' },
+            { key: 'calendar', label: 'Takvim' },
+          ].map((v) => (
+            <button
+              key={v.key}
+              onClick={() => setViewMode(v.key)}
+              className={`font-mono text-[11px] uppercase tracking-wide px-3 py-1.5 rounded-sm border transition-colors ${
+                viewMode === v.key
+                  ? 'border-ember text-cream bg-ember'
+                  : 'border-hairline text-slate hover:text-paper'
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {(error || actionError) && (
@@ -154,6 +205,15 @@ export default function Reservations() {
         <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek rezervasyon bulunamadı.</p>
         </div>
+      ) : viewMode === 'calendar' ? (
+        <CalendarView
+          reservations={reservations}
+          weekStart={weekStart}
+          setWeekStart={setWeekStart}
+          tableNumber={tableNumber}
+          canManage={canManage}
+          onCancel={cancelReservation}
+        />
       ) : (
         <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
           <table className="w-full text-sm">
@@ -215,6 +275,113 @@ export default function Reservations() {
           onCreated={() => { setShowCreateModal(false); fetchReservations(); }}
         />
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// TAKVİM GÖRÜNÜMÜ — haftalık grid (7 gün), mevcut GET /reservations
+// verisi client-side günlere göre gruplanır, yeni API çağrısı yok.
+// ============================================================
+function CalendarView({ reservations, weekStart, setWeekStart, tableNumber, canManage, onCancel }) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const today = startOfDay(new Date()).getTime();
+
+  const byDay = days.map((day) => {
+    const dayStart = startOfDay(day).getTime();
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const items = reservations
+      .filter((r) => {
+        const t = new Date(r.ReservationTime).getTime();
+        return t >= dayStart && t < dayEnd;
+      })
+      .sort((a, b) => new Date(a.ReservationTime) - new Date(b.ReservationTime));
+    return { day, items };
+  });
+
+  const weekLabel = `${shortDate(weekStart)} – ${shortDate(addDays(weekStart, 6))}`;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={() => setWeekStart(addDays(weekStart, -7))}
+          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
+                     border border-hairline rounded-sm px-3 py-1.5 transition-colors"
+        >
+          ← Önceki Hafta
+        </button>
+        <div className="flex items-center gap-3">
+          <p className="font-mono text-xs text-slate">{weekLabel}</p>
+          <button
+            onClick={() => setWeekStart(startOfWeek(new Date()))}
+            className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80
+                       border border-ember/40 rounded-sm px-2.5 py-1 transition-colors"
+          >
+            Bu Hafta
+          </button>
+        </div>
+        <button
+          onClick={() => setWeekStart(addDays(weekStart, 7))}
+          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
+                     border border-hairline rounded-sm px-3 py-1.5 transition-colors"
+        >
+          Sonraki Hafta →
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
+        {byDay.map(({ day, items }, i) => {
+          const isToday = startOfDay(day).getTime() === today;
+          return (
+            <div
+              key={i}
+              className={`border rounded-sm bg-panel min-h-[140px] flex flex-col ${
+                isToday ? 'border-ember/50' : 'border-hairline'
+              }`}
+            >
+              <div className={`px-3 py-2 border-b ${isToday ? 'border-ember/30 bg-ember/5' : 'border-hairline bg-hairline/30'}`}>
+                <p className={`font-mono text-[10px] uppercase tracking-widest ${isToday ? 'text-ember' : 'text-slate'}`}>
+                  {DAY_NAMES[i]}
+                </p>
+                <p className="font-mono text-xs text-paper mt-0.5">{shortDate(day)}</p>
+              </div>
+              <div className="p-2 space-y-1.5 flex-1 overflow-auto">
+                {items.length === 0 ? (
+                  <p className="font-mono text-[11px] text-slate/50 text-center py-4">—</p>
+                ) : (
+                  items.map((r) => {
+                    const cfg = STATUS_CONFIG[r.Status] || STATUS_CONFIG.Active;
+                    return (
+                      <div
+                        key={r.ReservationId}
+                        className={`border rounded-sm px-2 py-1.5 text-xs ${cfg.border} ${cfg.bg}`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono text-paper font-semibold">{timeOnly(r.ReservationTime)}</span>
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+                        </div>
+                        <p className="text-paper truncate mt-0.5">{r.CustomerName}</p>
+                        <p className="font-mono text-slate text-[10px]">
+                          Masa {tableNumber(r.TableId)} · {r.PartySize} kişi
+                        </p>
+                        {canManage && r.Status === 'Active' && (
+                          <button
+                            onClick={() => onCancel(r)}
+                            className="font-mono text-[10px] uppercase tracking-wide text-ember hover:text-ember/80 mt-1"
+                          >
+                            İptal Et
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import client from '../api/client';
+import client, { imageUrl } from '../api/client';
 import { getSocket } from '../api/socket';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
@@ -62,7 +62,7 @@ function AnimatedMoney({ value, className = '' }) {
 // ============================================================
 export default function PaymentDrawer({ order, resolveProductName, tableLabel, onPaid, autoOpen = false, hideTrigger = false, onClose, triggerClassName, triggerLabel }) {
   const { user } = useAuth();
-  const { RestaurantName, PrinterPaperWidth } = useSettings();
+  const { RestaurantName, PrinterPaperWidth, LogoUrl, CustomerPrinterName } = useSettings();
   const canDiscount = ['Cashier', 'Admin'].includes(user?.role);
 
   const [open, setOpen] = useState(autoOpen);
@@ -327,6 +327,7 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
       .join('');
     printCustomerReceipt({
       restaurantName: RestaurantName || 'RESTORAN',
+      logoUrl: imageUrl(LogoUrl),
       orderId: order.OrderId,
       tableLabel,
       rowsHtml,
@@ -335,6 +336,7 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
       remaining,
       money,
       paperWidth: PrinterPaperWidth || 80,
+      printerName: CustomerPrinterName,
     });
   };
   const sendWhatsApp = () => window.open(`https://wa.me/?text=${encodeURIComponent(receiptLines())}`, '_blank');

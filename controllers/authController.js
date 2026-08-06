@@ -14,7 +14,7 @@ const VALID_ROLES = ['Waiter', 'Cashier', 'Admin', 'Kitchen'];
 // ile korunur, bu endpoint herkese açık DEĞİLDİR.
 // ============================================================
 const register = async (req, res) => {
-    const { FullName, UserName, Password, Role } = req.body;
+    const { FullName, UserName, Password, Role, BranchId } = req.body;
 
     if (!FullName || !UserName || !Password || !Role) {
         return res.status(400).json({ message: 'FullName, UserName, Password ve Role zorunludur.' });
@@ -47,10 +47,11 @@ const register = async (req, res) => {
             .input('UserName', sql.NVarChar(50), UserName)
             .input('PasswordHash', sql.NVarChar(255), passwordHash)
             .input('Role', sql.NVarChar(20), Role)
+            .input('BranchId', sql.Int, BranchId || null)
             .query(`
-                INSERT INTO Users (FullName, UserName, PasswordHash, Role, IsActive, CreatedAt)
+                INSERT INTO Users (FullName, UserName, PasswordHash, Role, BranchId, IsActive, CreatedAt)
                 OUTPUT INSERTED.UserId
-                VALUES (@FullName, @UserName, @PasswordHash, @Role, 1, GETDATE())
+                VALUES (@FullName, @UserName, @PasswordHash, @Role, @BranchId, 1, GETDATE())
             `);
 
         logAudit(pool, {
@@ -85,7 +86,7 @@ const login = async (req, res) => {
         const result = await pool.request()
             .input('UserName', sql.NVarChar(50), UserName)
             .query(`
-                SELECT UserId, FullName, UserName, PasswordHash, Role, IsActive
+                SELECT UserId, FullName, UserName, PasswordHash, Role, IsActive, BranchId
                 FROM Users
                 WHERE UserName = @UserName
             `);
@@ -112,7 +113,8 @@ const login = async (req, res) => {
             {
                 userId: user.UserId,
                 userName: user.UserName,
-                role: user.Role
+                role: user.Role,
+                branchId: user.BranchId ?? null
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
@@ -173,7 +175,7 @@ const loginWithPin = async (req, res) => {
         const result = await pool.request()
             .input('UserId', sql.Int, UserId)
             .query(`
-                SELECT UserId, FullName, UserName, PinHash, Role, IsActive
+                SELECT UserId, FullName, UserName, PinHash, Role, IsActive, BranchId
                 FROM Users
                 WHERE UserId = @UserId
             `);
@@ -194,7 +196,7 @@ const loginWithPin = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { userId: user.UserId, userName: user.UserName, role: user.Role },
+            { userId: user.UserId, userName: user.UserName, role: user.Role, branchId: user.BranchId ?? null },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
         );

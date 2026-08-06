@@ -6,7 +6,7 @@ import { useLanguage } from '../i18n';
 // Menü listeleme: kategori filtresi + arama + ürün ızgarası.
 // Premium/beyaz tasarım dili — büyük fotoğraflar, yumuşak gölgeler, ince
 // bronz vurgu (bkz. tailwind.config.js: ink/paper/cream/line/muted/gold).
-export default function MenuView({ tableNumber, categories, products, cart, onOpenProduct }) {
+export default function MenuView({ tableNumber, categories, products, cart, onOpenProduct, logoUrl, restaurantName }) {
   const { t } = useLanguage();
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
@@ -22,6 +22,9 @@ export default function MenuView({ tableNumber, categories, products, cart, onOp
   return (
     <div className="pb-4">
       <div className="px-5 pt-6">
+        {logoUrl && (
+          <img src={imageUrl(logoUrl)} alt={restaurantName || ''} className="max-h-14 max-w-[60%] object-contain mb-3" />
+        )}
         <p className="text-[11px] uppercase tracking-[0.25em] text-gold font-semibold mb-1.5">{t('table', { n: tableNumber })}</p>
         <h1 className="font-display text-3xl font-semibold text-ink mb-4 leading-tight">{t('menuTitle')}</h1>
 

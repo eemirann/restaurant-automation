@@ -1,5 +1,9 @@
+const bcrypt = require('bcryptjs');
 const { sql, connectDB } = require('../config/db');
 const { emitCustomerRequests } = require('../config/socket');
+const { isOpenNow } = require('../utils/businessHours');
+
+const PIN_REGEX = /^\d{4,6}$/;
 
 const SERVICE_REQUEST_TYPES = ['CallWaiter', 'RequestBill', 'AskForWater', 'NeedNapkins', 'ExtraCutlery'];
 
@@ -202,6 +206,17 @@ async function createCustomerOrderRequest(req, res) {
             return res.status(404).json({ error: 'Masa bulunamadı. QR kodu tekrar okutmayı deneyin.' });
         }
 
+        // KAPALI SAATTE SİPARİŞ ENGELLENİR — YETKİLİ (sunucu saatiyle) kontrol.
+        // musteri-menu istemci tarafında da aynı hesabı yapıp banner gösterip
+        // gönder düğmesini kapatıyor (bkz. musteri-menu/src/utils/businessHours.js),
+        // ama o SADECE görsel geri bildirimdir — istemci saati/önbelleklenmiş
+        // sayfa manipüle edilebilir. Gerçek engel burada.
+        const hoursResult = await pool.request().query(`SELECT TOP 1 OpeningTime, ClosingTime FROM AppSettings ORDER BY AppSettingsId ASC`);
+        const hoursRow = hoursResult.recordset[0];
+        if (hoursRow && !isOpenNow(hoursRow.OpeningTime, hoursRow.ClosingTime)) {
+            return res.status(403).json({ error: 'Restoran şu anda kapalı, sipariş alınamıyor.' });
+        }
+
         // Hafif ön-doğrulama: ürün gerçekten var mı, aktif ve satılabilir bir
         // menü ürünü mü (hammadde/ekstra/şurup değil). Fiyat/ekstra-uygunluk
         // gibi asıl (yetkili) doğrulama personel onayladığında, mevcut sipariş
@@ -359,6 +374,100 @@ async function getPublicMenuLoyaltyBalance(req, res) {
 }
 
 // ============================================================
+// POST /api/public/menu/:qrToken/loyalty/register — sadakat hesabı aç.
+// Body: { Username, Pin } — Pin 4-6 haneli rakam, bcrypt ile hashlenir.
+// Opsiyoneldir: müşteri istemezse checkout'ta hâlâ PIN'siz Username
+// girip puan kazanabilir (approveCustomerOrderRequest zaten find-or-
+// create yapıyor) — bu uç sadece "cihazda hatırlanan" bir hesap açmak
+// isteyenler için.
+// ============================================================
+async function registerLoyaltyAccount(req, res) {
+    const { qrToken } = req.params;
+    const { Username, Pin } = req.body || {};
+
+    if (!Username || typeof Username !== 'string' || !Username.trim() || Username.trim().length > 50) {
+        return res.status(400).json({ error: 'Geçerli bir kullanıcı adı girin (en fazla 50 karakter).' });
+    }
+    if (!Pin || typeof Pin !== 'string' || !PIN_REGEX.test(Pin)) {
+        return res.status(400).json({ error: 'PIN 4-6 haneli rakamlardan oluşmalıdır.' });
+    }
+
+    try {
+        const pool = await connectDB();
+        const table = await resolveTableByToken(pool, qrToken);
+        if (!table) {
+            return res.status(404).json({ error: 'Masa bulunamadı. QR kodu tekrar okutmayı deneyin.' });
+        }
+
+        const username = Username.trim();
+        const existing = await pool.request()
+            .input('Username', sql.NVarChar(50), username)
+            .query(`SELECT CustomerId, Pin FROM Customers WHERE Username = @Username`);
+
+        if (existing.recordset.length > 0) {
+            return res.status(409).json({ error: 'Bu kullanıcı adı zaten alınmış. Zaten hesabın varsa giriş yapabilirsin.' });
+        }
+
+        const pinHash = await bcrypt.hash(Pin, 10);
+        const result = await pool.request()
+            .input('Username', sql.NVarChar(50), username)
+            .input('Pin', sql.NVarChar(255), pinHash)
+            .query(`
+                INSERT INTO Customers (Username, Pin, LoyaltyPoints)
+                OUTPUT INSERTED.Username, INSERTED.LoyaltyPoints
+                VALUES (@Username, @Pin, 0)
+            `);
+
+        return res.status(201).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Sadakat hesabı oluşturulurken hata:', err);
+        return res.status(500).json({ error: 'Hesap oluşturulamadı' });
+    }
+}
+
+// ============================================================
+// POST /api/public/menu/:qrToken/loyalty/login — PIN ile giriş.
+// Body: { Username, Pin }. PIN'i olmayan (checkout'tan otomatik açılmış)
+// hesaplar bu yolla giriş yapamaz — aynı genel hata mesajıyla reddedilir
+// (hesap var/yok, PIN yanlış/eksik ayrımı sızdırılmaz).
+// ============================================================
+async function loginLoyaltyAccount(req, res) {
+    const { qrToken } = req.params;
+    const { Username, Pin } = req.body || {};
+
+    if (!Username || typeof Username !== 'string' || !Username.trim() || !Pin || typeof Pin !== 'string') {
+        return res.status(400).json({ error: 'Kullanıcı adı ve PIN zorunludur.' });
+    }
+
+    try {
+        const pool = await connectDB();
+        const table = await resolveTableByToken(pool, qrToken);
+        if (!table) {
+            return res.status(404).json({ error: 'Masa bulunamadı. QR kodu tekrar okutmayı deneyin.' });
+        }
+
+        const result = await pool.request()
+            .input('Username', sql.NVarChar(50), Username.trim())
+            .query(`SELECT Username, Pin, LoyaltyPoints FROM Customers WHERE Username = @Username`);
+
+        if (result.recordset.length === 0 || !result.recordset[0].Pin) {
+            return res.status(401).json({ error: 'Kullanıcı adı veya PIN hatalı.' });
+        }
+
+        const customer = result.recordset[0];
+        const matches = await bcrypt.compare(Pin, customer.Pin);
+        if (!matches) {
+            return res.status(401).json({ error: 'Kullanıcı adı veya PIN hatalı.' });
+        }
+
+        return res.status(200).json({ Username: customer.Username, LoyaltyPoints: customer.LoyaltyPoints });
+    } catch (err) {
+        console.error('Sadakat girişi sırasında hata:', err);
+        return res.status(500).json({ error: 'Giriş yapılamadı' });
+    }
+}
+
+// ============================================================
 // POST /api/public/menu/:qrToken/feedback — 3 kategoride (Lezzet/Hizmet/
 // Temizlik) 1-3 arası memnuniyet anketi. Anonim, oturum/ziyaret sınırı
 // YOK — bir "memnuniyet nabzı", aynı masada birden fazla kez gönderilebilir.
@@ -450,5 +559,7 @@ module.exports = {
     createServiceRequest,
     getPublicMenuStatus,
     getPublicMenuLoyaltyBalance,
+    registerLoyaltyAccount,
+    loginLoyaltyAccount,
     createFeedback,
 };

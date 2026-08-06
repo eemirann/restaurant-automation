@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken, requireRole } = require('../middleware/authMiddleware');
-const upload = require('../middleware/upload');
+const { upload } = require('../middleware/upload');
 const { getAllCampaigns, createCampaign, updateCampaign, deleteCampaign, uploadCampaignImage } = require('../controllers/campaignController');
 
 // SADECE ADMIN — kampanya/combo yönetimi. Müşteri tarafı (aktif olanlar)

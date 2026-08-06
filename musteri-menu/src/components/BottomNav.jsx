@@ -4,6 +4,7 @@ const TABS = [
   { key: 'menu', labelKey: 'navMenu', icon: '🍽️' },
   { key: 'cart', labelKey: 'navCart', icon: '🛒' },
   { key: 'staff', labelKey: 'navCall', icon: '🔔' },
+  { key: 'game', labelKey: 'navGame', icon: '🫵' },
 ];
 
 export default function BottomNav({ active, onChange, cartCount, hasAlert }) {

@@ -1,21 +1,29 @@
 import { useEffect, useState } from 'react';
-import client from '../api/client';
+import client, { imageUrl } from '../api/client';
 import { useLanguage } from '../i18n';
 
 // Sol üstte sabit duran hamburger düğmesi + kafe adı/notu, sosyal medya
 // ve iletişim bilgisini gösteren aç/kapa panel. Veri GET /api/settings'ten
 // gelir (kimlik doğrulamasız — bkz. routes/settings.js); admin panelinden
 // (Ayarlar sayfası) doldurulacak alanlar boşsa ilgili bölüm hiç gösterilmez.
-export default function InfoDrawer() {
+//
+// `info` prop'u OPSİYONELDİR: MenuApp.jsx "kapalı" banner'ı için zaten
+// EAGER olarak /settings çekiyor ve buraya aktarıyor — bu durumda ikinci
+// bir (gecikmeli) istek atılmaz. Prop verilmezse bileşen KENDİ BAŞINA da
+// çalışır (drawer açılınca lazy-fetch eder) — başka bir yerde tek başına
+// kullanılırsa bağımsız kalsın diye bu geriye dönük yol korunuyor.
+export default function InfoDrawer({ info: infoProp }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
-  const [info, setInfo] = useState(null);
+  const [ownInfo, setOwnInfo] = useState(null);
+  const info = infoProp !== undefined ? infoProp : ownInfo;
 
   useEffect(() => {
-    if (open && !info) {
-      client.get('/settings').then((res) => setInfo(res.data)).catch(() => setInfo({}));
+    if (infoProp !== undefined) return; // üst bileşen zaten sağlıyor
+    if (open && !ownInfo) {
+      client.get('/settings').then((res) => setOwnInfo(res.data)).catch(() => setOwnInfo({}));
     }
-  }, [open, info]);
+  }, [open, ownInfo, infoProp]);
 
   const socials = info ? [
     { key: 'instagram', label: 'Instagram', short: 'IG', url: info.SocialInstagram },
@@ -55,9 +63,17 @@ export default function InfoDrawer() {
 
             <div className="flex items-start justify-between p-5 pb-3">
               <div className="min-w-0">
-                <h2 className="font-display text-xl font-semibold text-ink leading-tight truncate">
-                  {info?.RestaurantName || '—'}
-                </h2>
+                {info?.LogoUrl ? (
+                  <img
+                    src={imageUrl(info.LogoUrl)}
+                    alt={info.RestaurantName || ''}
+                    className="max-h-10 max-w-[70%] object-contain mb-2"
+                  />
+                ) : (
+                  <h2 className="font-display text-xl font-semibold text-ink leading-tight truncate">
+                    {info?.RestaurantName || '—'}
+                  </h2>
+                )}
                 {info?.CafeNote && (
                   <p className="text-xs text-muted mt-1.5 leading-relaxed">{info.CafeNote}</p>
                 )}

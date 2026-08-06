@@ -30,4 +30,8 @@ const MENU_DIST_DIR = process.env.MENU_DIST_DIR
 // bundan BAĞIMSIZDIR ve değişmez — istemciler etkilenmez.
 const PRODUCT_IMAGE_DIR = path.join(UPLOAD_DIR, 'products');
 
-module.exports = { UPLOAD_DIR, LOG_DIR, PRODUCT_IMAGE_DIR, MENU_DIST_DIR };
+// Restoran logosunun fiziksel klasörü (sidebar, giriş ekranı, QR menü üstü,
+// fişler — bkz. controllers/settingsController.js uploadLogo).
+const LOGO_DIR = path.join(UPLOAD_DIR, 'logo');
+
+module.exports = { UPLOAD_DIR, LOG_DIR, PRODUCT_IMAGE_DIR, MENU_DIST_DIR, LOGO_DIR };

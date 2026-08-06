@@ -7,7 +7,8 @@ const TIP_PRESETS = [0, 0.05, 0.10, 0.15];
 // Sepet + checkout. Beyaz/premium tasarım dili.
 export default function CartView({
   products, cart, optionsCache, campaigns = [], comboCart = {}, onComboQuantityChange, onRemoveCombo,
-  note, onNoteChange, username, onUsernameChange, onTipAmountChange, onEditLine, onSubmit, submitting, error,
+  note, onNoteChange, username, onUsernameChange, loyalty, onTipAmountChange, onEditLine, onSubmit, submitting, error,
+  closed = false,
 }) {
   const { t } = useLanguage();
   const [confirming, setConfirming] = useState(false);
@@ -165,6 +166,9 @@ export default function CartView({
           className="w-full border border-line rounded-2xl px-4 py-3 bg-cream text-ink text-sm placeholder:text-muted
                      focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold"
         />
+        {loyalty?.account && username === loyalty.account.username && (
+          <p className="text-[11px] text-muted mt-1.5">{t('loyaltyLoggedInHint', { username: loyalty.account.username })}</p>
+        )}
       </div>
 
       <div className="mb-5">
@@ -230,7 +234,7 @@ export default function CartView({
             </button>
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || closed}
               onClick={onSubmit}
               className="flex-1 text-sm uppercase tracking-[0.15em] font-semibold text-paper bg-ink hover:bg-ink/90
                          disabled:opacity-50 rounded-full px-4 py-3.5 transition-colors"
@@ -240,14 +244,20 @@ export default function CartView({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          className="w-full text-sm uppercase tracking-[0.15em] font-semibold text-paper bg-ink hover:bg-ink/90
-                     rounded-full px-6 py-4 min-h-[3rem] transition-colors"
-        >
-          {t('sendOrder')} — {money(total)}
-        </button>
+        <>
+          {closed && (
+            <p className="text-xs text-center text-muted mb-2">{t('closedOrderBlocked')}</p>
+          )}
+          <button
+            type="button"
+            disabled={closed}
+            onClick={() => setConfirming(true)}
+            className="w-full text-sm uppercase tracking-[0.15em] font-semibold text-paper bg-ink hover:bg-ink/90
+                       disabled:opacity-40 rounded-full px-6 py-4 min-h-[3rem] transition-colors"
+          >
+            {t('sendOrder')} — {money(total)}
+          </button>
+        </>
       )}
     </div>
   );

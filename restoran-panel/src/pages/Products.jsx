@@ -367,6 +367,9 @@ const reactivateProduct = async (productId) => {
                             {isAdmin && (
                               <p className="font-mono text-[10px] text-slate mt-1">
                                 Maliyet: {p.Cost !== null && p.Cost !== undefined ? money(p.Cost) : '—'}
+                                {p.VatRate !== null && p.VatRate !== undefined && (
+                                  <span className="ml-2">· KDV %{p.VatRate}</span>
+                                )}
                               </p>
                             )}
                           </div>

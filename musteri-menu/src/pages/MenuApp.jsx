@@ -9,7 +9,11 @@ import ProductDetailModal from '../components/ProductDetailModal';
 import LanguageToggle from '../components/LanguageToggle';
 import InfoDrawer from '../components/InfoDrawer';
 import CampaignCarousel from '../components/CampaignCarousel';
+import LoyaltyGate from '../components/LoyaltyGate';
+import WhoPaysGame from '../components/WhoPaysGame';
 import { useLanguage } from '../i18n';
+import { isOpenNow } from '../utils/businessHours';
+import { useLoyaltyAccount } from '../hooks/useLoyaltyAccount';
 
 // Ana orkestratör: menüyü yükler, sepeti ve görünüm (Menü/Sepet/Çağır)
 // durumunu yönetir. Kimlik doğrulaması yok — erişim tamamen URL'deki
@@ -37,12 +41,37 @@ export default function MenuApp() {
   const [orderNote, setOrderNote] = useState('');
   const [username, setUsername] = useState('');
   const [tipAmount, setTipAmount] = useState(0);
+
+  // Cihazda hatırlanan sadakat hesabı — varsa Username otomatik doldurulur,
+  // müşteri her siparişte tekrar yazmak zorunda kalmaz (bkz. hooks/
+  // useLoyaltyAccount.js). Opt-in: hesap yoksa <LoyaltyGate> ile sunulur.
+  const loyalty = useLoyaltyAccount(qrToken);
+  useEffect(() => {
+    if (loyalty.account?.username && !username) setUsername(loyalty.account.username);
+  }, [loyalty.account?.username]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
   const [status, setStatus] = useState(null);
   const [sendingRequest, setSendingRequest] = useState(false);
   const statusIntervalRef = useRef(null);
+
+  // Restoran adı/logo/açılış-kapanış saati — RESTAURANT (masa/qrToken'a bağlı
+  // değil, tüm restoran için tek), InfoDrawer'ın lazy-fetch etmesi yerine
+  // burada EAGER fetch edilir: "kapalı" banner'ı çekmece açılmadan, sayfa
+  // yüklenir yüklenmez görünmeli (bkz. GET /api/settings — kimlik
+  // doğrulamasız, panelin login ekranıyla da paylaşılan aynı uç).
+  const [info, setInfo] = useState(null);
+  useEffect(() => {
+    let active = true;
+    client.get('/settings').then((res) => { if (active) setInfo(res.data); }).catch(() => { if (active) setInfo({}); });
+    return () => { active = false; };
+  }, []);
+
+  // Sunucu zaten POST .../order'da bunu YETKİLİ olarak reddediyor (bkz.
+  // controllers/publicMenuController.js) — buradaki hesap sadece anında
+  // banner göstermek ve "gönder" düğmesini önceden kapatmak içindir.
+  const closed = info ? !isOpenNow(info.OpeningTime, info.ClosingTime) : false;
 
   useEffect(() => {
     let active = true;
@@ -146,6 +175,7 @@ export default function MenuApp() {
       setOrderNote('');
       setTipAmount(0);
       fetchStatus();
+      loyalty.refresh();
       setView('staff');
     } catch (err) {
       setSubmitError(err.response?.data?.error || t('orderSendError'));
@@ -171,7 +201,7 @@ export default function MenuApp() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-paper font-body">
         <LanguageToggle />
-        <InfoDrawer />
+        <InfoDrawer info={info} />
         <p className="text-muted text-sm tracking-wide">{t('loadingMenu')}</p>
       </div>
     );
@@ -181,7 +211,7 @@ export default function MenuApp() {
     return (
       <div className="min-h-screen flex items-center justify-center px-6 text-center bg-paper font-body">
         <LanguageToggle />
-        <InfoDrawer />
+        <InfoDrawer info={info} />
         <div>
           <p className="text-5xl mb-4">😕</p>
           <p className="font-display text-lg font-semibold text-ink mb-2">{t('errorTitle')}</p>
@@ -194,9 +224,17 @@ export default function MenuApp() {
   return (
     <div className="min-h-screen bg-paper font-body pb-24">
       <LanguageToggle />
-      <InfoDrawer />
+      <InfoDrawer info={info} />
+      {closed && (
+        <div className="sticky top-0 z-40 bg-ink text-cream text-center py-2.5 px-4 text-xs font-medium tracking-wide">
+          {info.OpeningTime && info.ClosingTime
+            ? t('closedWithHours', { open: info.OpeningTime, close: info.ClosingTime })
+            : t('closedNow')}
+        </div>
+      )}
       {view === 'menu' && (
         <>
+          {!loyalty.account && <LoyaltyGate loyalty={loyalty} />}
           <CampaignCarousel campaigns={campaigns} onAddCombo={(comboOfferId) => addComboToCart(comboOfferId, 1)} />
           <MenuView
             tableNumber={menu.table.TableNumber}
@@ -204,6 +242,8 @@ export default function MenuApp() {
             products={menu.products}
             cart={cart}
             onOpenProduct={(p) => openProduct(p)}
+            logoUrl={info?.LogoUrl}
+            restaurantName={info?.RestaurantName}
           />
         </>
       )}
@@ -220,11 +260,13 @@ export default function MenuApp() {
           onNoteChange={setOrderNote}
           username={username}
           onUsernameChange={setUsername}
+          loyalty={loyalty}
           onTipAmountChange={setTipAmount}
           onEditLine={(product, line) => openProduct(product, line)}
           onSubmit={submitOrder}
           submitting={submitting}
           error={submitError}
+          closed={closed}
         />
       )}
       {view === 'staff' && (
@@ -234,8 +276,10 @@ export default function MenuApp() {
           status={status}
           onSendRequest={sendServiceRequest}
           sending={sendingRequest}
+          loyalty={loyalty}
         />
       )}
+      {view === 'game' && <WhoPaysGame />}
 
       <BottomNav
         active={view}

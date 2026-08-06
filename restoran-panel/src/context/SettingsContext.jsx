@@ -10,6 +10,8 @@ const DEFAULTS = {
   CafeNote: null, SocialInstagram: null, SocialFacebook: null, SocialX: null, SocialWhatsapp: null, ContactPhone: null, ContactAddress: null,
   TaxNumber: null, TaxOffice: null, BillingAddress: null,
   CustomerMenuBaseUrl: null,
+  LogoUrl: null, OpeningTime: null, ClosingTime: null,
+  KitchenPrinterName: null, CustomerPrinterName: null,
 };
 
 // #RRGGBB -> "R G B" (Tailwind'in rgb(var(--x) / <alpha-value>) beklediği format)

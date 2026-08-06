@@ -64,9 +64,20 @@ async function getAllTables(req, res) {
             ) p ON p.OrderId = o.OrderId
         `;
 
+        // Şube filtresi: Admin'in JWT'sinde branchId NULL bırakılabilir
+        // ("tüm şubeleri gör"), Waiter/Cashier için her zaman dolu olmalı —
+        // bkz. migrations/2026_08_12_branches_foundation.sql.
+        const conditions = [];
         if (status) {
             request.input('Status', sql.NVarChar(20), status);
-            query += ` WHERE t.Status = @Status`;
+            conditions.push('t.Status = @Status');
+        }
+        if (req.user?.branchId != null) {
+            request.input('BranchId', sql.Int, req.user.branchId);
+            conditions.push('(t.BranchId = @BranchId OR t.BranchId IS NULL)');
+        }
+        if (conditions.length > 0) {
+            query += ` WHERE ${conditions.join(' AND ')}`;
         }
 
         query += ` ORDER BY t.TableNumber ASC`;

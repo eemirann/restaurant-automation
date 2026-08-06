@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import client from '../api/client';
+import client, { imageUrl } from '../api/client';
 import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../context/ThemeContext';
 import TableAreasManager from '../components/TableAreasManager';
@@ -36,6 +36,7 @@ export default function Settings() {
     EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, CafeNote, SocialInstagram, SocialFacebook, SocialX, SocialWhatsapp,
     ContactPhone, ContactAddress, TaxNumber, TaxOffice, BillingAddress,
     AutoBackupEnabled, AutoBackupRetentionDays, CustomerMenuBaseUrl,
+    LogoUrl, OpeningTime, ClosingTime, KitchenPrinterName, CustomerPrinterName,
     updateLocalSettings,
   } = useSettings();
   const { theme, toggleTheme } = useTheme();
@@ -66,9 +67,20 @@ export default function Settings() {
   const [taxOffice, setTaxOffice] = useState(TaxOffice || '');
   const [billingAddress, setBillingAddress] = useState(BillingAddress || '');
 
+  const [openingTime, setOpeningTime] = useState(OpeningTime || '');
+  const [closingTime, setClosingTime] = useState(ClosingTime || '');
+
+  const [kitchenPrinterName, setKitchenPrinterName] = useState(KitchenPrinterName || '');
+  const [customerPrinterName, setCustomerPrinterName] = useState(CustomerPrinterName || '');
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+
+  // ---- Logo (ayrı, anında yüklenen görsel — ana "Kaydet" formunun dışında,
+  // ürün resmi yüklemesiyle AYNI desen: bkz. ProductModal.jsx) ----
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState('');
 
   // Context ilk yüklendiğinde (async fetch tamamlanınca) formu güncelle
   useEffect(() => { setName(RestaurantName || ''); }, [RestaurantName]);
@@ -92,6 +104,10 @@ export default function Settings() {
   useEffect(() => { setTaxNumber(TaxNumber || ''); }, [TaxNumber]);
   useEffect(() => { setTaxOffice(TaxOffice || ''); }, [TaxOffice]);
   useEffect(() => { setBillingAddress(BillingAddress || ''); }, [BillingAddress]);
+  useEffect(() => { setOpeningTime(OpeningTime || ''); }, [OpeningTime]);
+  useEffect(() => { setClosingTime(ClosingTime || ''); }, [ClosingTime]);
+  useEffect(() => { setKitchenPrinterName(KitchenPrinterName || ''); }, [KitchenPrinterName]);
+  useEffect(() => { setCustomerPrinterName(CustomerPrinterName || ''); }, [CustomerPrinterName]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -105,6 +121,10 @@ export default function Settings() {
     }
     if (autoBackupRetentionDays === '' || Number(autoBackupRetentionDays) < 1 || Number(autoBackupRetentionDays) > 365) {
       setError('Saklama süresi 1-365 gün arasında olmalıdır.');
+      return;
+    }
+    if (Boolean(openingTime) !== Boolean(closingTime)) {
+      setError('Açılış ve kapanış saatinin ikisi de girilmeli ya da ikisi de boş bırakılmalıdır.');
       return;
     }
 
@@ -134,6 +154,10 @@ export default function Settings() {
         TaxNumber: taxNumber.trim() || null,
         TaxOffice: taxOffice.trim() || null,
         BillingAddress: billingAddress.trim() || null,
+        OpeningTime: openingTime || null,
+        ClosingTime: closingTime || null,
+        KitchenPrinterName: kitchenPrinterName.trim() || null,
+        CustomerPrinterName: customerPrinterName.trim() || null,
       });
       updateLocalSettings(res.data);
       setSuccess(true);
@@ -141,6 +165,57 @@ export default function Settings() {
       setError(err.response?.data?.error || 'Ayarlar kaydedilemedi.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Dosya seçilir seçilmez ANINDA yüklenir (ayrı bir "Kaydet" tuşuna gerek
+  // yok) — ürün resmi yüklemesiyle aynı desen. updateLocalSettings TÜM
+  // state'i PUT /settings yanıtıyla değiştirdiği gibi burada da context'i
+  // sadece bu tek alan için (spread ile) güncelliyoruz ki diğer ayarlar
+  // (RestaurantName, ThemeColor vb.) kaybolmasın.
+  const handleLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // aynı dosya tekrar seçilebilsin diye input sıfırlanır
+    if (!file) return;
+
+    setLogoError('');
+    setLogoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      const res = await client.post('/settings/logo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      updateLocalSettings({
+        RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, KitchenAutoPrintEnabled,
+        EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, CafeNote, SocialInstagram, SocialFacebook, SocialX, SocialWhatsapp,
+        ContactPhone, ContactAddress, TaxNumber, TaxOffice, BillingAddress,
+        AutoBackupEnabled, AutoBackupRetentionDays, CustomerMenuBaseUrl, OpeningTime, ClosingTime, KitchenPrinterName, CustomerPrinterName,
+        LogoUrl: res.data.LogoUrl,
+      });
+    } catch (err) {
+      setLogoError(err.response?.data?.error || 'Logo yüklenemedi.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleLogoRemove = async () => {
+    setLogoError('');
+    setLogoUploading(true);
+    try {
+      await client.delete('/settings/logo');
+      updateLocalSettings({
+        RestaurantName, ThemeColor, ProductOptionsPopupEnabled, StockChartEnabled, KitchenAutoPrintEnabled,
+        EArsivVatRate, PrinterPaperWidth, LoyaltyPointsRate, CafeNote, SocialInstagram, SocialFacebook, SocialX, SocialWhatsapp,
+        ContactPhone, ContactAddress, TaxNumber, TaxOffice, BillingAddress,
+        AutoBackupEnabled, AutoBackupRetentionDays, CustomerMenuBaseUrl, OpeningTime, ClosingTime, KitchenPrinterName, CustomerPrinterName,
+        LogoUrl: null,
+      });
+    } catch (err) {
+      setLogoError(err.response?.data?.error || 'Logo kaldırılamadı.');
+    } finally {
+      setLogoUploading(false);
     }
   };
 
@@ -274,10 +349,69 @@ export default function Settings() {
                     </p>
                   </div>
 
-                  <ComingSoonNote>
-                    Logo yükleme (sidebar, giriş ekranı, QR menü üstü ve fişlerde kullanılacak) ve
-                    Açılış/Kapanış Saati (QR menüde "şu an kapalı" göstermek için).
-                  </ComingSoonNote>
+                  <div className="pt-2 border-t border-hairline">
+                    <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                      Logo <span className="normal-case text-slate/70">(opsiyonel)</span>
+                    </label>
+                    <div className="flex items-center gap-4">
+                      {LogoUrl ? (
+                        <img
+                          src={imageUrl(LogoUrl)}
+                          alt="Logo"
+                          className="w-16 h-16 rounded-sm object-contain bg-charcoal border border-hairline"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-sm border border-dashed border-hairline flex items-center justify-center text-slate text-[10px] font-mono">
+                          Yok
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="font-mono text-xs uppercase tracking-wide text-cream bg-hairline hover:bg-hairline/70
+                                           rounded-sm px-3 py-2 cursor-pointer transition-colors text-center">
+                          {logoUploading ? 'Yükleniyor…' : LogoUrl ? 'Değiştir' : 'Yükle'}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                                 disabled={logoUploading} onChange={handleLogoChange} />
+                        </label>
+                        {LogoUrl && (
+                          <button type="button" onClick={handleLogoRemove} disabled={logoUploading}
+                                  className="font-mono text-[11px] text-slate hover:text-ember transition-colors disabled:opacity-40">
+                            Kaldır
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {logoError && <p className="font-mono text-[11px] text-ember mt-1.5">{logoError}</p>}
+                    <p className="font-mono text-[11px] text-slate mt-1.5">
+                      Sidebar, giriş ekranı, müşteri fişi ve QR menü üstünde restoran adı yerine gösterilir.
+                      Boş bırakılırsa hepsi metin (ilk harf/isim) modunda kalır.
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-hairline">
+                    <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                      Açılış / Kapanış Saati <span className="normal-case text-slate/70">(opsiyonel)</span>
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="time"
+                        value={openingTime}
+                        onChange={(e) => setOpeningTime(e.target.value)}
+                        className={`w-32 ${inputClass}`}
+                      />
+                      <span className="font-mono text-xs text-slate">—</span>
+                      <input
+                        type="time"
+                        value={closingTime}
+                        onChange={(e) => setClosingTime(e.target.value)}
+                        className={`w-32 ${inputClass}`}
+                      />
+                    </div>
+                    <p className="font-mono text-[11px] text-slate mt-1.5">
+                      Girilirse QR menüde bu saatlerin dışında "şu an kapalıyız" gösterilir ve sipariş
+                      gönderme kapatılır. Kapanış, açılıştan küçükse gece yarısını geçen aralık sayılır
+                      (ör. 18:00–02:00). İkisi de boş bırakılırsa kısıt uygulanmaz, menü her zaman açık kabul edilir.
+                    </p>
+                  </div>
 
                   <div className="pt-2 border-t border-hairline">
                     <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
@@ -453,7 +587,7 @@ export default function Settings() {
                 <>
                   <div>
                     <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
-                      e-Arşiv KDV Oranı (%)
+                      e-Arşiv KDV Oranı (%) · Varsayılan
                     </label>
                     <input
                       type="number"
@@ -466,8 +600,10 @@ export default function Settings() {
                                  focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                     />
                     <p className="font-mono text-[11px] text-slate mt-1.5">
-                      Fatura kesilirken menü fiyatının bu oranda KDV içerdiği varsayılır (yeme-içme için
-                      Türkiye'de yaygın oran %10'dur).
+                      Fatura kesilirken, KDV oranı belirtilmemiş ürünlerin menü fiyatının bu oranda KDV
+                      içerdiği varsayılır (yeme-içme için Türkiye'de yaygın oran %10'dur). Ürüne özel
+                      farklı bir oran gerekiyorsa (ör. alkollü içecek %20), Ürünler sayfasından o ürünün
+                      düzenleme ekranındaki "KDV Oranı" alanına girin — burada girilen genel oranı geçersiz kılar.
                     </p>
                   </div>
 
@@ -648,11 +784,47 @@ export default function Settings() {
                     </p>
                   </div>
 
-                  <ComingSoonNote>
-                    Birden fazla yazıcı tanımlama (hangisi mutfak fişi, hangisi müşteri fişi basacak) —
-                    şu an tek bir tarayıcı yazdırma diyaloğu kullanılıyor, gerçek ağ/USB yazıcı
-                    entegrasyonu ayrı bir iş.
-                  </ComingSoonNote>
+                  <div className="pt-2 border-t border-hairline">
+                    <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                      Yazıcı Etiketleri <span className="normal-case text-slate/70">(opsiyonel)</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-mono text-[10px] uppercase tracking-wide text-slate/70 mb-1">
+                          Mutfak Fişi Yazıcısı
+                        </label>
+                        <input
+                          type="text"
+                          value={kitchenPrinterName}
+                          onChange={(e) => setKitchenPrinterName(e.target.value)}
+                          placeholder="ör. Epson TM-T20 - Mutfak"
+                          maxLength={100}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-mono text-[10px] uppercase tracking-wide text-slate/70 mb-1">
+                          Müşteri Fişi Yazıcısı
+                        </label>
+                        <input
+                          type="text"
+                          value={customerPrinterName}
+                          onChange={(e) => setCustomerPrinterName(e.target.value)}
+                          placeholder="ör. Epson TM-T20 - Kasa"
+                          maxLength={100}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                    <p className="font-mono text-[11px] text-slate mt-2 leading-relaxed">
+                      Bu alanlar bir yazıcıyı OTOMATİK SEÇMEZ — tarayıcılar (ve Tauri'nin kendi
+                      penceresi) bunu güvenlik nedeniyle desteklemiyor, yazdırırken Windows'un yazıcı
+                      seçim penceresi yine açılır. Buraya girdiğiniz isim, o pencerede HANGİ fiziksel
+                      yazıcıyı seçmeniz gerektiğini fiş başlığında hatırlatır — böylece mutfak fişini
+                      yanlışlıkla kasa yazıcısına, ya da tam tersini basmazsınız. Gerçek ağ/USB yazıcı
+                      entegrasyonu (diyaloğu tamamen atlayan sessiz baskı) ayrı bir iştir.
+                    </p>
+                  </div>
                 </>
               )}
 

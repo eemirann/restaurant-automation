@@ -66,6 +66,9 @@ const dict = {
     contact: 'İletişim',
     followUs: 'Bizi Takip Edin',
     noExtraInfo: 'Henüz eklenmiş bir bilgi yok.',
+    closedNow: 'Şu an kapalıyız.',
+    closedWithHours: 'Şu an kapalıyız · Çalışma saatleri {open}–{close}',
+    closedOrderBlocked: 'Restoran şu anda kapalı, sipariş gönderilemiyor.',
     comboIncludes: 'İçindekiler',
     addComboToCart: 'Sepete Ekle',
     addedToCart: 'Eklendi ✓',
@@ -87,6 +90,47 @@ const dict = {
     tipNone: 'Yok',
     tipCustomPlaceholder: 'Farklı bir tutar gir (₺)',
     subtotalLabel: 'Ara Toplam',
+    loyaltyGateTitle: 'Puan Kazanmaya Başla',
+    loyaltyGateBody: 'Bir hesap aç, siparişlerinden puan topla ve puanlarınla ücretsiz ürün al.',
+    loyaltyGateCta: 'Giriş Yap / Hesap Aç',
+    loyaltyGateSkip: 'Şimdi değil',
+    loyaltyTabLogin: 'Giriş Yap',
+    loyaltyTabRegister: 'Hesap Aç',
+    loyaltyPinLabel: 'PIN (4-6 haneli)',
+    loyaltyPinPlaceholder: 'ör. 1234',
+    loyaltyRegisterHint: 'Bu telefonda hatırlanır, bir daha sormayız.',
+    loyaltySubmitLogin: 'Giriş Yap',
+    loyaltySubmitRegister: 'Hesap Aç',
+    loyaltyWelcomeBack: 'Tekrar hoş geldin, {username} 👋',
+    loyaltyPointsShort: '{points} puan',
+    loyaltyLogout: 'Çıkış Yap',
+    loyaltyLoggedInHint: '{username} olarak giriş yaptın — puanların otomatik işleniyor.',
+    close: 'Kapat',
+    navGame: 'Oyun',
+    gameTitle: 'Hesap Kimde?',
+    gameIntro: 'Herkes parmağını ekrana koysun, kader kararını versin!',
+    gameStartCta: 'Oyunu Başlat',
+    gamePlacingHint: 'Parmakları ekrana yerleştirin (en az 2 kişi)...',
+    gameCountingHint: 'Kıpırdamayın... kader seçiyor 👀',
+    gamePlayAgain: 'Tekrar Oyna',
+    gameClose: 'Kapat',
+    gameResults: [
+      'Kader konuştu, itiraz yok! 🎉 Bu turun hesabı sende!',
+      'Tebrikler! 🥳 Bu akşamın kahramanı sen oldun — hesap senin şerefine!',
+      'Parmaklar seçti, sen seçildin! 💸 Hesap senden!',
+      'Şansına küs! 😄 Bu sefer ısmarlama sırası sende.',
+      'Ve kazanan... yani kaybeden 😅 — hesap sende!',
+      'Evrenin planı buymuş: bu akşam sen ısmarlıyorsun! ✨',
+      'Zar atıldı, sonuç belli: hesabı sen kapatıyorsun! 🎲',
+      'Bugün şanslı günün değilmiş dostum, hesap sende! 🍀',
+      'Masadaki herkes rahat bir nefes aldı — çünkü hesap sende! 😂',
+      'Resmiyet kazandı: bu turun sponsoru sensin! 🏆',
+      'Parmak kader çizgisi seni işaret etti — hesap sende! 👆',
+      'Aramızda kalsın ama biraz da sen ısmarlasan iyi olur — kader de öyle dedi! 🤫',
+      'Kutlamalık bir şey oldu: sen bu akşam ev sahibisin! 🥂',
+      'Şans bugün senden yana değildi ama kalbimiz seninle — hesap sende! ❤️',
+      'Tur tamamlandı, sonuç kesin: bu sefer hesap sende, dostum! 🙌',
+    ],
   },
   en: {
     loadingMenu: 'Loading menu...',
@@ -149,6 +193,9 @@ const dict = {
     contact: 'Contact',
     followUs: 'Follow Us',
     noExtraInfo: 'No extra info added yet.',
+    closedNow: 'We are currently closed.',
+    closedWithHours: 'Currently closed · Open {open}–{close}',
+    closedOrderBlocked: 'The restaurant is currently closed, orders cannot be sent.',
     comboIncludes: 'Includes',
     addComboToCart: 'Add to Cart',
     addedToCart: 'Added ✓',
@@ -170,6 +217,47 @@ const dict = {
     tipNone: 'None',
     tipCustomPlaceholder: 'Enter a custom amount',
     subtotalLabel: 'Subtotal',
+    loyaltyGateTitle: 'Start Earning Points',
+    loyaltyGateBody: 'Create an account, collect points from your orders, and redeem them for free items.',
+    loyaltyGateCta: 'Log In / Create Account',
+    loyaltyGateSkip: 'Not now',
+    loyaltyTabLogin: 'Log In',
+    loyaltyTabRegister: 'Create Account',
+    loyaltyPinLabel: 'PIN (4-6 digits)',
+    loyaltyPinPlaceholder: 'e.g. 1234',
+    loyaltyRegisterHint: 'Remembered on this phone — we won’t ask again.',
+    loyaltySubmitLogin: 'Log In',
+    loyaltySubmitRegister: 'Create Account',
+    loyaltyWelcomeBack: 'Welcome back, {username} 👋',
+    loyaltyPointsShort: '{points} pts',
+    loyaltyLogout: 'Log Out',
+    loyaltyLoggedInHint: 'Logged in as {username} — your points are handled automatically.',
+    close: 'Close',
+    navGame: 'Game',
+    gameTitle: "Who's Paying?",
+    gameIntro: 'Everyone put a finger on the screen and let fate decide!',
+    gameStartCta: 'Start the Game',
+    gamePlacingHint: 'Place your fingers on the screen (at least 2 players)...',
+    gameCountingHint: "Hold still... fate is choosing 👀",
+    gamePlayAgain: 'Play Again',
+    gameClose: 'Close',
+    gameResults: [
+      'Fate has spoken, no objections! 🎉 The bill is on you this round!',
+      "Congrats! 🥳 You're tonight's star — the bill's in your honor!",
+      'The fingers have chosen you! 💸 The bill is on you!',
+      'Tough luck! 😄 It\'s your turn to treat everyone.',
+      'And the winner is... well, the loser 😅 — bill\'s on you!',
+      'The universe has decided: you\'re treating tonight! ✨',
+      'The dice have been cast, the verdict is in: you\'re closing the tab! 🎲',
+      "Not your lucky day, friend — the bill's on you! 🍀",
+      'Everyone at the table just relaxed — because the bill is on you! 😂',
+      "It's official: you're sponsoring this round! 🏆",
+      'The finger of fate pointed straight at you — bill\'s on you! 👆',
+      "Just between us, maybe you should've treated anyway — fate agrees! 🤫",
+      "Something to celebrate: you're the host tonight! 🥂",
+      'Luck wasn\'t on your side today, but our hearts are — bill\'s on you! ❤️',
+      'Round complete, verdict is final: the bill is on you this time! 🙌',
+    ],
   },
 };
 
@@ -199,8 +287,16 @@ export function LanguageProvider({ children }) {
     return str;
   }, [lang]);
 
+  // "Hesap Kimde" oyunu için: her seferinde 15 metinlik havuzdan rastgele
+  // biri — t() düz string bekler, gameResults bir dizi olduğu için ayrı
+  // bir yardımcı fonksiyon (bkz. components/WhoPaysGame.jsx).
+  const randomGameResult = useCallback(() => {
+    const pool = dict[lang].gameResults ?? dict.tr.gameResults;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }, [lang]);
+
   return (
-    <LanguageContext.Provider value={{ lang, toggleLang, t }}>
+    <LanguageContext.Provider value={{ lang, toggleLang, t, randomGameResult }}>
       {children}
     </LanguageContext.Provider>
   );

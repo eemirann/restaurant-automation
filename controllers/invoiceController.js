@@ -80,19 +80,50 @@ async function createInvoice(req, res) {
         const itemsResult = await pool.request()
             .input('OrderId', sql.Int, orderId)
             .query(`
-                SELECT od.Quantity, od.UnitPrice, p.Name
+                SELECT od.Quantity, od.UnitPrice, p.Name, p.VatRate
                 FROM OrderDetails od JOIN Products p ON p.ProductId = od.ProductId
                 WHERE od.OrderId = @OrderId
             `);
 
         const settingsResult = await pool.request().query(`SELECT TOP 1 EArsivVatRate FROM AppSettings ORDER BY AppSettingsId ASC`);
-        const vatRate = Number(settingsResult.recordset[0]?.EArsivVatRate ?? 10);
+        const globalVatRate = Number(settingsResult.recordset[0]?.EArsivVatRate ?? 10);
+
+        // ============================================================
+        // ÜRÜN BAZLI KDV — TEK SABİT ORAN KULLANILMAZ.
+        //
+        // Her kalem KENDİ KDV oranıyla (Products.VatRate; boşsa Ayarlar'daki
+        // genel oran) hesaplanır, sonra kalemler toplanır. Menü fiyatları KDV
+        // dahil kabul edildiği için her kalemin vergisi kendi fiyatından geriye
+        // doğru çıkarılır (bkz. migrations/2026_08_09_product_vat_rate.sql).
+        //
+        // İSKONTO: Payments.DiscountAmount sipariş SEVİYESİNDE tutulur, kalem
+        // bazlı değildir — hangi ürüne ne kadar iskonto düştüğü bilinmez. Bu
+        // yüzden iskonto, kalemlerin KDV'siz toplamına ORANTILI dağıtılır:
+        // iskonto sonrası tutar / iskontosuz toplam = discountRatio, her
+        // kalemin vergisi bu oranla ölçeklenir. Tüm kalemler AYNI orana
+        // sahipse (ör. hepsi boşsa) bu, eski tek-oran formülüyle MATEMATİKSEL
+        // OLARAK BİREBİR AYNI sonucu verir — yani bu bir genelleme, davranış
+        // kırılması değil.
+        // ============================================================
+        let grossBeforeDiscount = 0;
+        let taxBeforeDiscount = 0;
+        // EffectiveVatRate ile zenginleştirilir — gerçek bir entegratöre
+        // bağlanıldığında her satırın kendi KDV oranını GİB'e bildirmesi gerekir.
+        const invoiceItems = itemsResult.recordset.map((item) => {
+            const itemVat = item.VatRate !== null && item.VatRate !== undefined ? Number(item.VatRate) : globalVatRate;
+            const lineGross = Number(item.Quantity) * Number(item.UnitPrice);
+            const lineNet = lineGross / (1 + itemVat / 100);
+            grossBeforeDiscount += lineGross;
+            taxBeforeDiscount += lineGross - lineNet;
+            return { ...item, EffectiveVatRate: itemVat };
+        });
 
         const { TotalAmount, TotalDiscount } = orderResult.recordset[0];
         const amount = Number(TotalAmount) - Number(TotalDiscount || 0);
-        // Menü fiyatları KDV dahil kabul edilir (Türkiye'de yaygın uygulama) —
-        // bu yüzden KDV tutarı toplam fiyattan geriye doğru çıkarılır.
-        const taxAmount = Math.round((amount - amount / (1 + vatRate / 100)) * 100) / 100;
+        // grossBeforeDiscount 0 olabilir (ör. tüm kalemler silinmiş/kombo
+        // sipariş) — bu durumda kalem bazlı orana dönemeyiz, genel orana düşülür.
+        const discountRatio = grossBeforeDiscount > 0 ? amount / grossBeforeDiscount : 1;
+        const taxAmount = Math.round(taxBeforeDiscount * discountRatio * 100) / 100;
 
         const insertResult = await pool.request()
             .input('OrderId', sql.Int, orderId)
@@ -118,7 +149,7 @@ async function createInvoice(req, res) {
                 customerName: CustomerName?.trim() || null,
                 customerTckn: CustomerTckn || null,
                 customerEmail: CustomerEmail?.trim() || null,
-                items: itemsResult.recordset,
+                items: invoiceItems,
             });
         } catch (providerErr) {
             providerResult = { success: false, error: providerErr.message };

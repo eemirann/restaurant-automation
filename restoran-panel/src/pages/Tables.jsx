@@ -987,7 +987,7 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 // "Sipariş Ver" ile POST /api/orders çağır.
 // ============================================================
 function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, products, categories, tableLabel, onOrdered, onError }) {
-  const { ProductOptionsPopupEnabled, KitchenAutoPrintEnabled, PrinterPaperWidth } = useSettings();
+  const { ProductOptionsPopupEnabled, KitchenAutoPrintEnabled, PrinterPaperWidth, KitchenPrinterName } = useSettings();
   // { [ProductId]: { quantity, extras: { [ExtraProductId]: quantity }, syrups: { [SyrupProductId]: quantity } } }
   const [cart, setCart] = useState({});
   const [activeCategoryId, setActiveCategoryId] = useState('all');
@@ -1274,7 +1274,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
       // bazı işletmeler mutfak fişini manuel/başka bir yoldan basmak isteyebilir.
       if (KitchenAutoPrintEnabled !== false) {
         try {
-          printKitchenTicket({ orderId: newOrderId, tableLabel, items: kitchenItems, note: note.trim(), paperWidth: PrinterPaperWidth || 80 });
+          printKitchenTicket({ orderId: newOrderId, tableLabel, items: kitchenItems, note: note.trim(), paperWidth: PrinterPaperWidth || 80, printerName: KitchenPrinterName });
         } catch {
           // Yazdırma başarısız olsa bile (ör. pop-up engellendi) sipariş akışı durmamalı
         }

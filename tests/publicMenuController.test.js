@@ -117,6 +117,67 @@ describe('POST /api/public/menu/:qrToken/order', () => {
         expect(insertedRequestId).toBe(77);
         expect(insertedIntoOrders).toBe(false);
     });
+
+    describe('açılış/kapanış saati kısıtı', () => {
+        // Sunucu saatini SABİTLEYİP kontrollü test ediyoruz — isOpenNow'un
+        // saat matrisi (gece yarısı geçişi, sınır değerleri...) zaten
+        // tests/businessHours.test.js'te ayrıca ve saf fonksiyon olarak
+        // sınanıyor; burada sadece ROTANIN o hesabı doğru ÇAĞIRIP 403'e
+        // çevirdiği doğrulanıyor.
+        afterEach(() => jest.useRealTimers());
+
+        test('kapalı saatte 403 döner, ürün/combo sorgularına hiç gidilmez', async () => {
+            jest.useFakeTimers().setSystemTime(new Date(2026, 0, 1, 3, 0)); // 03:00
+
+            let productQueryHit = false;
+            fakeDb.__setHandler(async (queryText) => {
+                if (queryText.includes('FROM Tables WHERE QrToken')) {
+                    return { recordset: [{ TableId: 12, TableNumber: 12, Area: 'Salon', Status: 'Occupied' }] };
+                }
+                if (queryText.includes('OpeningTime, ClosingTime FROM AppSettings')) {
+                    return { recordset: [{ OpeningTime: '09:00', ClosingTime: '23:00' }] };
+                }
+                if (queryText.includes('FROM Products WHERE ProductId = @ProductId AND IsActive')) {
+                    productQueryHit = true;
+                    return { recordset: [{ ProductId: 5 }] };
+                }
+                return { recordset: [] };
+            });
+
+            const res = await request(app)
+                .post(`/api/public/menu/${TOKEN}/order`)
+                .send({ Items: [{ ProductId: 5, Quantity: 1 }] });
+
+            expect(res.status).toBe(403);
+            expect(productQueryHit).toBe(false);
+        });
+
+        test('çalışma saatleri içindeyken (gece yarısını geçen aralık) sipariş serbest', async () => {
+            jest.useFakeTimers().setSystemTime(new Date(2026, 0, 1, 0, 30)); // 00:30 — 18:00-02:00 aralığında
+
+            fakeDb.__setHandler(async (queryText) => {
+                if (queryText.includes('FROM Tables WHERE QrToken')) {
+                    return { recordset: [{ TableId: 12, TableNumber: 12, Area: 'Salon', Status: 'Occupied' }] };
+                }
+                if (queryText.includes('OpeningTime, ClosingTime FROM AppSettings')) {
+                    return { recordset: [{ OpeningTime: '18:00', ClosingTime: '02:00' }] };
+                }
+                if (queryText.includes('FROM Products WHERE ProductId = @ProductId AND IsActive')) {
+                    return { recordset: [{ ProductId: 5 }] };
+                }
+                if (queryText.includes('INSERT INTO CustomerOrderRequests')) {
+                    return { recordset: [{ CustomerOrderRequestId: 1, CreatedAt: new Date().toISOString() }] };
+                }
+                return { recordset: [] };
+            });
+
+            const res = await request(app)
+                .post(`/api/public/menu/${TOKEN}/order`)
+                .send({ Items: [{ ProductId: 5, Quantity: 1 }] });
+
+            expect(res.status).toBe(201);
+        });
+    });
 });
 
 describe('POST /api/public/menu/:qrToken/request', () => {

@@ -13,6 +13,7 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
   const [description, setDescription] = useState(initial?.Description ?? '');
   const [price, setPrice] = useState(initial?.Price ?? '');
   const [cost, setCost] = useState(initial?.Cost ?? '');
+  const [vatRate, setVatRate] = useState(initial?.VatRate ?? '');
   const [categoryId, setCategoryId] = useState(initial?.CategoryId ?? '');
   const [isPopular, setIsPopular] = useState(initial?.IsPopular === true || initial?.IsPopular === 1);
   const [barcode, setBarcode] = useState(initial?.Barcode ?? '');
@@ -77,6 +78,10 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
       setError('Maliyet negatif olamaz.');
       return;
     }
+    if (vatRate !== '' && (Number(vatRate) < 0 || Number(vatRate) > 100)) {
+      setError('KDV oranı 0-100 arasında olmalıdır.');
+      return;
+    }
     if (stockCount !== '' && Number(stockCount) < 0) {
       setError('Stok adedi negatif olamaz.');
       return;
@@ -94,6 +99,7 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
         Price: Number(price),
         CategoryId: Number(categoryId),
         Cost: cost !== '' ? Number(cost) : null,
+        VatRate: vatRate !== '' ? Number(vatRate) : null,
         IsPopular: isPopular,
         Barcode: barcode.trim() || null,
         StockCount: stockCount !== '' ? Number(stockCount) : null,
@@ -202,21 +208,43 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
             </div>
           </div>
 
-          <div>
-            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
-              Maliyet <span className="normal-case text-slate/70">(opsiyonel — Dashboard'daki kâr oranı için)</span>
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-              placeholder="ör. 12.50"
-              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
-                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-            />
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                Maliyet <span className="normal-case text-slate/70">(opsiyonel — Dashboard'daki kâr oranı için)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                placeholder="ör. 12.50"
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                KDV Oranı (%) <span className="normal-case text-slate/70">(opsiyonel)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={vatRate}
+                onChange={(e) => setVatRate(e.target.value)}
+                placeholder="Genel oran (Ayarlar)"
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
           </div>
+          <p className="font-mono text-[11px] text-slate -mt-2">
+            Boş bırakılırsa Ayarlar &gt; Vergi sayfasındaki genel KDV oranı kullanılır. Farklı bir oran
+            (ör. alkollü içecek %20) gerekiyorsa buraya girin — fatura kesilirken bu ürün için geçerli olur.
+          </p>
 
           <div className="flex gap-3">
             <div className="flex-1">

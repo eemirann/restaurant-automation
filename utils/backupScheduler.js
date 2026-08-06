@@ -19,8 +19,21 @@ const { sql, connectDB } = require('../config/db');
 const BACKUP_DISK_DIR = process.env.BACKUP_DISK_DIR || '/var/opt/mssql/backup';
 const BACKUP_FS_DIR = process.env.BACKUP_FS_DIR || '/app/db-backups';
 
+// Veritabanı adı .env'den (config/db.js'in bağlandığı AYNI veritabanı) —
+// SABİT 'RestoranDB' YAZILMAZ. Kurulum sihirbazı veritabanını hep bu adla
+// oluşturduğu için üretimde fark edilmiyordu, ama DB_DATABASE farklı bir ad
+// taşıyan her ortamda (ör. geliştirme, çoklu-restoran test kurulumu) yedek
+// alma "Database 'RestoranDB' does not exist" ile başarısız oluyordu — asıl
+// bağlı olunan veritabanı hiç sorgulanmıyordu.
+const DB_NAME = process.env.DB_DATABASE || 'RestoranDB';
+
+// T-SQL tanımlayıcı kaçışı: köşeli parantez içine al, içindeki ']' varsa
+// ikiye katla (QUOTENAME ile aynı kural). DB_DATABASE admin tarafından
+// .env'e yazılır, kullanıcı girdisi değildir — yine de raw SQL'e gidiyor.
+const DB_NAME_ESCAPED = `[${DB_NAME.replace(/]/g, ']]')}]`;
+
 function backupFileName(date = new Date()) {
-    return `RestoranDB_${date.toISOString().slice(0, 10)}.bak`;
+    return `${DB_NAME}_${date.toISOString().slice(0, 10)}.bak`;
 }
 
 // ============================================================
@@ -36,7 +49,7 @@ async function runBackup() {
     const ayirici = /^[A-Za-z]:\\/.test(BACKUP_DISK_DIR) ? '\\' : '/';
     const diskPath = `${BACKUP_DISK_DIR.replace(/[\\/]+$/, '')}${ayirici}${fileName}`;
 
-    await pool.request().query(`BACKUP DATABASE RestoranDB TO DISK = N'${diskPath}'`);
+    await pool.request().query(`BACKUP DATABASE ${DB_NAME_ESCAPED} TO DISK = N'${diskPath}'`);
 
     let sizeBytes = null;
     try {

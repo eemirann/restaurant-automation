@@ -6,7 +6,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useShift } from '../context/ShiftContext';
 import CommandPalette from './CommandPalette';
 import NotificationCenter from './NotificationCenter';
-import client from '../api/client';
+import client, { imageUrl } from '../api/client';
 import { ROLE_LABELS } from '../constants/roles';
 
 const NAV_ITEMS = [
@@ -49,7 +49,7 @@ const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { RestaurantName } = useSettings();
+  const { RestaurantName, LogoUrl } = useSettings();
   const { shift, closeShift } = useShift();
   const navigate = useNavigate();
   const location = useLocation();
@@ -118,14 +118,23 @@ export default function Layout({ children }) {
         </button>
 
         <div className={`py-6 border-b border-cream/10 ${collapsed ? 'px-3 text-center' : 'px-6'}`}>
-          {!collapsed && (
+          {!collapsed && !LogoUrl && (
             <p className="font-mono text-[10px] tracking-[0.3em] text-sand/50 uppercase mb-1">
               Restoran
             </p>
           )}
-          <h1 className="font-display text-xl font-semibold leading-tight truncate" title={RestaurantName || 'Panel'}>
-            {collapsed ? (RestaurantName || 'Panel').charAt(0) : (RestaurantName || 'Panel')}
-          </h1>
+          {LogoUrl ? (
+            <img
+              src={imageUrl(LogoUrl)}
+              alt={RestaurantName || 'Restoran'}
+              title={RestaurantName || 'Panel'}
+              className={collapsed ? 'w-8 h-8 object-contain mx-auto' : 'max-h-12 max-w-full object-contain'}
+            />
+          ) : (
+            <h1 className="font-display text-xl font-semibold leading-tight truncate" title={RestaurantName || 'Panel'}>
+              {collapsed ? (RestaurantName || 'Panel').charAt(0) : (RestaurantName || 'Panel')}
+            </h1>
+          )}
         </div>
 
         <nav className="flex-1 py-4 overflow-y-auto">
