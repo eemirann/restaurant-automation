@@ -5,6 +5,14 @@ Restoran POS / masa yönetimi için REST API + Socket.IO gerçek zamanlı bildir
 
 Beraberinde bir React (Vite) yönetim paneli `restoran-panel/` klasöründedir; bu README backend'i kapsar.
 
+<p align="center">
+  <img src="docs/screenshot-dashboard.png" width="49%" alt="Dashboard" />
+  <img src="docs/screenshot-panel.png" width="49%" alt="Masa / Sipariş" />
+</p>
+<p align="center">
+  <img src="docs/screenshot-stok.png" width="49%" alt="Stok Yönetimi" />
+</p>
+
 ---
 
 ## Özellikler
