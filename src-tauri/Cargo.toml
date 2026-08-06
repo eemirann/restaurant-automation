@@ -13,7 +13,6 @@ tauri-build = { version = "2", features = [] }
 # tray-icon + image-png: sistem tepsisi ikonunu PNG'den yüklemek için gerekli.
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # İlk çalıştırmada kurulum'a özel JWT_SECRET üretmek için (kriptografik RNG).

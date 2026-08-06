@@ -598,7 +598,11 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             ana_pencereyi_goster(app);
         }))
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Updater plugin'i BİLEREK kayıtlı değil: tauri.conf.json'daki
+        // plugins.updater bloğu kaldırıldı (imzalama anahtarı kayıp, endpoint
+        // zaten yer tutucuydu — bkz. SIFRELER-GIZLI.md). Plugin kayıtlıyken
+        // config'i bulamayınca PluginInitialization hatasıyla TÜM uygulama
+        // açılışta çöküyordu (0xc0000409) — bu yüzden burada da kaldırıldı.
         .manage(BackendSureci(Mutex::new(None)))
         .manage(BackendKaynagi(Mutex::new("bilinmiyor".to_string())))
         .manage(CikisOnayi(Mutex::new(false)))
@@ -709,8 +713,19 @@ fn main() {
             let cikis = MenuItem::with_id(app, "cikis", "Çıkış", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&goster, &gizle, &yenile, &ayrac, &cikis])?;
 
+            // `default_window_icon()` bazı ortamlarda (ör. pencereler henüz tam
+            // hazır olmadan setup() çalıştığında) None dönebiliyordu — bu da
+            // önceki `.expect("ikon yok")` ile PANİK'e (ve Windows'ta 0xc0000409
+            // ile tüm uygulamanın sessizce çökmesine) yol açıyordu. Artık
+            // pakete gömülü icon.png'den GARANTİLİ bir yedek yükleniyor.
+            let tepsi_ikonu = app
+                .default_window_icon()
+                .cloned()
+                .or_else(|| tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png")).ok())
+                .expect("ikon yüklenemedi (gömülü icon.png de okunamadı)");
+
             TrayIconBuilder::with_id("resto-tray")
-                .icon(app.default_window_icon().cloned().expect("ikon yok"))
+                .icon(tepsi_ikonu)
                 .tooltip("RESTO POS")
                 .menu(&menu)
                 // Sol tık menüyü açmasın; pencereyi geri getirsin.
