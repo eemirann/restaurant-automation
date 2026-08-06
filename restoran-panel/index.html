@@ -12,8 +12,14 @@
     <meta name="theme-color" content="#FF4713" />
 
     <!-- iOS Safari manifest.json'ı okumaz; "Ana Ekrana Ekle" davranışı bu
-         meta etiketleri + apple-touch-icon ile ayrıca sağlanır. -->
+         meta etiketleri + apple-touch-icon ile ayrıca sağlanır. apple- önekli
+         olan editörlerde/MDN verisinde "deprecated" görünür (bu yüzden VS
+         Code'da kırmızı/üstü çizili çıkabilir) — ama Safari HÂLÂ SADECE
+         BUNU okuyor, standart karşılığını henüz desteklemiyor. Bu yüzden
+         İKİSİ BİRDEN tutuluyor: mobile-web-app-capable Chrome/Android için,
+         apple-mobile-web-app-capable Safari/iOS için. -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="RESTO Panel" />
