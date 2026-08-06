@@ -1,0 +1,15 @@
+{
+  "name": "RESTO POS — Restoran Paneli",
+  "short_name": "RESTO Panel",
+  "description": "Sipariş, masa, stok, ödeme ve raporlama süreçlerini tek ekrandan yöneten restoran otomasyon paneli.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1C1B19",
+  "theme_color": "#FF4713",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

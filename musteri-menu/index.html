@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#FFFFFF" />
     <title>Menü</title>
+
+    <!-- PWA: "Ana Ekrana Ekle" ile tarayıcı arayüzü olmadan (standalone)
+         açılması için — bkz. public/manifest.json. NOT: start_url "/" —
+         masa QR kodları /:qrToken şeklinde farklı adreslerdir, ana ekrana
+         eklenen ikon her zaman köke ("Geçersiz Bağlantı" ekranına) açılır,
+         belirli bir masaya değil. Müşteri ikinci ziyarette yine QR okutmalı. -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- iOS Safari manifest.json'ı okumaz; "Ana Ekrana Ekle" davranışı bu
+         meta etiketleri + apple-touch-icon ile ayrıca sağlanır. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Menü" />
   </head>
   <body>
     <div id="root"></div>

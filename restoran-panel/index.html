@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>restoran-panel</title>
+    <title>RESTO POS</title>
+
+    <!-- PWA: "Ana Ekrana Ekle" ile tarayıcı arayüzü olmadan (standalone)
+         açılması için — bkz. public/manifest.json. -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#FF4713" />
+
+    <!-- iOS Safari manifest.json'ı okumaz; "Ana Ekrana Ekle" davranışı bu
+         meta etiketleri + apple-touch-icon ile ayrıca sağlanır. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RESTO Panel" />
   </head>
   <body>
     <div id="root"></div>
