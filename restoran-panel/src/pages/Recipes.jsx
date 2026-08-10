@@ -176,14 +176,15 @@ export default function Recipes() {
                       <th className="px-4 py-2.5 w-28">Miktar</th>
                       <th className="px-4 py-2.5 w-32">Birim</th>
                       <th className="px-4 py-2.5 text-right w-28">Stok</th>
+                      <th className="px-4 py-2.5 text-right w-28">Maliyet</th>
                       <th className="px-4 py-2.5 w-12"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {loadingRecipe ? (
-                      <tr><td colSpan={5} className="px-4 py-4 text-slate text-sm animate-pulse">Yükleniyor…</td></tr>
+                      <tr><td colSpan={6} className="px-4 py-4 text-slate text-sm animate-pulse">Yükleniyor…</td></tr>
                     ) : recipe.length === 0 ? (
-                      <tr><td colSpan={5} className="px-4 py-4 text-slate text-sm">Bu ürünün reçetesi yok. Aşağıdan hammadde ekleyin.</td></tr>
+                      <tr><td colSpan={6} className="px-4 py-4 text-slate text-sm">Bu ürünün reçetesi yok. Aşağıdan hammadde ekleyin.</td></tr>
                     ) : (
                       recipe.map((line) => (
                         <tr key={line.RecipeId} className="border-b border-hairline last:border-b-0">
@@ -215,6 +216,15 @@ export default function Recipes() {
                             )}
                           </td>
                           <td className="px-4 py-2 text-right font-mono text-xs text-slate">{line.RawMaterialStock == null ? '—' : num(line.RawMaterialStock)}</td>
+                          <td className="px-4 py-2 text-right font-mono text-xs">
+                            {line.RawMaterialCost == null ? (
+                              <span className="text-amber-500" title="Bu hammaddenin maliyeti Stok sayfasından girilmemiş">— girilmemiş</span>
+                            ) : (
+                              <span className="text-slate">
+                                ₺{num(Number(line.Quantity) * Number(line.ConversionFactor ?? 1) * Number(line.RawMaterialCost))}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-2 text-center">
                             <button onClick={() => deleteLine(line)} title="Sil" className="text-slate hover:text-red-500 font-mono text-sm">✕</button>
                           </td>

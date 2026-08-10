@@ -1,5 +1,5 @@
 const { sql } = require('../config/db');
-const { deductStockForItem } = require('./stockDeduction');
+const { deductStockForItem, isRecipeLinked } = require('./stockDeduction');
 const { HttpError } = require('./httpError');
 const { toStockUnit, getPorsiyonUnitId } = require('./unitConversion');
 
@@ -10,13 +10,10 @@ const { toStockUnit, getPorsiyonUnitId } = require('./unitConversion');
 // de müşteri QR siparişi onaylanırken (customerOrderController)
 // kullanılır.
 // ============================================================
-function validateOrderItemsShape(TableId, UserId, Items, Combos) {
-    const hasItems = Items && Items.length > 0;
-    const hasCombos = Combos && Combos.length > 0;
-    if (!TableId || !UserId || (!hasItems && !hasCombos)) {
-        throw new HttpError(400, 'Masa, kullanıcı ve en az bir ürün veya combo zorunludur');
-    }
-
+// Items dizisinin şekli — hem yeni sipariş oluştururken (validateOrderItemsShape)
+// hem de var olan bir siparişe kalem eklerken (addItemsToOrderInTransaction)
+// AYNI kural geçerli, tek yerden bakım görsün diye ayrıldı.
+function validateItemsShape(Items) {
     for (const item of (Items || [])) {
         if (typeof item.ProductId !== 'number' || !Number.isInteger(item.Quantity) || item.Quantity <= 0) {
             throw new HttpError(400, 'Her ürün için geçerli ProductId ve Quantity giriniz');
@@ -46,7 +43,16 @@ function validateOrderItemsShape(TableId, UserId, Items, Combos) {
         }
         // NOT: Client UnitPrice gönderse bile burada hiç okunmuyor, tamamen yok sayılıyor.
     }
+}
 
+function validateOrderItemsShape(TableId, UserId, Items, Combos) {
+    const hasItems = Items && Items.length > 0;
+    const hasCombos = Combos && Combos.length > 0;
+    if (!TableId || !UserId || (!hasItems && !hasCombos)) {
+        throw new HttpError(400, 'Masa, kullanıcı ve en az bir ürün veya combo zorunludur');
+    }
+
+    validateItemsShape(Items);
     validateCombosShape(Combos);
 }
 
@@ -267,7 +273,14 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
                 throw new HttpError(400, `Şurup şu anda aktif değil (SyrupProductId: ${syrup.SyrupProductId})`);
             }
 
-            const syrupUnitPrice = Number(syrupProduct.Price);
+            // Bu şurup, seçildiği ürünün Reçetesinde ZATEN sabit olarak tanımlıysa
+            // (ör. Frappe'nin tarifinde Çikolata Şurup varsa), Frappe her satıldığında
+            // otomatik olarak stoktan düşülüyor demektir (bkz. utils/stockDeduction.js
+            // resolveStockTargets) — burada AYRICA ücretlendirip AYRICA düşürmek çifte
+            // sayım olur. Reçetede yoksa (saf upsell/flavor add-on) eskisi gibi ücretli
+            // ve stok-düşümlü kalır.
+            const linked = await isRecipeLinked(transaction, item.ProductId, syrup.SyrupProductId);
+            const syrupUnitPrice = linked ? 0 : Number(syrupProduct.Price);
             unitPrice += syrupUnitPrice * syrup.Quantity;
             // Müşterinin/garsonun seçtiği "1x, 2x..." adet PORSİYON birimindedir
             // (bkz. utils/unitConversion.js) — Birim Dönüşüm Sistemi, ürünün Stok
@@ -275,7 +288,7 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
             // hesaplar. Ürün için StockUnitId hiç ayarlanmamışsa faktör 1'dir
             // (eski davranış, geriye dönük uyumlu).
             const porsiyonUnitId = await getPorsiyonUnitId(transaction);
-            const stockUnitsPerServing = (await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitId));
+            const stockUnitsPerServing = linked ? 0 : (await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitId));
             resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice, StockUnitsPerServing: stockUnitsPerServing });
         }
 
@@ -412,4 +425,232 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
     return { order: orderResult.recordset[0], totalAmount, lowStockWarnings };
 }
 
-module.exports = { validateOrderItemsShape, buildOrderInTransaction };
+// ============================================================
+// Var olan bir siparişe (AÇIK transaction içinde) kalem ekler — fiyat/stok
+// çözümleme mantığı buildOrderInTransaction ile BİREBİR AYNI (kopyası değil,
+// aynı ürün/varyant/ekstra/şurup kodu paylaşılıyor). Hem HTTP uç noktası
+// (controllers/orderController.js -> addOrderItems) hem de müşteri QR
+// siparişi onaylanırken masada zaten açık bir sipariş varsa (bkz.
+// controllers/customerOrderController.js -> approveCustomerOrderRequest)
+// bu fonksiyon kullanılır — böylece "ekstra sipariş" ayrı bir fiş açmak
+// yerine masanın açık siparişine eklenir.
+//
+// Hata durumunda HttpError fırlatır (buildOrderInTransaction ile aynı ilke) —
+// transaction'ı KENDİSİ rollback yapmaz, çağıran taraf yapar.
+// ============================================================
+async function addItemsToOrderInTransaction(transaction, orderId, items) {
+    if (!items || items.length === 0) {
+        throw new HttpError(400, 'En az bir ürün zorunludur');
+    }
+    validateItemsShape(items);
+
+    const orderResult = await new sql.Request(transaction)
+        .input('OrderId', sql.Int, orderId)
+        .query(`SELECT OrderId, Status, TotalAmount FROM Orders WHERE OrderId = @OrderId`);
+
+    if (orderResult.recordset.length === 0) {
+        throw new HttpError(404, 'Sipariş bulunamadı');
+    }
+
+    const order = orderResult.recordset[0];
+    if (['Paid', 'Cancelled', 'Merged'].includes(order.Status)) {
+        throw new HttpError(400, `Bu sipariş '${order.Status}' durumunda, ürün eklenemez.`);
+    }
+
+    // ============================================================
+    // Her ürün için gerçek fiyatı sunucuda doğrula/hesapla (buildOrderInTransaction ile aynı mantık)
+    // ============================================================
+    const validatedItems = [];
+    let addedAmount = 0;
+
+    for (const item of items) {
+        const productResult = await new sql.Request(transaction)
+            .input('ProductId', sql.Int, item.ProductId)
+            .query(`SELECT ProductId, Price, IsActive, IsAvailable FROM Products WHERE ProductId = @ProductId`);
+
+        if (productResult.recordset.length === 0) {
+            throw new HttpError(404, `Ürün bulunamadı (ProductId: ${item.ProductId})`);
+        }
+
+        const product = productResult.recordset[0];
+        if (!product.IsActive) {
+            throw new HttpError(400, `Ürün şu anda aktif değil (ProductId: ${item.ProductId})`);
+        }
+
+        if (!product.IsAvailable) {
+            throw new HttpError(400, `Ürün şu anda tükendi/satışta değil (ProductId: ${item.ProductId})`);
+        }
+
+        let unitPrice = Number(product.Price);
+
+        if (item.VariantId) {
+            const variantResult = await new sql.Request(transaction)
+                .input('VariantId', sql.Int, item.VariantId)
+                .input('ProductId', sql.Int, item.ProductId)
+                .query(`SELECT ProductVariantsId, Price FROM ProductVariants WHERE ProductVariantsId = @VariantId AND ProductId = @ProductId`);
+
+            if (variantResult.recordset.length === 0) {
+                throw new HttpError(400, `Varyant bu ürüne ait değil veya bulunamadı (ProductId: ${item.ProductId}, VariantId: ${item.VariantId})`);
+            }
+
+            unitPrice += Number(variantResult.recordset[0].Price);
+        }
+
+        // Ekstralar (buildOrderInTransaction ile aynı mantık — ProductExtras
+        // üzerinden bu ürüne bağlı+etkin olması şart)
+        const resolvedExtras = [];
+        for (const extra of (item.Extras || [])) {
+            const extraResult = await new sql.Request(transaction)
+                .input('ExtraProductId', sql.Int, extra.ExtraProductId)
+                .input('ProductId', sql.Int, item.ProductId)
+                .query(`
+                    SELECT p.ProductId, p.Price, p.IsActive
+                    FROM Products p
+                    JOIN ProductExtras pe ON pe.ExtraProductId = p.ProductId
+                    WHERE p.ProductId = @ExtraProductId AND pe.ProductId = @ProductId AND pe.IsEnabled = 1
+                `);
+
+            if (extraResult.recordset.length === 0) {
+                throw new HttpError(404, `Ekstra bu ürüne bağlı değil veya bulunamadı (ExtraProductId: ${extra.ExtraProductId}, ProductId: ${item.ProductId})`);
+            }
+
+            const extraProduct = extraResult.recordset[0];
+            if (!extraProduct.IsActive) {
+                throw new HttpError(400, `Ekstra şu anda aktif değil (ExtraProductId: ${extra.ExtraProductId})`);
+            }
+
+            const extraUnitPrice = Number(extraProduct.Price);
+            unitPrice += extraUnitPrice * extra.Quantity;
+            const porsiyonUnitIdForAdd = await getPorsiyonUnitId(transaction);
+            const extraStockUnitsPerServing = await toStockUnit(transaction, extra.ExtraProductId, 1, porsiyonUnitIdForAdd);
+            resolvedExtras.push({ ExtraProductId: extra.ExtraProductId, Quantity: extra.Quantity, UnitPrice: extraUnitPrice, StockUnitsPerServing: extraStockUnitsPerServing });
+        }
+
+        // Şuruplar (Ekstralar ile birebir aynı mantık, ProductSyrups üzerinden)
+        const resolvedSyrups = [];
+        for (const syrup of (item.Syrups || [])) {
+            const syrupResult = await new sql.Request(transaction)
+                .input('SyrupProductId', sql.Int, syrup.SyrupProductId)
+                .input('ProductId', sql.Int, item.ProductId)
+                .query(`
+                    SELECT p.ProductId, p.Price, p.IsActive
+                    FROM Products p
+                    JOIN ProductSyrups ps ON ps.SyrupProductId = p.ProductId
+                    WHERE p.ProductId = @SyrupProductId AND ps.ProductId = @ProductId AND ps.IsEnabled = 1
+                `);
+
+            if (syrupResult.recordset.length === 0) {
+                throw new HttpError(404, `Şurup bu ürüne bağlı değil veya bulunamadı (SyrupProductId: ${syrup.SyrupProductId}, ProductId: ${item.ProductId})`);
+            }
+
+            const syrupProduct = syrupResult.recordset[0];
+            if (!syrupProduct.IsActive) {
+                throw new HttpError(400, `Şurup şu anda aktif değil (SyrupProductId: ${syrup.SyrupProductId})`);
+            }
+
+            // Reçeteye bağlı şurup ücretsiz + ikinci kez düşülmez (bkz. buildOrderInTransaction'daki aynı not).
+            const linked = await isRecipeLinked(transaction, item.ProductId, syrup.SyrupProductId);
+            const syrupUnitPrice = linked ? 0 : Number(syrupProduct.Price);
+            unitPrice += syrupUnitPrice * syrup.Quantity;
+            const porsiyonUnitId = await getPorsiyonUnitId(transaction);
+            const stockUnitsPerServing = linked ? 0 : await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitId);
+            resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice, StockUnitsPerServing: stockUnitsPerServing });
+        }
+
+        validatedItems.push({
+            ProductId: item.ProductId,
+            Quantity: item.Quantity,
+            UnitPrice: unitPrice,
+            VariantId: item.VariantId || null,
+            Note: item.Note || null,
+            Extras: resolvedExtras,
+            Syrups: resolvedSyrups
+        });
+
+        addedAmount += unitPrice * item.Quantity;
+    }
+
+    // ============================================================
+    // OrderDetails ekle + stok düş. NOT: OrderDetails tablosunda
+    // [UQ_Order_Product] kısıtı OrderId+ProductId ikilisini unique tutuyor
+    // (VariantId'den bağımsız) — aynı ürün siparişte zaten varsa yeni bir
+    // satır INSERT etmek DB hatasına düşer, bu yüzden önce var mı diye
+    // bakıp varsa Quantity'sini artırıyoruz.
+    // ============================================================
+    const lowStockWarnings = [];
+
+    for (const item of validatedItems) {
+        const existingResult = await new sql.Request(transaction)
+            .input('OrderId', sql.Int, orderId)
+            .input('ProductId', sql.Int, item.ProductId)
+            .query(`SELECT OrderDetailsId, Quantity FROM OrderDetails
+                    WHERE OrderId = @OrderId AND ProductId = @ProductId`);
+
+        if (existingResult.recordset.length > 0) {
+            // NOT: Mevcut satırla birleştirilirken UnitPrice (dolayısıyla Extras)
+            // güncellenmez — VariantId'de olduğu gibi zaten var olan davranış.
+            const existing = existingResult.recordset[0];
+            const mergedQuantity = existing.Quantity + item.Quantity;
+            const noteUpdate = item.Note ? item.Note : null;
+
+            await new sql.Request(transaction)
+                .input('OrderDetailsId', sql.Int, existing.OrderDetailsId)
+                .input('Quantity', sql.Int, mergedQuantity)
+                .input('Note', sql.NVarChar, noteUpdate)
+                .query(`UPDATE OrderDetails SET Quantity = @Quantity${noteUpdate ? ', Note = @Note' : ''} WHERE OrderDetailsId = @OrderDetailsId`);
+
+            const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
+            lowStockWarnings.push(...warnings);
+        } else {
+            const insertedDetail = await new sql.Request(transaction)
+                .input('OrderId', sql.Int, orderId)
+                .input('ProductId', sql.Int, item.ProductId)
+                .input('Quantity', sql.Int, item.Quantity)
+                .input('UnitPrice', sql.Decimal(10, 2), item.UnitPrice)
+                .input('VariantId', sql.Int, item.VariantId)
+                .input('Note', sql.NVarChar, item.Note)
+                .query('INSERT INTO OrderDetails (OrderId, ProductId, Quantity, UnitPrice, VariantId, Note) OUTPUT INSERTED.OrderDetailsId VALUES (@OrderId, @ProductId, @Quantity, @UnitPrice, @VariantId, @Note)');
+
+            const orderDetailsId = insertedDetail.recordset[0].OrderDetailsId;
+
+            const warnings = await deductStockForItem(transaction, item.ProductId, item.Quantity);
+            lowStockWarnings.push(...warnings);
+
+            for (const extra of item.Extras) {
+                await new sql.Request(transaction)
+                    .input('OrderDetailsId', sql.Int, orderDetailsId)
+                    .input('ExtraProductId', sql.Int, extra.ExtraProductId)
+                    .input('Quantity', sql.Int, extra.Quantity)
+                    .input('UnitPrice', sql.Decimal(10, 2), extra.UnitPrice)
+                    .query('INSERT INTO OrderDetailExtras (OrderDetailsId, ExtraProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @ExtraProductId, @Quantity, @UnitPrice)');
+
+                const extraWarnings = await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity * (extra.StockUnitsPerServing ?? 1));
+                lowStockWarnings.push(...extraWarnings);
+            }
+
+            for (const syrup of item.Syrups) {
+                await new sql.Request(transaction)
+                    .input('OrderDetailsId', sql.Int, orderDetailsId)
+                    .input('SyrupProductId', sql.Int, syrup.SyrupProductId)
+                    .input('Quantity', sql.Int, syrup.Quantity)
+                    .input('UnitPrice', sql.Decimal(10, 2), syrup.UnitPrice)
+                    .query('INSERT INTO OrderDetailSyrups (OrderDetailsId, SyrupProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @SyrupProductId, @Quantity, @UnitPrice)');
+
+                const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity * (syrup.StockUnitsPerServing ?? 1));
+                lowStockWarnings.push(...syrupWarnings);
+            }
+        }
+    }
+
+    // Toplamı güncelle (var olan TotalAmount'ın ÜZERİNE eklenir, buildOrderInTransaction'daki
+    // gibi sıfırdan hesaplanmaz — sipariş zaten var olan kalemleri de taşıyor).
+    const newTotal = Number(order.TotalAmount) + addedAmount;
+    await new sql.Request(transaction)
+        .input('OrderId', sql.Int, orderId)
+        .input('TotalAmount', sql.Decimal(10, 2), newTotal)
+        .query(`UPDATE Orders SET TotalAmount = @TotalAmount WHERE OrderId = @OrderId`);
+
+    return { addedAmount, lowStockWarnings };
+}
+
+module.exports = { validateOrderItemsShape, buildOrderInTransaction, addItemsToOrderInTransaction };

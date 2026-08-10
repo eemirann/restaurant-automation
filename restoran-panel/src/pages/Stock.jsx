@@ -5,6 +5,9 @@ import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 
+const money = (n) =>
+  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Number(n) || 0);
+
 // ============================================================
 // Ürün Türü Rozeti — Şurup/Ekstra sayfaları kaldırıldığı için, hangi stok
 // kaleminin bir hammadde/şurup/ekstra olduğu artık burada, satırın
@@ -40,6 +43,7 @@ export default function Stock() {
   // Veriler
   const [stockItems, setStockItems] = useState([]);
   const [products, setProducts] = useState([]);
+  const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -86,6 +90,9 @@ export default function Stock() {
     // OLMAMALI — stok, ürünlerde kullanılan malzemeleri takip eder
     // (bkz. controllers/productController.js).
     client.get('/products', { params: { raw: 'stockable' } }).then((res) => setProducts(res.data)).catch(() => {});
+    // Stok Birimi seçimi için (bkz. StockAddDrawer/StockEditDrawer) — hangi
+    // birimlerin var olduğu (ml/l/g/kg/adet/porsiyon...) ve UnitType'ları.
+    client.get('/units').then((res) => setUnits(res.data)).catch(() => {});
   }, []);
 
   const isItemTracked = (item) => item.IsTracked !== false && item.IsTracked !== 0;
@@ -371,7 +378,12 @@ export default function Stock() {
                 <th className="px-5 py-3">Ürün</th>
                 <th className="px-5 py-3">Adet</th>
                 <th className="px-5 py-3">Min. Stok</th>
-                <th className="px-5 py-3">Durum</th>
+                <th className="px-5 py-3">Maliyet</th>
+                {/* Durum rozeti (Yeterli/Düşük Stok/Stokta Yok) grafik açıkken
+                    aynı bilgiyi renkle zaten gösteriyor — grafik kapalıysa
+                    yerini alması için burada kalıyor (bkz. "Pasif" rozeti ise
+                    ayrı bir bilgi olduğu için Ürün hücresinde her zaman gösteriliyor). */}
+                {!chartEnabled && <th className="px-5 py-3">Durum</th>}
                 {chartEnabled && <th className="px-5 py-3">Grafik</th>}
                 {isAdmin && <th className="px-5 py-3 text-right">İşlemler</th>}
               </tr>
@@ -396,29 +408,41 @@ export default function Stock() {
                     }`}
                   >
                     <td className="px-5 py-3 text-paper font-medium">
-                      <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-2 flex-wrap">
                         {item.ProductName}
                         <TypeBadge isSyrup={item.IsSyrup} isExtra={item.IsExtra} />
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 font-mono text-paper">{item.Quantity}</td>
-                    <td className="px-5 py-3 font-mono text-slate">{item.MinStockLevel}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${statusBadgeClass}`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
-                          {statusLabel}
-                        </span>
                         {!isTracked && (
                           <span className="inline-flex items-center gap-1.5 border border-slate/40 bg-slate/5 rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide">
                             <span className="w-1.5 h-1.5 rounded-full bg-slate" />
                             Pasif
                           </span>
                         )}
-                      </div>
+                      </span>
                     </td>
+                    <td className="px-5 py-3 font-mono text-paper">
+                      {item.Quantity}
+                      {item.StockUnitCode && (
+                        <span className="text-slate text-[11px] ml-1">{item.StockUnitCode}</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 font-mono text-slate">{item.MinStockLevel}</td>
+                    <td className="px-5 py-3 font-mono">
+                      {item.Cost == null ? (
+                        <span className="text-slate/50">—</span>
+                      ) : (
+                        <span className="text-paper">{money(item.Cost)}</span>
+                      )}
+                    </td>
+                    {!chartEnabled && (
+                      <td className="px-5 py-3">
+                        <span
+                          className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${statusBadgeClass}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass}`} />
+                          {statusLabel}
+                        </span>
+                      </td>
+                    )}
                     {chartEnabled && (
                       <td className="px-5 py-3">
                         <div className="w-24 h-1.5 rounded-full bg-hairline overflow-hidden">
@@ -504,6 +528,7 @@ export default function Stock() {
         <StockAddDrawer
           products={products}
           stockItems={stockItems}
+          units={units}
           onClose={() => setShowAddDrawer(false)}
           onSaved={() => {
             setShowAddDrawer(false);
@@ -528,11 +553,13 @@ export default function Stock() {
       {editItem && (
         <StockEditDrawer
           item={editItem}
+          units={units}
           onClose={() => setEditItem(null)}
           onSaved={() => {
             setEditItem(null);
             fetchStock();
           }}
+          onRefresh={fetchStock}
         />
       )}
     </div>
@@ -550,7 +577,7 @@ export default function Stock() {
 // yeni kayıt oluşturulmaz — bunun yerine mevcut stoğu üzerine adet eklenir
 // (Düzenle butonundaki alım akışıyla aynı: POST /stock/:id/purchase).
 // ============================================================
-function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
+function StockAddDrawer({ products, stockItems, units, onClose, onSaved }) {
   const [productId, setProductId] = useState('');
   const [newProductName, setNewProductName] = useState('');
   const [quantity, setQuantity] = useState(0);
@@ -568,6 +595,51 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
   const [itemType, setItemType] = useState('raw');
   const [typePrice, setTypePrice] = useState('');
   const [servingSize, setServingSize] = useState('');
+
+  // Stok Birimi — bu hammaddenin "1 adet"inin/kilosunun/litresinin ne
+  // anlama geldiğini belirler. Reçete farklı bir birim kullanıyorsa (ör.
+  // "adet" ile alınan süt, reçetede "ml" ile tüketiliyorsa) özel dönüşüm de
+  // gerekir (bkz. controllers/stockController.js -> utils/stockUnit.js).
+  const [stockUnitId, setStockUnitId] = useState('');
+  const [conversionTargetUnitId, setConversionTargetUnitId] = useState('');
+  const [conversionFactor, setConversionFactor] = useState('');
+
+  // Maliyet (Products.Cost) — bu malzemenin satın alma/birim maliyeti.
+  // Recipes/Reports/Dashboard'daki kâr hesabı BUNA bağlı (bkz.
+  // controllers/reportController.js, controllers/dashboardController.js) —
+  // girilmezse o hesaplar "Hesaplanamadı" döner. "Birim Fiyat" (aşağıda,
+  // StockPurchases'a kaydedilir) ile KARIŞTIRILMASIN: o sadece bu alımın
+  // fatura kaydı, bu ise ürünün referans maliyeti (kâr hesabında kullanılan).
+  const [cost, setCost] = useState('');
+
+  // Paket/kutu ile hesapla — bkz. StockPurchaseDrawer'daki aynı yardımcı,
+  // birebir aynı mantık (Adet kutusunu dolduran isteğe bağlı yardımcı).
+  // Toplam Alım Fiyatı da girilirse, birim maliyeti (Toplam / Miktar) OTOMATİK
+  // hesaplayıp hem "Birim Fiyat" hem "Maliyet" alanlarına uygular — kullanıcı
+  // "1 kg 400 TL, reçetede 20 gr kullanıyorum" derse kafadan ₺/gr hesaplamasın diye.
+  const [showPackageCalc, setShowPackageCalc] = useState(false);
+  const [packageCount, setPackageCount] = useState('');
+  const [perPackageQty, setPerPackageQty] = useState('');
+  const [totalPrice, setTotalPrice] = useState('');
+  const packageTotal = packageCount !== '' && perPackageQty !== ''
+    ? Number(packageCount) * Number(perPackageQty)
+    : null;
+  const unitCost = packageTotal && totalPrice !== '' && Number(packageTotal) > 0
+    ? Number(totalPrice) / Number(packageTotal)
+    : null;
+  const applyPackageCalc = () => {
+    if (packageTotal != null && packageTotal > 0) {
+      setQuantity(packageTotal);
+      if (unitCost != null) {
+        setUnitPrice(unitCost);
+        // Maliyet sadece YENİ ürün oluşturma yolunda gönderiliyor (existingStock
+        // varsa POST /stock/:id/purchase Cost kabul etmiyor — bkz. StockEditDrawer'daki
+        // ayrı "Maliyet" bölümü, mevcut kaleme sonradan Maliyet için o kullanılır).
+        if (!existingStock) setCost(unitCost);
+      }
+      setShowPackageCalc(false);
+    }
+  };
 
   // Ürün listesinde ara / A-Z sırala (Stok listesindeki arama/sıralama ile aynı mantık)
   const [productSearch, setProductSearch] = useState('');
@@ -603,6 +675,14 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
       setError('Şurup/Ekstra için negatif olmayan bir Fiyat girin.');
       return;
     }
+    if (!existingStock && conversionTargetUnitId !== '' && (conversionFactor === '' || Number(conversionFactor) <= 0)) {
+      setError('Birim dönüşümü için 0\'dan büyük bir oran girin.');
+      return;
+    }
+    if (!existingStock && cost !== '' && Number(cost) < 0) {
+      setError('Maliyet negatif olamaz.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -628,6 +708,10 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
           Type: itemType,
           Price: itemType !== 'raw' ? Number(typePrice) : undefined,
           ServingSize: itemType !== 'raw' && servingSize !== '' ? Number(servingSize) : undefined,
+          StockUnitId: itemType === 'raw' && stockUnitId !== '' ? Number(stockUnitId) : undefined,
+          ConversionTargetUnitId: itemType === 'raw' && conversionTargetUnitId !== '' ? Number(conversionTargetUnitId) : undefined,
+          ConversionFactor: itemType === 'raw' && conversionTargetUnitId !== '' ? Number(conversionFactor) : undefined,
+          Cost: cost !== '' ? Number(cost) : undefined,
         });
       }
       onSaved();
@@ -763,6 +847,64 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                 </div>
               </div>
 
+              {itemType === 'raw' && (
+                <div>
+                  <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                    Stok Birimi <span className="normal-case text-slate/70">(opsiyonel — bu malzemeyi hangi birimle takip ediyorsun?)</span>
+                  </label>
+                  <select
+                    value={stockUnitId}
+                    onChange={(e) => { setStockUnitId(e.target.value); setConversionTargetUnitId(''); setConversionFactor(''); }}
+                    className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
+                               focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                  >
+                    <option value="">Seçilmedi</option>
+                    {units.map((u) => (
+                      <option key={u.UnitId} value={u.UnitId}>{u.Name} ({u.Code})</option>
+                    ))}
+                  </select>
+
+                  {(() => {
+                    const selected = units.find((u) => u.UnitId === Number(stockUnitId));
+                    if (!selected || selected.UnitType === 'Volume' || selected.UnitType === 'Weight') return null;
+                    // "adet"/"porsiyon" gibi bir birim seçildi — evrensel dönüşüm
+                    // devreye giremeyeceğinden (bkz. utils/unitConversion.js),
+                    // reçetenin kullandığı birime özel bir oran gerekebilir.
+                    return (
+                      <div className="mt-2.5 border border-hairline rounded-sm p-3 bg-hairline/20 space-y-2">
+                        <p className="font-mono text-[11px] text-slate">
+                          Reçetede farklı bir birim (ör. ml, g) kullanılıyorsa, 1 {selected.Code}'in karşılığını gir — yoksa boş bırak.
+                        </p>
+                        <div className="flex gap-2 items-center">
+                          <span className="font-mono text-xs text-slate shrink-0">1 {selected.Code} =</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.001"
+                            value={conversionFactor}
+                            onChange={(e) => setConversionFactor(e.target.value)}
+                            placeholder="ör. 1000"
+                            className="w-24 border border-hairline rounded-sm px-2 py-2 font-mono text-paper bg-panel
+                                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                          />
+                          <select
+                            value={conversionTargetUnitId}
+                            onChange={(e) => setConversionTargetUnitId(e.target.value)}
+                            className="flex-1 border border-hairline rounded-sm px-2 py-2 font-body text-sm text-paper bg-panel
+                                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                          >
+                            <option value="">Hedef birim seçin...</option>
+                            {units.filter((u) => u.UnitId !== selected.UnitId).map((u) => (
+                              <option key={u.UnitId} value={u.UnitId}>{u.Name} ({u.Code})</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {itemType !== 'raw' && (
                 <>
                   <div>
@@ -802,7 +944,9 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
 
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Adet</label>
+              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                Adet {existingStock?.StockUnitCode && <span className="normal-case text-slate/70">({existingStock.StockUnitCode})</span>}
+              </label>
               <input
                 type="number"
                 min="0"
@@ -811,6 +955,87 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                 className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                            focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
               />
+              <button
+                type="button"
+                onClick={() => setShowPackageCalc((v) => !v)}
+                className="mt-1.5 font-mono text-[11px] text-slate hover:text-[#FF6B6B] transition-colors"
+              >
+                {showPackageCalc ? '▾' : '▸'} 📦 Paket ile hesapla
+              </button>
+
+              {showPackageCalc && (
+                <div className="mt-2 border border-hairline rounded-sm p-3 bg-hairline/20 space-y-2">
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1">Paket sayısı</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={packageCount}
+                        onChange={(e) => setPackageCount(e.target.value)}
+                        placeholder="ör. 10"
+                        className="w-full border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper bg-panel
+                                   focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                      />
+                    </div>
+                    <span className="font-mono text-xs text-slate pb-2.5">×</span>
+                    <div className="flex-1">
+                      <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1">
+                        Paket başına {existingStock?.StockUnitCode ? `(${existingStock.StockUnitCode})` : 'miktar'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={perPackageQty}
+                        onChange={(e) => setPerPackageQty(e.target.value)}
+                        placeholder="ör. 500"
+                        className="w-full border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper bg-panel
+                                   focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                      />
+                    </div>
+                  </div>
+                  {packageTotal != null && (
+                    <p className="font-mono text-xs text-paper">
+                      = <span className="font-semibold">{packageTotal}</span> {existingStock?.StockUnitCode || 'adet'}
+                    </p>
+                  )}
+
+                  <div>
+                    <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1">
+                      Bu alım için toplam fiyat (₺) <span className="normal-case text-slate/70">(opsiyonel)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={totalPrice}
+                      onChange={(e) => setTotalPrice(e.target.value)}
+                      placeholder="ör. 400"
+                      className="w-full border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper bg-panel
+                                 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                    />
+                  </div>
+                  {unitCost != null && (
+                    <p className="font-mono text-xs text-moss">
+                      ≈ birim maliyet ₺{unitCost.toFixed(4)} / {existingStock?.StockUnitCode || 'adet'}
+                      {!existingStock && ' — Maliyet alanına da uygulanacak'}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={applyPackageCalc}
+                    disabled={!packageTotal || packageTotal <= 0}
+                    className="w-full text-[11px] font-bold uppercase tracking-wide text-paper border border-hairline
+                               hover:border-[#FF6B6B] hover:text-[#FF6B6B] disabled:opacity-40 disabled:cursor-not-allowed
+                               rounded-lg px-3 py-2 transition-colors"
+                  >
+                    {unitCost != null ? 'Adete + Birim Fiyata Uygula' : 'Adete Uygula'}
+                  </button>
+                </div>
+              )}
             </div>
             {!existingStock && (
             <div className="flex-1">
@@ -842,6 +1067,24 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
           </div>
+
+          {!existingStock && (
+            <div>
+              <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                Maliyet <span className="normal-case text-slate/70">(opsiyonel — reçete/rapor kâr hesabında kullanılır, "Birim Fiyat"tan farklı)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                placeholder="0.00"
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
@@ -929,6 +1172,34 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // Paket/kutu ile hesapla — "10 paket x 500 g geldi" gibi gerçek alım
+  // biçimini Adet kutusuna çevirmenin kafadan hesaplanmasını önler.
+  // Sadece Adet input'unu dolduran isteğe bağlı bir yardımcı, kaydedilen
+  // veriyi/backend'i etkilemez.
+  const [showPackageCalc, setShowPackageCalc] = useState(false);
+  const [packageCount, setPackageCount] = useState('');
+  const [perPackageQty, setPerPackageQty] = useState('');
+  const [totalPrice, setTotalPrice] = useState('');
+  const packageTotal = packageCount !== '' && perPackageQty !== ''
+    ? Number(packageCount) * Number(perPackageQty)
+    : null;
+  // Toplam Alım Fiyatı girilirse birim maliyeti (₺/stok birimi) OTOMATİK
+  // hesaplanır — "1 kg 400 TL, reçetede 20 gr kullanıyorum" derse kafadan
+  // ₺/gr hesaplamasın diye (bkz. updateCostToo aşağıda, Products.Cost'a da yazar).
+  const unitCost = packageTotal && totalPrice !== '' && Number(packageTotal) > 0
+    ? Number(totalPrice) / Number(packageTotal)
+    : null;
+  // Maliyeti de bu alımdaki birim fiyata güncelle — bir hesap yapılınca
+  // varsayılan AÇIK (kullanıcı isterse kapatabilir).
+  const [updateCostToo, setUpdateCostToo] = useState(true);
+  const applyPackageCalc = () => {
+    if (packageTotal != null && packageTotal > 0) {
+      setQuantity(packageTotal);
+      if (unitCost != null) setUnitPrice(unitCost);
+      setShowPackageCalc(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -947,6 +1218,12 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
         InvoiceNumber: invoiceNumber.trim() || undefined,
         Notes: notes.trim() || undefined,
       });
+      // Paket hesaplayıcıdan bir birim maliyet çıktıysa ve kullanıcı işaretli
+      // bıraktıysa, Products.Cost'u da bu değere güncelle (bkz. setStockItemCost) —
+      // Recipes/Reports'taki "Hesaplanamadı" durumunu otomatik çözer.
+      if (unitCost != null && updateCostToo) {
+        await client.patch(`/stock/${item.StockId}/cost`, { Cost: unitCost });
+      }
       onSaved();
     } catch (err) {
       setError(err.response?.data?.error || 'Stok alımı kaydedilemedi.');
@@ -990,7 +1267,9 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
             <p className="text-paper font-medium bg-panel border border-hairline rounded-sm px-3 py-2.5">{item.ProductName}</p>
           </div>
           <div>
-            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Adet</label>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+              Adet {item.StockUnitCode && <span className="normal-case text-slate/70">({item.StockUnitCode})</span>}
+            </label>
             <input
               type="number"
               min="1"
@@ -999,6 +1278,102 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
               className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
+            <button
+              type="button"
+              onClick={() => setShowPackageCalc((v) => !v)}
+              className="mt-1.5 font-mono text-[11px] text-slate hover:text-[#FF6B6B] transition-colors"
+            >
+              {showPackageCalc ? '▾' : '▸'} 📦 Paket/kutu ile hesapla
+            </button>
+
+            {showPackageCalc && (
+              <div className="mt-2 border border-hairline rounded-sm p-3 bg-hairline/20 space-y-2">
+                {!item.StockUnitCode && (
+                  <p className="font-mono text-[11px] text-amber-500">
+                    Stok Birimi ayarlanmamış — Düzenle'den ayarlarsan reçetede doğru hesaplanır.
+                  </p>
+                )}
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1">Paket sayısı</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={packageCount}
+                      onChange={(e) => setPackageCount(e.target.value)}
+                      placeholder="ör. 10"
+                      className="w-full border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper bg-panel
+                                 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                    />
+                  </div>
+                  <span className="font-mono text-xs text-slate pb-2.5">×</span>
+                  <div className="flex-1">
+                    <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1">
+                      Paket başına {item.StockUnitCode ? `(${item.StockUnitCode})` : 'miktar'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={perPackageQty}
+                      onChange={(e) => setPerPackageQty(e.target.value)}
+                      placeholder="ör. 500"
+                      className="w-full border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper bg-panel
+                                 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                    />
+                  </div>
+                </div>
+                {packageTotal != null && (
+                  <p className="font-mono text-xs text-paper">
+                    = <span className="font-semibold">{packageTotal}</span> {item.StockUnitCode || 'adet'}
+                  </p>
+                )}
+
+                <div>
+                  <label className="block font-mono text-[10px] uppercase tracking-wide text-slate mb-1">
+                    Bu alım için toplam fiyat (₺) <span className="normal-case text-slate/70">(opsiyonel)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={totalPrice}
+                    onChange={(e) => setTotalPrice(e.target.value)}
+                    placeholder="ör. 400"
+                    className="w-full border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper bg-panel
+                               focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                  />
+                </div>
+                {unitCost != null && (
+                  <>
+                    <p className="font-mono text-xs text-moss">
+                      ≈ birim maliyet ₺{unitCost.toFixed(4)} / {item.StockUnitCode || 'adet'}
+                    </p>
+                    <label className="flex items-center gap-2 text-[11px] text-slate cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={updateCostToo}
+                        onChange={(e) => setUpdateCostToo(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-[#FF6B6B]"
+                      />
+                      Ürünün Maliyetini de bu değere güncelle (reçete/rapor kâr hesabında kullanılır)
+                    </label>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={applyPackageCalc}
+                  disabled={!packageTotal || packageTotal <= 0}
+                  className="w-full text-[11px] font-bold uppercase tracking-wide text-paper border border-hairline
+                             hover:border-[#FF6B6B] hover:text-[#FF6B6B] disabled:opacity-40 disabled:cursor-not-allowed
+                             rounded-lg px-3 py-2 transition-colors"
+                >
+                  {unitCost != null ? 'Adete + Birim Fiyata Uygula' : 'Adete Uygula'}
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
@@ -1095,11 +1470,97 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
 // mevcut adede üstüne ekleme) farklı, doğrudan düzeltme amaçlıdır
 // (ör. sayım farkı düzeltme).
 // ============================================================
-function StockEditDrawer({ item, onClose, onSaved }) {
+function StockEditDrawer({ item, units, onClose, onSaved, onRefresh }) {
   const [quantity, setQuantity] = useState(item.Quantity);
   const [minStockLevel, setMinStockLevel] = useState(item.MinStockLevel);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Stok Birimi — zaten var olan bir kalemin birimini sonradan
+  // ayarlamak/düzeltmek için (ör. "Süt"ü "1 adet = 1000 ml" olarak
+  // tanımlamak — bkz. controllers/stockController.js -> setStockItemUnit).
+  const [stockUnitId, setStockUnitId] = useState(item.StockUnitId ?? '');
+  const [conversionTargetUnitId, setConversionTargetUnitId] = useState('');
+  const [conversionFactor, setConversionFactor] = useState('');
+  const [unitSaving, setUnitSaving] = useState(false);
+  const [unitError, setUnitError] = useState('');
+  const [unitSaved, setUnitSaved] = useState(false);
+  // "Değişti mi" kıyaslaması `item`'e (prop, hiç güncellenmiyor — çekmece artık
+  // kaydedince kapanmıyor) değil, en son BAŞARIYLA kaydedilen değere göre yapılır
+  // — yoksa kaydettikten sonra bile "değişti" sayılıp buton/✓ hiç doğru görünmezdi.
+  const [savedStockUnitId, setSavedStockUnitId] = useState(item.StockUnitId ?? '');
+
+  const unitChanged = String(stockUnitId) !== String(savedStockUnitId) || conversionTargetUnitId !== '';
+
+  const saveUnit = async () => {
+    setUnitError('');
+    setUnitSaved(false);
+    if (stockUnitId === '') {
+      setUnitError('Bir Stok Birimi seçin.');
+      return;
+    }
+    if (conversionTargetUnitId !== '' && (conversionFactor === '' || Number(conversionFactor) <= 0)) {
+      setUnitError('Birim dönüşümü için 0\'dan büyük bir oran girin.');
+      return;
+    }
+    setUnitSaving(true);
+    try {
+      await client.patch(`/stock/${item.StockId}/unit`, {
+        StockUnitId: Number(stockUnitId),
+        ConversionTargetUnitId: conversionTargetUnitId !== '' ? Number(conversionTargetUnitId) : undefined,
+        ConversionFactor: conversionTargetUnitId !== '' ? Number(conversionFactor) : undefined,
+      });
+      setUnitSaved(true);
+      setSavedStockUnitId(stockUnitId);
+      setConversionTargetUnitId('');
+      setConversionFactor('');
+      // NOT onSaved() — o çekmeceyi KAPATIR, bu yüzden "Kaydedildi ✓" hiç
+      // görünmeden ekran kapanırdı (kullanıcı "kaydetmiyor" sanıyordu).
+      // Sadece arka planda listeyi tazele, çekmece açık kalsın.
+      onRefresh?.();
+    } catch (err) {
+      setUnitError(err.response?.data?.error || 'Kaydedilemedi.');
+    } finally {
+      setUnitSaving(false);
+    }
+  };
+
+  const selectedUnit = units.find((u) => u.UnitId === Number(stockUnitId));
+  const needsConversion = selectedUnit && selectedUnit.UnitType !== 'Volume' && selectedUnit.UnitType !== 'Weight';
+
+  // Maliyet (Products.Cost) — Recipes/Reports/Dashboard'daki kâr hesabı BUNA
+  // bağlı (bkz. controllers/stockController.js -> setStockItemCost).
+  const [cost, setCost] = useState(item.Cost ?? '');
+  const [costSaving, setCostSaving] = useState(false);
+  const [costError, setCostError] = useState('');
+  const [costSaved, setCostSaved] = useState(false);
+  // bkz. savedStockUnitId'deki not — item prop'u güncellenmediği için kıyaslama
+  // en son kaydedilen değere göre yapılır.
+  const [savedCost, setSavedCost] = useState(item.Cost ?? '');
+
+  const costChanged = String(cost) !== String(savedCost);
+
+  const saveCost = async () => {
+    setCostError('');
+    setCostSaved(false);
+    if (cost !== '' && Number(cost) < 0) {
+      setCostError('Maliyet negatif olamaz.');
+      return;
+    }
+    setCostSaving(true);
+    try {
+      await client.patch(`/stock/${item.StockId}/cost`, {
+        Cost: cost === '' ? null : Number(cost),
+      });
+      setCostSaved(true);
+      setSavedCost(cost);
+      onRefresh?.(); // bkz. saveUnit'teki not — çekmeceyi kapatmadan listeyi tazele
+    } catch (err) {
+      setCostError(err.response?.data?.error || 'Kaydedilemedi.');
+    } finally {
+      setCostSaving(false);
+    }
+  };
 
   // Bu stok kalemine bağlı ürünü şurup/ekstra olarak işaretleme — YENİ bir
   // kayıt açmaz, doğrudan bu ürünü günceller (bkz. backend: setStockItemType).
@@ -1109,8 +1570,11 @@ function StockEditDrawer({ item, onClose, onSaved }) {
   const [typeSaving, setTypeSaving] = useState(false);
   const [typeError, setTypeError] = useState('');
   const [typeSaved, setTypeSaved] = useState(false);
+  // bkz. savedStockUnitId'deki not
+  const [savedIsSyrup, setSavedIsSyrup] = useState(!!item.IsSyrup);
+  const [savedIsExtra, setSavedIsExtra] = useState(!!item.IsExtra);
 
-  const typeChanged = isSyrup !== !!item.IsSyrup || isExtra !== !!item.IsExtra;
+  const typeChanged = isSyrup !== savedIsSyrup || isExtra !== savedIsExtra;
 
   const saveType = async () => {
     setTypeError('');
@@ -1127,7 +1591,9 @@ function StockEditDrawer({ item, onClose, onSaved }) {
         Price: (isSyrup || isExtra) ? Number(typePrice) : undefined,
       });
       setTypeSaved(true);
-      onSaved();
+      setSavedIsSyrup(isSyrup);
+      setSavedIsExtra(isExtra);
+      onRefresh?.(); // bkz. saveUnit'teki not — çekmeceyi kapatmadan listeyi tazele
     } catch (err) {
       setTypeError(err.response?.data?.error || 'Kaydedilemedi.');
     } finally {
@@ -1215,6 +1681,104 @@ function StockEditDrawer({ item, onClose, onSaved }) {
           {error && (
             <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 bg-panel py-2">{error}</p>
           )}
+
+          {/* Stok Birimi — ayrı bir "kaydet" akışı, adet/min stok formunu
+              tetiklemez (backend'de ayrı bir uç, /stock/:id/unit). */}
+          <div className="border-t border-hairline pt-4 mt-2">
+            <p className="font-mono text-xs uppercase tracking-wide text-slate mb-2.5">
+              Stok Birimi <span className="normal-case text-slate/70">(bu malzemeyi hangi birimle takip ediyorsun?)</span>
+            </p>
+            <select
+              value={stockUnitId}
+              onChange={(e) => { setStockUnitId(e.target.value); setConversionTargetUnitId(''); setConversionFactor(''); setUnitSaved(false); }}
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel mb-2.5
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            >
+              <option value="">Seçilmedi</option>
+              {units.map((u) => (
+                <option key={u.UnitId} value={u.UnitId}>{u.Name} ({u.Code})</option>
+              ))}
+            </select>
+
+            {needsConversion && (
+              <div className="mb-3 border border-hairline rounded-sm p-3 bg-hairline/20 space-y-2">
+                <p className="font-mono text-[11px] text-slate">
+                  Reçetede farklı bir birim (ör. ml, g) kullanılıyorsa, 1 {selectedUnit.Code}'in karşılığını gir.
+                </p>
+                <div className="flex gap-2 items-center">
+                  <span className="font-mono text-xs text-slate shrink-0">1 {selectedUnit.Code} =</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={conversionFactor}
+                    onChange={(e) => { setConversionFactor(e.target.value); setUnitSaved(false); }}
+                    placeholder="ör. 1000"
+                    className="w-24 border border-hairline rounded-sm px-2 py-2 font-mono text-paper bg-panel
+                               focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                  />
+                  <select
+                    value={conversionTargetUnitId}
+                    onChange={(e) => { setConversionTargetUnitId(e.target.value); setUnitSaved(false); }}
+                    className="flex-1 border border-hairline rounded-sm px-2 py-2 font-body text-sm text-paper bg-panel
+                               focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                  >
+                    <option value="">Hedef birim seçin...</option>
+                    {units.filter((u) => u.UnitId !== selectedUnit.UnitId).map((u) => (
+                      <option key={u.UnitId} value={u.UnitId}>{u.Name} ({u.Code})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {unitError && <p className="text-ember text-xs font-medium mb-2">{unitError}</p>}
+            {unitSaved && !unitChanged && <p className="text-moss text-xs font-medium mb-2">Kaydedildi ✓</p>}
+
+            <button
+              type="button"
+              onClick={saveUnit}
+              disabled={unitSaving || !unitChanged}
+              className="w-full text-xs font-bold uppercase tracking-wide text-paper border border-hairline
+                         hover:border-[#FF6B6B] hover:text-[#FF6B6B] disabled:opacity-40 disabled:cursor-not-allowed
+                         rounded-xl px-4 py-2.5 transition-colors"
+            >
+              {unitSaving ? 'Kaydediliyor...' : 'Stok Birimini Kaydet'}
+            </button>
+          </div>
+
+          {/* Maliyet — ayrı bir "kaydet" akışı, adet/min stok formunu
+              tetiklemez (backend'de ayrı bir uç, /stock/:id/cost). Recipes/
+              Reports/Dashboard'daki kâr hesabı buna bağlı. */}
+          <div className="border-t border-hairline pt-4 mt-2">
+            <p className="font-mono text-xs uppercase tracking-wide text-slate mb-2.5">
+              Maliyet <span className="normal-case text-slate/70">(reçete/rapor kâr hesabında kullanılır)</span>
+            </p>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={cost}
+              onChange={(e) => { setCost(e.target.value); setCostSaved(false); }}
+              placeholder="0.00"
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel mb-2.5
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+
+            {costError && <p className="text-ember text-xs font-medium mb-2">{costError}</p>}
+            {costSaved && !costChanged && <p className="text-moss text-xs font-medium mb-2">Kaydedildi ✓</p>}
+
+            <button
+              type="button"
+              onClick={saveCost}
+              disabled={costSaving || !costChanged}
+              className="w-full text-xs font-bold uppercase tracking-wide text-paper border border-hairline
+                         hover:border-[#FF6B6B] hover:text-[#FF6B6B] disabled:opacity-40 disabled:cursor-not-allowed
+                         rounded-xl px-4 py-2.5 transition-colors"
+            >
+              {costSaving ? 'Kaydediliyor...' : 'Maliyeti Kaydet'}
+            </button>
+          </div>
 
           {/* Şurup/Ekstra olarak işaretleme — ayrı bir "kaydet" akışı, adet/min
               stok formunu tetiklemez (backend'de ayrı bir uç, /stock/:id/type). */}

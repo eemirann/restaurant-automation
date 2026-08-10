@@ -450,12 +450,20 @@ async function getProductOrderOptions(req, res) {
                 ORDER BY pe.DisplayOrder ASC, p.Name ASC
             `);
 
+        // InRecipe: bu şurup, seçildiği ürünün Reçetesinde (Recipes) zaten sabit
+        // olarak tanımlıysa (ör. Frappe'nin tarifinde Çikolata Şurup varsa) 1 —
+        // bu durumda sipariş ekranında seçilmesi ücretsizdir (bkz.
+        // utils/orderBuilder.js, controllers/orderController.js — çifte ücret/
+        // çifte stok düşümü fix'i). Sepet önizlemesi bunu backend'le tutarlı
+        // göstersin diye burada da işaretleniyor (bkz. PriceCalculator.jsx).
         const syrupsResult = await pool.request()
             .input('ProductId', sql.Int, id)
             .query(`
-                SELECT p.ProductId, p.Name, p.Price
+                SELECT p.ProductId, p.Name, p.Price,
+                       CASE WHEN r.RecipeId IS NOT NULL THEN 1 ELSE 0 END AS InRecipe
                 FROM ProductSyrups ps
                 JOIN Products p ON p.ProductId = ps.SyrupProductId
+                LEFT JOIN Recipes r ON r.ProductId = ps.ProductId AND r.RawMaterialProductId = p.ProductId
                 WHERE ps.ProductId = @ProductId AND ps.IsEnabled = 1 AND p.IsActive = 1
                 ORDER BY ps.DisplayOrder ASC, p.Name ASC
             `);

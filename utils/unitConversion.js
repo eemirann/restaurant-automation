@@ -35,7 +35,7 @@ async function resolveConversionFactor(runner, productId, fromUnitId, toUnitId) 
     const units = await new sql.Request(runner)
         .input('FromId', sql.Int, fromUnitId)
         .input('ToId', sql.Int, toUnitId)
-        .query(`SELECT UnitId, UnitType, ConversionFactorToBase FROM Units WHERE UnitId IN (@FromId, @ToId)`);
+        .query(`SELECT UnitId, Code, UnitType, ConversionFactorToBase FROM Units WHERE UnitId IN (@FromId, @ToId)`);
 
     const from = units.recordset.find((u) => u.UnitId === fromUnitId);
     const to = units.recordset.find((u) => u.UnitId === toUnitId);

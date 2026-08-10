@@ -99,4 +99,18 @@ async function resolveStockTargets(transaction, productId, quantity) {
     return [{ productId, amount: quantity }];
 }
 
-module.exports = { deductStockForItem, restoreStockForItem };
+// Bir hammaddenin (ör. bir şurup), verilen menü ürününün Reçetesinde zaten
+// sabit olarak tanımlı olup olmadığını söyler. Reçetede varsa, o hammadde
+// zaten ürünün kendi stok düşümüyle (bkz. resolveStockTargets) otomatik
+// düşülüyor demektir — sipariş ekranındaki seçici (ProductSyrups/ExtraProducts)
+// üzerinden AYRICA ücretlendirilmemeli/düşülmemeli (bkz. utils/orderBuilder.js,
+// controllers/orderController.js — çifte ücret/çifte stok düşümü fix'i).
+async function isRecipeLinked(transaction, productId, rawMaterialProductId) {
+    const result = await new sql.Request(transaction)
+        .input('ProductId', sql.Int, productId)
+        .input('RawMaterialProductId', sql.Int, rawMaterialProductId)
+        .query(`SELECT TOP 1 RecipeId FROM Recipes WHERE ProductId = @ProductId AND RawMaterialProductId = @RawMaterialProductId`);
+    return result.recordset.length > 0;
+}
+
+module.exports = { deductStockForItem, restoreStockForItem, isRecipeLinked };

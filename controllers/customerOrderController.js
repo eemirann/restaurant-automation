@@ -1,6 +1,6 @@
 const { sql, connectDB } = require('../config/db');
 const { emitTablesChanged, emitKitchen } = require('../config/socket');
-const { buildOrderInTransaction } = require('../utils/orderBuilder');
+const { buildOrderInTransaction, addItemsToOrderInTransaction } = require('../utils/orderBuilder');
 const { HttpError } = require('../utils/httpError');
 const { logAudit } = require('../utils/audit');
 const { notifyLowStock } = require('../utils/stockAlert');
@@ -130,15 +130,51 @@ async function approveCustomerOrderRequest(req, res) {
         }));
 
         const combos = orderRequest.CombosJson ? JSON.parse(orderRequest.CombosJson) : undefined;
+        const requestTipAmount = orderRequest.TipAmount !== null && orderRequest.TipAmount !== undefined ? Number(orderRequest.TipAmount) : undefined;
 
-        const { order, totalAmount, lowStockWarnings } = await buildOrderInTransaction(transaction, {
-            TableId: orderRequest.TableId,
-            UserId: req.user.userId,
-            Items: items,
-            Note: orderRequest.Note,
-            Combos: combos,
-            TipAmount: orderRequest.TipAmount !== null && orderRequest.TipAmount !== undefined ? Number(orderRequest.TipAmount) : undefined,
-        });
+        // Masada zaten AÇIK bir sipariş varsa (garson tarafından açılmış ya da
+        // daha önceki bir QR isteğinden onaylanmış), bu "ekstra" istek AYRI bir
+        // fiş açmak yerine O siparişe eklenir — garson panelindeki AYNI davranış
+        // (bkz. controllers/tableController.js'teki aynı "aktif sipariş" sorgusu).
+        // Combo veya bahşiş içeren istekler kapsam dışı: onlar hep yeni sipariş
+        // açar (combo'yu var olan bir siparişe birleştirmek + bahşişi ikinci kez
+        // eklemek ayrı bir karmaşıklık, şu an gerekmiyor).
+        const hasCombos = combos && combos.length > 0;
+        const hasTip = requestTipAmount !== undefined && requestTipAmount > 0;
+
+        let activeOrder = null;
+        if (!hasCombos && !hasTip) {
+            const activeOrderResult = await new sql.Request(transaction)
+                .input('TableId', sql.Int, orderRequest.TableId)
+                .query(`SELECT OrderId, TotalAmount FROM Orders WITH (UPDLOCK, ROWLOCK) WHERE TableId = @TableId AND Status NOT IN ('Paid', 'Cancelled', 'Merged')`);
+            activeOrder = activeOrderResult.recordset[0] || null;
+        }
+
+        let order, totalAmount, lowStockWarnings;
+        if (activeOrder) {
+            const result = await addItemsToOrderInTransaction(transaction, activeOrder.OrderId, items);
+            lowStockWarnings = result.lowStockWarnings;
+            // Bu isteğin "maliyeti" — az sonraki sadakat puanı hesabı ve yanıt
+            // için sadece YENİ eklenen tutar (order'ın tamamı değil, aksi halde
+            // daha önceki istekte zaten verilmiş puan bir daha sayılırdı).
+            totalAmount = result.addedAmount;
+            const orderRow = await new sql.Request(transaction)
+                .input('OrderId', sql.Int, activeOrder.OrderId)
+                .query(`SELECT * FROM Orders WHERE OrderId = @OrderId`);
+            order = orderRow.recordset[0];
+        } else {
+            const result = await buildOrderInTransaction(transaction, {
+                TableId: orderRequest.TableId,
+                UserId: req.user.userId,
+                Items: items,
+                Note: orderRequest.Note,
+                Combos: combos,
+                TipAmount: requestTipAmount,
+            });
+            order = result.order;
+            totalAmount = result.totalAmount;
+            lowStockWarnings = result.lowStockWarnings;
+        }
 
         await new sql.Request(transaction)
             .input('Id', sql.Int, id)

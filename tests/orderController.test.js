@@ -259,6 +259,59 @@ describe('POST /api/orders - ekstralar (ekstra shot, şurup vb.)', () => {
         expect(syrupStockDeduction.Amount).toBe(2);
     });
 
+    test('reçeteye bağlı şurup ücretsizdir ve ayrıca stoktan düşülmez (çifte ücret/düşüm fix)', async () => {
+        let insertedTotal = null;
+        const stockDeductions = [];
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
+                return { recordset: [{ ProductId: 10, Price: 25, IsActive: true, IsAvailable: true }] };
+            }
+            if (queryText.includes('JOIN ProductSyrups')) {
+                return { recordset: [{ ProductId: 60, Price: 3, IsActive: true }] };
+            }
+            // isRecipeLinked (utils/stockDeduction.js) — sadece bu ürün+şurup eşleşmesi "reçetede" sayılsın
+            if (queryText.includes('SELECT TOP 1 RecipeId FROM Recipes')) {
+                if (inputs.ProductId === 10 && inputs.RawMaterialProductId === 60) {
+                    return { recordset: [{ RecipeId: 99 }] };
+                }
+                return { recordset: [] };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                insertedTotal = inputs.TotalAmount;
+                return { recordset: [{ OrderId: 1, TableId: 1, UserId: 1, TotalAmount: inputs.TotalAmount, Status: 'Pending', Note: null, CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('INSERT INTO OrderDetails')) {
+                return { recordset: [{ OrderDetailsId: 1 }] };
+            }
+            // resolveStockTargets (ürünün KENDİ reçetesi, hammaddeler) — boş: ürünün kendisi düşülsün
+            if (queryText.includes('FROM Recipes')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('UPDATE Stock')) {
+                stockDeductions.push(inputs);
+                return { recordset: [{ Quantity: 100, MinStockLevel: 5 }] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .post('/api/orders')
+            .set('Authorization', `Bearer ${waiterToken}`)
+            .send({ TableId: 1, UserId: 1, Items: [{ ProductId: 10, Quantity: 2, Syrups: [{ SyrupProductId: 60, Quantity: 1 }] }] });
+
+        expect(res.status).toBe(201);
+        // (25 taban + 0 şurup ÜCRETSİZ) x 2 adet = 50 — şurup ücreti EKLENMEMELİ
+        expect(insertedTotal).toBe(50);
+
+        // Şurup için stok hareketi hâlâ tetiklenebilir ama miktarı 0 olmalı
+        // (reçetenin kendi düşümü tek başına yeterli, ikinci kez düşülmez).
+        const syrupStockDeduction = stockDeductions.find((d) => d.ProductId === 60);
+        if (syrupStockDeduction) {
+            expect(Number(syrupStockDeduction.Amount)).toBe(0);
+        }
+    });
+
     test('bu ürüne bağlı olmayan bir şurup gönderilirse 404 döner', async () => {
         fakeDb.__setHandler(async (queryText) => {
             if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
@@ -353,6 +406,59 @@ describe('PATCH /api/orders/:id/cancel - sebep (Reason) audit\'e yazılır', () 
         expect(res.status).toBe(200);
         await new Promise((r) => setImmediate(r));
         expect(JSON.parse(auditInserts[0].Details)).toEqual({ TableId: 1, Reason: null });
+    });
+});
+
+describe('PATCH /api/orders/:id/cancel - reçeteye bağlı şurup stoğu ÇİFT geri eklenmez', () => {
+    test('reçeteye bağlı şurup iptalde geri eklenmez (hiç düşülmemişti)', async () => {
+        const adminToken = tokenFor('Admin');
+        const stockRestores = [];
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('SELECT TableId, Status FROM Orders')) {
+                return { recordset: [{ TableId: 1, Status: 'Pending' }] };
+            }
+            if (queryText.includes('SELECT OrderDetailsId, ProductId, Quantity FROM OrderDetails')) {
+                return { recordset: [{ OrderDetailsId: 1, ProductId: 10, Quantity: 2 }] };
+            }
+            if (queryText.includes('SELECT ExtraProductId, Quantity FROM OrderDetailExtras')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('SELECT SyrupProductId, Quantity FROM OrderDetailSyrups')) {
+                return { recordset: [{ SyrupProductId: 60, Quantity: 1 }] };
+            }
+            // isRecipeLinked — sadece ProductId=10 + RawMaterialProductId=60 "reçetede" sayılsın
+            if (queryText.includes('SELECT TOP 1 RecipeId FROM Recipes')) {
+                if (inputs.ProductId === 10 && inputs.RawMaterialProductId === 60) {
+                    return { recordset: [{ RecipeId: 99 }] };
+                }
+                return { recordset: [] };
+            }
+            // resolveStockTargets (ürünün KENDİ reçetesi) — boş, ürünün kendisi geri eklensin
+            if (queryText.includes('FROM Recipes')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes("SELECT OrderId FROM Orders WHERE TableId")) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('UPDATE Stock')) {
+                stockRestores.push(inputs);
+                return { recordset: [{ Quantity: 100, MinStockLevel: 5 }] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .patch('/api/orders/1/cancel')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({});
+
+        expect(res.status).toBe(200);
+
+        const syrupRestore = stockRestores.find((d) => d.ProductId === 60);
+        if (syrupRestore) {
+            expect(Number(syrupRestore.Amount)).toBe(0);
+        }
     });
 });
 

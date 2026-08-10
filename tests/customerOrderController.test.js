@@ -252,6 +252,96 @@ describe('POST /api/customer-orders/:id/approve — TipAmount', () => {
     });
 });
 
+describe('POST /api/customer-orders/:id/approve — masada açık sipariş varsa AYNI siparişe eklenir', () => {
+    test('masada açık (Pending) sipariş varken onaylanan istek yeni sipariş AÇMAZ, mevcut siparişe eklenir', async () => {
+        let insertedNewOrder = false;
+        let totalAmountUpdate = null;
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM CustomerOrderRequests') && queryText.includes('UPDLOCK')) {
+                return { recordset: [{ CustomerOrderRequestId: 1, TableId: 4, Note: null, Status: 'Pending', Username: null, CombosJson: null, TipAmount: null }] };
+            }
+            if (queryText.includes('FROM CustomerOrderRequestItems')) {
+                return { recordset: [{ ProductId: 5, Quantity: 1, VariantId: null, Note: null, ExtrasJson: null, SyrupsJson: null }] };
+            }
+            // Masanın açık siparişi var mı kontrolü (yeni eklenen sorgu, bkz. controllers/customerOrderController.js)
+            if (queryText.includes('SELECT OrderId, TotalAmount FROM Orders WITH')) {
+                return { recordset: [{ OrderId: 99, TotalAmount: 50 }] };
+            }
+            // addItemsToOrderInTransaction'ın kendi sipariş sorgusu (bkz. utils/orderBuilder.js)
+            if (queryText.includes('SELECT OrderId, Status, TotalAmount FROM Orders WHERE OrderId')) {
+                return { recordset: [{ OrderId: 99, Status: 'Pending', TotalAmount: 50 }] };
+            }
+            if (queryText.includes('SELECT ProductId, Price, IsActive, IsAvailable FROM Products')) {
+                return { recordset: [{ ProductId: 5, Price: 30, IsActive: true, IsAvailable: true }] };
+            }
+            if (queryText.includes('SELECT OrderDetailsId, Quantity FROM OrderDetails')) {
+                return { recordset: [] }; // ürün siparişte henüz yok, yeni satır açılacak
+            }
+            if (queryText.includes('INSERT INTO OrderDetails')) {
+                return { recordset: [{ OrderDetailsId: 1 }] };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                insertedNewOrder = true;
+                return { recordset: [{ OrderId: 1234, TableId: 4, UserId: inputs.UserId, TotalAmount: inputs.TotalAmount, Status: 'Pending', Note: null, CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('UPDATE Orders SET TotalAmount')) {
+                totalAmountUpdate = Number(inputs.TotalAmount);
+                return { recordset: [] };
+            }
+            if (queryText.includes('FROM Recipes')) return { recordset: [] };
+            if (queryText.includes('SELECT * FROM Orders WHERE OrderId')) {
+                return { recordset: [{ OrderId: 99, TableId: 4, TotalAmount: 80, Status: 'Pending', CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('UPDATE CustomerOrderRequests')) return { recordset: [] };
+            return { recordset: [] };
+        });
+
+        const res = await request(app).post('/api/customer-orders/1/approve').set('Authorization', `Bearer ${waiterToken}`);
+
+        expect(res.status).toBe(201);
+        expect(insertedNewOrder).toBe(false); // yeni bir Orders satırı AÇILMADI
+        expect(res.body.order.OrderId).toBe(99); // masanın zaten açık olan siparişi
+        expect(totalAmountUpdate).toBe(80); // 50 (var olan) + 30 (yeni eklenen 1x ürün) — üzerine YAZILMADI, üzerine EKLENDİ
+    });
+
+    test('istek Combo içeriyorsa, masada açık sipariş olsa bile YİNE DE yeni sipariş açılır (kapsam dışı)', async () => {
+        let insertedNewOrder = false;
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM CustomerOrderRequests') && queryText.includes('UPDLOCK')) {
+                return {
+                    recordset: [{
+                        CustomerOrderRequestId: 1, TableId: 4, Note: null, Status: 'Pending',
+                        Username: null, CombosJson: JSON.stringify([{ ComboOfferId: 9, Quantity: 1 }]), TipAmount: null,
+                    }],
+                };
+            }
+            if (queryText.includes('FROM CustomerOrderRequestItems')) return { recordset: [] };
+            if (queryText.includes('FROM ComboOffers WHERE ComboOfferId')) {
+                return { recordset: [{ ComboOfferId: 9, Name: 'Kahve+Simit', Price: 60, IsActive: true }] };
+            }
+            if (queryText.includes('FROM Campaigns')) return { recordset: [{ CampaignId: 3 }] };
+            if (queryText.includes('FROM ComboOfferItems ci')) {
+                return { recordset: [{ ProductId: 5, Quantity: 1, IsActive: true, IsAvailable: true }] };
+            }
+            if (queryText.includes('INSERT INTO Orders')) {
+                insertedNewOrder = true;
+                return { recordset: [{ OrderId: 1234, TableId: 4, UserId: inputs.UserId, TotalAmount: inputs.TotalAmount, Status: 'Pending', Note: null, CreatedAt: new Date() }] };
+            }
+            if (queryText.includes('FROM Recipes')) return { recordset: [] };
+            if (queryText.includes('UPDATE CustomerOrderRequests')) return { recordset: [] };
+            // NOT: "masada açık sipariş var mı" sorgusuna bilerek dolu bir recordset
+            // dönmüyoruz bile — Combo'lu istekte bu sorgu hiç ÇALIŞTIRILMAMALI.
+            return { recordset: [] };
+        });
+
+        const res = await request(app).post('/api/customer-orders/1/approve').set('Authorization', `Bearer ${waiterToken}`);
+        expect(res.status).toBe(201);
+        expect(insertedNewOrder).toBe(true);
+    });
+});
+
 describe('POST /api/customer-orders/:id/reject', () => {
     test('istek bulunamazsa 404 döner', async () => {
         fakeDb.__setHandler(async () => ({ recordset: [] }));

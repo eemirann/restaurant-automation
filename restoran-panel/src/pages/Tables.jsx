@@ -1773,7 +1773,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                               title="Kaldırmak için tıkla"
                               className="font-mono text-[10px] uppercase tracking-wide text-[#D97706] border border-[#D97706]/40 bg-[#D97706]/5 rounded-full px-2.5 py-1 hover:bg-[#D97706]/10"
                             >
-                              {line.syrups[syrupId]}x {syrup.Name} ✕
+                              {line.syrups[syrupId]}x {syrup.Name}{syrup.InRecipe ? ' (ücretsiz)' : ''} ✕
                             </button>
                           );
                         })}

@@ -1,14 +1,21 @@
 import { useEffect, useState, useCallback } from 'react';
 import client from '../api/client';
 import { getSocket } from '../api/socket';
+import { useAuth } from '../context/AuthContext';
 
-// Kalem hazırlanma durumları (backend CHECK ile aynı).
-const PREP = {
-  New: { label: 'Yeni', pill: 'bg-amber-500/15 text-amber-500 border-amber-500/40', dot: 'bg-amber-500' },
-  Preparing: { label: 'Hazırlanıyor', pill: 'bg-ember/15 text-ember border-ember/40', dot: 'bg-ember' },
-  Ready: { label: 'Hazır', pill: 'bg-moss/15 text-moss border-moss/40', dot: 'bg-moss' },
-  Served: { label: 'Servis', pill: 'bg-azure/15 text-azure border-azure/40', dot: 'bg-azure' },
-};
+// Üç sütunlu tahta — "Yeni" ve "Hazırlanıyor" aynı sütunda toplanır (ikisi de
+// "mutfağın elinde, henüz bitmedi" anlamına gelir), kart üzerindeki küçük
+// rozet ikisini birbirinden ayırt eder.
+const COLUMNS = [
+  { key: 'preparing', title: 'Hazırlanıyor', icon: '🔥', statuses: ['New', 'Preparing'], accent: 'border-ember/40 bg-ember/5' },
+  { key: 'ready', title: 'Hazır', icon: '✅', statuses: ['Ready'], accent: 'border-moss/40 bg-moss/5' },
+  { key: 'served', title: 'Servis Edildi', icon: '🍽', statuses: ['Served'], accent: 'border-azure/40 bg-azure/5' },
+];
+
+// Bir kalemi bir sonraki duruma ilerleten TEK aksiyon — sütun başına 3 ayrı
+// buton yerine (eski tasarım), kart başına net bir "sıradaki adım" butonu.
+const NEXT_STATUS = { New: 'Preparing', Preparing: 'Ready', Ready: 'Served', Served: null };
+const NEXT_LABEL = { New: '▶ Başla', Preparing: '✅ Hazır', Ready: '🍽 Servis Et' };
 
 const fmtWait = (createdAt, now) => {
   if (!createdAt) return { text: '—', tone: 'text-slate' };
@@ -19,24 +26,32 @@ const fmtWait = (createdAt, now) => {
 };
 
 export default function Kds() {
+  const { user } = useAuth();
+  // Garson mutfak ekranını SADECE görüntüleyebilir — kendi siparişinin
+  // durumunu takip edebilsin diye erişimi var, ama durum değiştiremez
+  // (backend de aynı kısıtı PATCH /kds/items/:id/status'ta uyguluyor).
+  const isWaiter = user?.role === 'Waiter';
+
   const [queue, setQueue] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showReady, setShowReady] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [busyId, setBusyId] = useState(null);
 
+  // Üç sütun her zaman (Yeni/Hazırlanıyor/Hazır/Servis) birlikte gösterildiği
+  // için artık "Hazır/Servis edilenleri de göster" anahtarına gerek yok —
+  // her zaman status=all istenir.
   const fetchQueue = useCallback(async ({ silent = false } = {}) => {
     if (!silent) { setLoading(true); setError(''); }
     try {
-      const res = await client.get('/kds/queue', { params: showReady ? { status: 'all' } : {} });
+      const res = await client.get('/kds/queue', { params: { status: 'all' } });
       setQueue(res.data);
     } catch (err) {
       if (!silent) setError(err.response?.data?.error || 'Mutfak kuyruğu getirilemedi.');
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [showReady]);
+  }, []);
 
   useEffect(() => { fetchQueue(); }, [fetchQueue]);
 
@@ -79,16 +94,6 @@ export default function Kds() {
     }
   };
 
-  // Siparişe göre grupla (mutfak "adisyonu")
-  const tickets = Object.values(
-    queue.reduce((acc, item) => {
-      const k = item.OrderId;
-      if (!acc[k]) acc[k] = { orderId: item.OrderId, tableNumber: item.TableNumber, createdAt: item.OrderCreatedAt, items: [] };
-      acc[k].items.push(item);
-      return acc;
-    }, {})
-  ).sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-
   const activeCount = queue.filter((q) => q.PrepStatus === 'New' || q.PrepStatus === 'Preparing').length;
 
   return (
@@ -98,98 +103,93 @@ export default function Kds() {
         <div>
           <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-1.5">Mutfak</p>
           <h1 className="text-3xl font-extrabold text-paper leading-none tracking-tight">Mutfak Ekranı (KDS)</h1>
-          <p className="font-mono text-xs text-slate mt-2">{activeCount} bekleyen kalem · {tickets.length} adisyon</p>
+          <p className="font-mono text-xs text-slate mt-2">
+            {activeCount} bekleyen kalem{isWaiter ? ' · salt-okunur' : ''}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowReady((v) => !v)}
-            title="Hazır/servis edilmiş kalemler, ödeme alınana kadar burada kalır"
-            className={`text-[11px] font-bold uppercase tracking-wide px-3.5 py-2.5 rounded-xl border shadow-sm transition-colors ${
-              showReady ? 'border-moss bg-moss/10 text-moss' : 'border-hairline text-slate hover:text-paper bg-panel'
-            }`}
-          >
-            Hazır/Servis edilenleri de göster
-          </button>
-          <button
-            onClick={() => fetchQueue()}
-            title="Yenile"
-            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-3 py-2.5 bg-panel shadow-sm transition-colors"
-          >
-            ↻
-          </button>
-        </div>
+        <button
+          onClick={() => fetchQueue()}
+          title="Yenile"
+          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-3 py-2.5 bg-panel shadow-sm transition-colors"
+        >
+          ↻ Yenile
+        </button>
       </div>
 
       {error && <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-6">{error}</p>}
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-2xl border border-hairline bg-panel h-48 animate-pulse" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-2xl border border-hairline bg-panel h-64 animate-pulse" />
           ))}
         </div>
-      ) : tickets.length === 0 ? (
+      ) : queue.length === 0 ? (
         <div className="border border-dashed border-hairline rounded-2xl p-16 text-center bg-panel/50">
           <p className="text-4xl mb-3">✅</p>
           <p className="text-slate font-mono text-sm">Bekleyen sipariş yok. Mutfak temiz!</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {tickets.map((ticket) => {
-            const wait = fmtWait(ticket.createdAt, now);
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+          {COLUMNS.map((col) => {
+            const items = queue
+              .filter((q) => col.statuses.includes(q.PrepStatus))
+              .sort((a, b) => new Date(a.OrderCreatedAt || 0) - new Date(b.OrderCreatedAt || 0));
             return (
-              <div key={ticket.orderId} className="rounded-2xl border border-hairline bg-panel shadow-sm overflow-hidden flex flex-col">
-                {/* Adisyon başlığı */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-hairline bg-ink text-cream">
-                  <div>
-                    <p className="font-display text-lg font-bold leading-none">Masa {ticket.tableNumber ?? '—'}</p>
-                    <p className="font-mono text-[10px] text-cream/60 mt-0.5">Sipariş #{ticket.orderId}</p>
-                  </div>
-                  <span className={`font-mono text-sm font-semibold ${wait.tone}`}>⏱ {wait.text}</span>
+              <div key={col.key} className={`rounded-2xl border ${col.accent} p-3`}>
+                {/* Sütun başlığı */}
+                <div className="flex items-center justify-between px-1 pb-3 mb-1 border-b border-hairline/60">
+                  <p className="font-display text-base font-bold text-paper flex items-center gap-1.5">
+                    <span>{col.icon}</span> {col.title}
+                  </p>
+                  <span className="font-mono text-xs text-slate bg-panel border border-hairline rounded-full px-2 py-0.5 tabular-nums">
+                    {items.length}
+                  </span>
                 </div>
 
-                {/* Kalemler */}
-                <div className="divide-y divide-hairline">
-                  {ticket.items.map((item) => {
-                    const cfg = PREP[item.PrepStatus] || PREP.New;
-                    const busy = busyId === item.OrderDetailsId;
-                    return (
-                      <div key={item.OrderDetailsId} className="px-4 py-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-paper font-medium">
-                              <span className="font-mono text-[#FF6B6B] font-bold">{item.Quantity}×</span> {item.ProductName}
+                {/* Kartlar */}
+                <div className="space-y-2.5">
+                  {items.length === 0 ? (
+                    <p className="font-mono text-[11px] text-slate/50 text-center py-6">—</p>
+                  ) : (
+                    items.map((item) => {
+                      const wait = fmtWait(item.OrderCreatedAt, now);
+                      const busy = busyId === item.OrderDetailsId;
+                      const nextStatus = NEXT_STATUS[item.PrepStatus];
+                      const isNew = item.PrepStatus === 'New';
+                      return (
+                        <div key={item.OrderDetailsId} className="rounded-xl border border-hairline bg-panel shadow-sm p-3">
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <p className="font-mono text-[10px] uppercase tracking-wide text-slate">
+                              Masa {item.TableNumber ?? '—'} · #{item.OrderId}
                             </p>
-                            {item.Note && <p className="font-mono text-[11px] text-azure/90 mt-0.5">📝 {item.Note}</p>}
+                            <span className={`font-mono text-[10px] font-semibold ${wait.tone}`}>⏱ {wait.text}</span>
                           </div>
-                          <span className={`shrink-0 inline-flex items-center gap-1.5 border rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide ${cfg.pill}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />{cfg.label}
-                          </span>
-                        </div>
+                          <p className="text-paper font-medium leading-snug">
+                            <span className="font-mono text-[#FF6B6B] font-bold">{item.Quantity}×</span> {item.ProductName}
+                          </p>
+                          {item.Note && <p className="font-mono text-[11px] text-azure/90 mt-0.5">📝 {item.Note}</p>}
+                          {isNew && (
+                            <span className="inline-flex items-center gap-1 mt-1.5 border border-amber-500/40 bg-amber-500/10 text-amber-500 rounded-full px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Henüz başlanmadı
+                            </span>
+                          )}
 
-                        {/* Durum ilerlet butonları */}
-                        <div className="grid grid-cols-3 gap-1.5 mt-2.5">
-                          {['Preparing', 'Ready', 'Served'].map((st) => {
-                            const active = item.PrepStatus === st;
-                            const c = PREP[st];
-                            return (
-                              <button
-                                key={st}
-                                type="button"
-                                disabled={busy || active}
-                                onClick={() => setStatus(item, st)}
-                                className={`font-mono text-[10px] uppercase tracking-wide py-2 rounded-xl border transition-all disabled:opacity-50 ${
-                                  active ? `${c.pill} font-semibold` : 'border-hairline text-slate hover:border-[#FF6B6B] hover:text-[#FF6B6B]'
-                                }`}
-                              >
-                                {c.label}
-                              </button>
-                            );
-                          })}
+                          {!isWaiter && nextStatus && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => setStatus(item, nextStatus)}
+                              className="w-full mt-2.5 font-mono text-[11px] uppercase tracking-wide py-2 rounded-lg
+                                         bg-[#FF6B6B] text-white hover:bg-[#ff5555] disabled:opacity-50 transition-colors"
+                            >
+                              {busy ? '…' : NEXT_LABEL[item.PrepStatus]}
+                            </button>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
             );

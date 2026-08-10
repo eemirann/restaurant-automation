@@ -3,10 +3,15 @@ const money = (n) =>
 
 // Bir seçim grubunun (ör. bir sepet kalemine eklenen ekstralar) toplamını
 // hesaplar. `selections`: {[ProductId]: quantity}, `catalogById`: Map<ProductId, {Price}>.
+// `InRecipe` işaretli seçenekler (bkz. GET /products/:id/order-options) ücretsizdir —
+// zaten seçildiği ürünün Reçetesinde sabit olarak var, sepette ayrıca ücretlendirilmez
+// (bkz. controllers/orderController.js'teki backend karşılığı — çifte ücret fix'i).
 export function calculateOptionsTotal(selections, catalogById) {
   return Object.entries(selections || {}).reduce((sum, [id, qty]) => {
     const option = catalogById.get(Number(id));
-    return sum + (option ? Number(option.Price) * qty : 0);
+    if (!option) return sum;
+    const price = option.InRecipe ? 0 : Number(option.Price);
+    return sum + price * qty;
   }, 0);
 }
 

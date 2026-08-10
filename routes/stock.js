@@ -12,7 +12,9 @@ const {
     decreaseStock,
     getAllStockMovements,
     recordStockPurchase,
-    setStockItemType
+    setStockItemType,
+    setStockItemUnit,
+    setStockItemCost
 } = require('../controllers/stockController');
 
 router.get('/movements', verifyToken, getAllStockMovements);
@@ -26,5 +28,7 @@ router.patch('/:id/increase', verifyToken, requireRole('Admin'), increaseStock);
 router.patch('/:id/decrease', verifyToken, requireRole('Admin'), decreaseStock);
 router.post('/:id/purchase', verifyToken, requireRole('Admin'), recordStockPurchase);
 router.patch('/:id/type', verifyToken, requireRole('Admin'), setStockItemType);
+router.patch('/:id/unit', verifyToken, requireRole('Admin'), setStockItemUnit);
+router.patch('/:id/cost', verifyToken, requireRole('Admin'), setStockItemCost);
 
 module.exports = router;

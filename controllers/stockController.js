@@ -1,6 +1,7 @@
 const { sql, connectDB } = require('../config/db');
 const { logAudit } = require('../utils/audit');
 const { getUnitIds, upsertServingSize } = require('../utils/servingSize');
+const { setProductStockUnit } = require('../utils/stockUnit');
 
 // Ürün Türü -> Kategori adı eşlemesi (Şurup/Ekstra sayfaları kaldırıldı,
 // oluşturma artık buradan; syrupController/extraController.createXxx ile
@@ -20,7 +21,14 @@ async function getStockByProduct(req, res) {
         const pool = await connectDB();
         const result = await pool.request()
             .input('ProductId', sql.Int, productId)
-            .query(`SELECT StockId, ProductId, Quantity, MinStockLevel, IsTracked FROM Stock WHERE ProductId = @ProductId`);
+            .query(`
+                SELECT s.StockId, s.ProductId, s.Quantity, s.MinStockLevel, s.IsTracked,
+                       p.StockUnitId, u.Code AS StockUnitCode, p.Cost
+                FROM Stock s
+                JOIN Products p ON p.ProductId = s.ProductId
+                LEFT JOIN Units u ON u.UnitId = p.StockUnitId
+                WHERE s.ProductId = @ProductId
+            `);
 
         if (result.recordset.length === 0) {
             return res.status(200).json(null);
@@ -41,9 +49,11 @@ async function getAllStock(req, res) {
         const result = await pool.request().query(`
             SELECT s.StockId, s.ProductId, p.Name AS ProductName,
                    s.Quantity, s.MinStockLevel, s.IsTracked, s.UpdatedAt,
-                   p.IsSyrup, p.IsExtra, p.Price
+                   p.IsSyrup, p.IsExtra, p.Price, p.Cost,
+                   p.StockUnitId, u.Code AS StockUnitCode
             FROM Stock s
             JOIN Products p ON p.ProductId = s.ProductId
+            LEFT JOIN Units u ON u.UnitId = p.StockUnitId
             ORDER BY p.Name ASC
         `);
         res.status(200).json(result.recordset);
@@ -69,7 +79,7 @@ async function getAllStock(req, res) {
 // ============================================================
 async function createStockItem(req, res) {
     try {
-        const { ProductId, ProductName, Quantity, MinStockLevel, UnitPrice, Supplier, InvoiceNumber, Notes, Type, Price, ServingSize } = req.body;
+        const { ProductId, ProductName, Quantity, MinStockLevel, UnitPrice, Supplier, InvoiceNumber, Notes, Type, Price, ServingSize, StockUnitId, ConversionTargetUnitId, ConversionFactor, Cost } = req.body;
 
         if (!ProductId && !ProductName) {
             return res.status(400).json({ error: 'Ürün seçmeli veya yeni ürün adı girmelisiniz' });
@@ -96,6 +106,20 @@ async function createStockItem(req, res) {
         }
         if (ServingSize !== undefined && ServingSize !== null && (typeof ServingSize !== 'number' || ServingSize <= 0)) {
             return res.status(400).json({ error: 'Porsiyon başına tüketim (varsa) 0\'dan büyük bir sayı olmalıdır' });
+        }
+        // Maliyet (Products.Cost) — bu malzemenin satın alma/birim maliyeti.
+        // Recipes/Reports/Dashboard'daki kâr hesabı BUNA bağlı (bkz.
+        // controllers/reportController.js, controllers/dashboardController.js) —
+        // girilmezse o hesaplar "Hesaplanamadı" döner.
+        if (Cost !== undefined && Cost !== null && (typeof Cost !== 'number' || Cost < 0)) {
+            return res.status(400).json({ error: 'Maliyet negatif olmayan bir sayı olmalıdır' });
+        }
+        // Stok Birimi — hammaddenin adedinin/kilosunun/litresinin ne anlama
+        // geldiğini belirler (bkz. utils/stockUnit.js). Belirtilmemiş "adet"
+        // gibi bir birim, reçetede farklı bir birim (ml/g) kullanılırsa
+        // stok düşümünün SESSİZCE yanlış hesaplanmasına yol açar.
+        if (ConversionTargetUnitId != null && (typeof ConversionFactor !== 'number' || ConversionFactor <= 0)) {
+            return res.status(400).json({ error: 'Birim dönüşümü için 0\'dan büyük bir oran girilmelidir' });
         }
 
         const pool = await connectDB();
@@ -127,10 +151,11 @@ async function createStockItem(req, res) {
                     .input('IsRawMaterial', sql.Bit, type === 'raw' ? 1 : 0)
                     .input('IsSyrup', sql.Bit, type === 'syrup' ? 1 : 0)
                     .input('IsExtra', sql.Bit, type === 'extra' ? 1 : 0)
+                    .input('Cost', sql.Decimal(10, 2), Cost ?? null)
                     .query(`
-                        INSERT INTO Products (Name, Price, CategoryId, IsRawMaterial, IsSyrup, IsExtra)
+                        INSERT INTO Products (Name, Price, CategoryId, IsRawMaterial, IsSyrup, IsExtra, Cost)
                         OUTPUT INSERTED.ProductId
-                        VALUES (@Name, @Price, @CategoryId, @IsRawMaterial, @IsSyrup, @IsExtra)
+                        VALUES (@Name, @Price, @CategoryId, @IsRawMaterial, @IsSyrup, @IsExtra, @Cost)
                     `);
                 finalProductId = created.recordset[0].ProductId;
             }
@@ -157,6 +182,21 @@ async function createStockItem(req, res) {
             if (ServingSize !== undefined) {
                 await upsertServingSize(pool, finalProductId, ServingSize ?? null, await getUnitIds(pool));
             }
+        }
+
+        // Stok Birimi (ör. hammaddeler: "adet"/"kg" gibi satın alma birimi) —
+        // reçetede farklı bir birim kullanılıyorsa (ör. "ml") özel dönüşüm de yazılır.
+        if (StockUnitId != null) {
+            await setProductStockUnit(pool, finalProductId, StockUnitId, ConversionTargetUnitId ?? null, ConversionFactor ?? null);
+        }
+
+        // Maliyet — var olan bir ürün seçildiyse (yeni ürün zaten yukarıda Cost
+        // ile oluşturuldu) burada da yazılabilsin diye ayrıca güncelleniyor.
+        if (Cost !== undefined) {
+            await pool.request()
+                .input('ProductId', sql.Int, finalProductId)
+                .input('Cost', sql.Decimal(10, 2), Cost)
+                .query(`UPDATE Products SET Cost = @Cost WHERE ProductId = @ProductId`);
         }
 
         const result = await pool.request()
@@ -562,6 +602,100 @@ async function setStockItemType(req, res) {
     }
 }
 
+// ============================================================
+// STOK BİRİMİNİ AYARLA/DÜZELT (SADECE ADMIN)
+// Zaten var olan bir stok kaydının Stok Birimini (Products.StockUnitId) ve —
+// gerekiyorsa — reçetelerde kullanılan birimle arasındaki özel dönüşümü
+// (ProductUnitConversions) sonradan ayarlamak/düzeltmek için (bkz.
+// utils/stockUnit.js). Ör: "Süt" hammaddesi "1 adet" ile eklenmiş ama
+// reçete "ml" kullanıyorsa, buradan "1 adet = 1000 ml" tanımlanır.
+// Body: { StockUnitId, ConversionTargetUnitId?, ConversionFactor? }
+// ============================================================
+async function setStockItemUnit(req, res) {
+    try {
+        const { id } = req.params;
+        const { StockUnitId, ConversionTargetUnitId, ConversionFactor } = req.body;
+
+        if (typeof StockUnitId !== 'number') {
+            return res.status(400).json({ error: 'StockUnitId zorunludur' });
+        }
+        if (ConversionTargetUnitId != null && (typeof ConversionFactor !== 'number' || ConversionFactor <= 0)) {
+            return res.status(400).json({ error: 'Birim dönüşümü için 0\'dan büyük bir oran girilmelidir' });
+        }
+
+        const pool = await connectDB();
+
+        const stockResult = await pool.request()
+            .input('StockId', sql.Int, id)
+            .query(`SELECT ProductId FROM Stock WHERE StockId = @StockId`);
+
+        if (stockResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Stok kalemi bulunamadı' });
+        }
+        const productId = stockResult.recordset[0].ProductId;
+
+        await setProductStockUnit(pool, productId, StockUnitId, ConversionTargetUnitId ?? null, ConversionFactor ?? null);
+
+        const result = await pool.request()
+            .input('ProductId', sql.Int, productId)
+            .query(`
+                SELECT p.ProductId, p.Name, p.StockUnitId, u.Code AS StockUnitCode
+                FROM Products p
+                LEFT JOIN Units u ON u.UnitId = p.StockUnitId
+                WHERE p.ProductId = @ProductId
+            `);
+
+        res.status(200).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Stok birimi güncellenirken hata:', err);
+        res.status(500).json({ error: 'Stok birimi güncellenemedi' });
+    }
+}
+
+// ============================================================
+// MALİYETİ AYARLA/DÜZELT (SADECE ADMIN)
+// Products.Cost — bu malzemenin satın alma/birim maliyeti. Recipes/Reports/
+// Dashboard'daki kâr hesabı BUNA bağlı (bkz. controllers/reportController.js,
+// controllers/dashboardController.js): reçetedeki hammaddelerden biri bile
+// Cost'suz kalırsa o ürünün maliyeti/kârı "Hesaplanamadı" döner.
+// Body: { Cost } — null gönderilirse maliyet temizlenir (tekrar "girilmemiş" olur).
+// ============================================================
+async function setStockItemCost(req, res) {
+    try {
+        const { id } = req.params;
+        const { Cost } = req.body;
+
+        if (Cost !== null && (typeof Cost !== 'number' || Cost < 0)) {
+            return res.status(400).json({ error: 'Maliyet negatif olmayan bir sayı olmalıdır (temizlemek için null gönderin)' });
+        }
+
+        const pool = await connectDB();
+
+        const stockResult = await pool.request()
+            .input('StockId', sql.Int, id)
+            .query(`SELECT ProductId FROM Stock WHERE StockId = @StockId`);
+
+        if (stockResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Stok kalemi bulunamadı' });
+        }
+        const productId = stockResult.recordset[0].ProductId;
+
+        const result = await pool.request()
+            .input('ProductId', sql.Int, productId)
+            .input('Cost', sql.Decimal(10, 2), Cost)
+            .query(`
+                UPDATE Products SET Cost = @Cost
+                OUTPUT INSERTED.ProductId, INSERTED.Name, INSERTED.Cost
+                WHERE ProductId = @ProductId
+            `);
+
+        res.status(200).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Stok maliyeti güncellenirken hata:', err);
+        res.status(500).json({ error: 'Stok maliyeti güncellenemedi' });
+    }
+}
+
 module.exports = {
     getStockByProduct,
     getAllStock,
@@ -573,5 +707,7 @@ module.exports = {
     decreaseStock,
     getAllStockMovements,
     recordStockPurchase,
-    setStockItemType
+    setStockItemType,
+    setStockItemUnit,
+    setStockItemCost
 };
