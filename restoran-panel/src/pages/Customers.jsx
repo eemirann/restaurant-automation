@@ -43,16 +43,16 @@ export default function Customers() {
     <div className="p-10">
       <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">Yönetim · Sadaklık</p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Müşteriler</h1>
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">Yönetim · Sadaklık</p>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Müşteriler</h1>
           <p className="font-body text-sm text-slate mt-1">
             Tüm sadaklık müşterileri — puanla ürün ekleme için Masalar ekranındaki paneli kullanın.
           </p>
         </div>
         <button
           onClick={fetchCustomers}
-          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                     border border-hairline rounded-sm px-3 py-2 transition-colors"
+          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                     border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
         >
           ↻ Yenile
         </button>
@@ -64,16 +64,16 @@ export default function Customers() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Kullanıcı adı ara..."
-          className="w-64 border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper bg-charcoal
-                     focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          className="w-64 border border-hairline rounded-xl px-3 py-2.5 font-body text-sm text-paper bg-charcoal
+                     focus:outline-none focus:ring-2 focus:ring-[#FF6B6B]/40 focus:border-[#FF6B6B]"
         />
         <div className="flex gap-1">
           {SORTS.map((s) => (
             <button
               key={s.value}
               onClick={() => setSort(s.value)}
-              className={`font-mono text-xs uppercase tracking-wide px-3 py-2 rounded-sm border transition-colors ${
-                sort === s.value ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper'
+              className={`text-[11px] font-bold uppercase tracking-wide px-3 py-2 rounded-full border transition-colors ${
+                sort === s.value ? 'border-[#FF6B6B] bg-[#FF6B6B]/10 text-[#FF6B6B]' : 'border-hairline text-slate hover:text-paper'
               }`}
             >
               {s.label}
@@ -87,11 +87,11 @@ export default function Customers() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : customers.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek müşteri bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">

@@ -57,10 +57,10 @@ export default function Categories() {
       {/* Başlık */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Menü · Kategoriler
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Kategoriler</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Kategoriler</h1>
           <p className="font-body text-sm text-slate mt-1">
             Ürünlerin gruplandığı kategoriler — ürün formundaki açılır listeyi besler.
           </p>
@@ -68,15 +68,15 @@ export default function Categories() {
         <div className="flex gap-2">
           <button
             onClick={fetchCategories}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
           >
             ↻ Yenile
           </button>
           <button
             onClick={() => { setEditingCategory(null); setShowModal(true); }}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] rounded-xl px-4 py-2 shadow-lg shadow-red-500/10 transition-all"
           >
             + Yeni Kategori
           </button>
@@ -90,14 +90,14 @@ export default function Categories() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Kategori ara..."
-          className="flex-1 min-w-[16rem] max-w-sm border border-hairline rounded-sm px-4 py-2.5 font-body text-paper
-                     focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          className="flex-1 min-w-[16rem] max-w-sm border border-hairline rounded-xl px-4 py-2.5 font-body text-paper
+                     focus:outline-none focus:ring-2 focus:ring-[#FF6B6B]/40 focus:border-[#FF6B6B]"
         />
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="border border-hairline rounded-sm px-3 py-2.5 font-mono text-xs uppercase tracking-wide text-paper bg-panel
-                     focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          className="border border-hairline rounded-xl px-3 py-2.5 font-mono text-xs uppercase tracking-wide text-paper bg-panel
+                     focus:outline-none focus:ring-2 focus:ring-[#FF6B6B]/40 focus:border-[#FF6B6B]"
         >
           <option value="name-asc">Ad (A-Z)</option>
           <option value="name-desc">Ad (Z-A)</option>
@@ -113,11 +113,11 @@ export default function Categories() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : visibleCategories.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek kategori bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
@@ -146,14 +146,14 @@ export default function Categories() {
                       <div className="flex justify-end items-center gap-2">
                         <button
                           onClick={() => { setEditingCategory(category); setShowModal(true); }}
-                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+                          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-2.5 py-1.5 transition-colors"
                         >
                           Düzenle
                         </button>
                         {isActive && (
                           <button
                             onClick={() => deactivate(category)}
-                            className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                            className="text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl px-2.5 py-1.5 transition-all"
                           >
                             Pasife Al
                           </button>
@@ -219,7 +219,7 @@ function CategoryFormModal({ category, onClose, onSaved }) {
 
         <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
           <div>
-            <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Kategori</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.25em] uppercase mb-1">Kategori</p>
             <h2 className="font-display text-lg font-semibold text-paper leading-tight">
               {category ? 'Kategoriyi Düzenle' : 'Yeni Kategori'}
             </h2>
@@ -255,8 +255,8 @@ function CategoryFormModal({ category, onClose, onSaved }) {
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-3 transition-colors disabled:opacity-50"
           >
             Vazgeç
           </button>
@@ -264,9 +264,9 @@ function CategoryFormModal({ category, onClose, onSaved }) {
             type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 active:bg-ember/80 disabled:opacity-40 disabled:cursor-not-allowed
-                       rounded-sm px-6 py-3 transition-colors shadow-sm"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] active:bg-[#ff4444] disabled:opacity-40 disabled:cursor-not-allowed
+                       rounded-xl px-6 py-3 shadow-lg shadow-red-500/10 transition-all"
           >
             {submitting ? 'Kaydediliyor...' : 'Kaydet'}
           </button>

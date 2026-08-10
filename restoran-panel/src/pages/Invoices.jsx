@@ -34,21 +34,21 @@ export default function Invoices() {
     <div className="p-10">
       <div className="flex items-start justify-between mb-6">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Muhasebe · e-Arşiv
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Faturalar</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Faturalar</h1>
         </div>
         <button
           onClick={fetchInvoices}
-          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                     border border-hairline rounded-sm px-3 py-2 transition-colors"
+          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                     border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
         >
           ↻ Yenile
         </button>
       </div>
 
-      <div className="border-l-2 border-ember/60 bg-ember/5 rounded-sm px-4 py-3 mb-6">
+      <div className="border-l-2 border-[#FF6B6B]/60 bg-[#FF6B6B]/5 rounded-r-xl px-4 py-3 mb-6">
         <p className="font-mono text-xs text-paper">
           Henüz gerçek bir e-Arşiv entegratörüne (Foriba, Uyumsoft, Nesbilgi vb.) bağlı değiliz —
           buradaki faturalar <span className="font-semibold">test/mock</span> amaçlıdır, GİB'e
@@ -64,11 +64,11 @@ export default function Invoices() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : invoices.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Henüz kesilmiş bir fatura yok.</p>
         </div>
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">

@@ -64,6 +64,9 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
   const { user } = useAuth();
   const { RestaurantName, PrinterPaperWidth, LogoUrl, CustomerPrinterName } = useSettings();
   const canDiscount = ['Cashier', 'Admin'].includes(user?.role);
+  // Kalem çıkarma da aynı yetki seti — backend'deki DELETE/PATCH item
+  // uçları zaten requireRole('Cashier','Admin') (bkz. routes/orders.js).
+  const canManageItems = canDiscount;
 
   const [open, setOpen] = useState(autoOpen);
 
@@ -148,6 +151,37 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
     }
   }, [order.OrderId]);
 
+  // Ödeme ekranından yanlış eklenen bir kalemi doğrudan çıkarma — önceden
+  // sadece Masalar ekranındaki sepetten yapılabiliyordu, kasiyer bunun için
+  // ödeme alma akışından çıkıp geri dönmek zorunda kalıyordu.
+  const [removeTarget, setRemoveTarget] = useState(null); // { OrderDetailsId, name, Quantity, PaidQuantity } | null
+  const [removeSubmitting, setRemoveSubmitting] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+
+  const confirmRemoveItem = async () => {
+    if (!removeTarget) return;
+    setRemoveError('');
+    setRemoveSubmitting(true);
+    try {
+      const paidQty = removeTarget.PaidQuantity || 0;
+      if (paidQty > 0) {
+        // Kısmen ödenmiş: DELETE tamamen reddeder (bkz. orderController.removeOrderItem).
+        // Bunun yerine adedi ödenen miktara indiriyoruz — ödenen kısım kalemde
+        // kalır, sadece ödenmemiş fazlalık siparişten çıkar.
+        await client.patch(`/orders/${order.OrderId}/items/${removeTarget.OrderDetailsId}`, { Quantity: paidQty });
+      } else {
+        await client.delete(`/orders/${order.OrderId}/items/${removeTarget.OrderDetailsId}`);
+      }
+      setRemoveTarget(null);
+      await Promise.all([loadBalance(), loadOrder()]);
+      onPaid?.(); // toplam değişti — masa/sipariş listesindeki tutarın da tazelenmesi için
+    } catch (err) {
+      setRemoveError(err.response?.data?.error || 'Ürün çıkarılamadı.');
+    } finally {
+      setRemoveSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (open) {
       setError('');
@@ -159,6 +193,8 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
       setSplitMode(false);
       setSplit({ Cash: '', Card: '', QR: '', FoodCard: '' });
       setLastReceipt(null);
+      setRemoveTarget(null);
+      setRemoveError('');
       loadBalance();
       // Müşterinin QR menüden checkout'ta seçtiği bahşiş varsa (Orders.TipAmount,
       // bkz. musteri-menu CartView.jsx) tutar alanına ön-dolu gelir — kasiyer
@@ -561,6 +597,18 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                                     {item.Note && <span className="text-azure/90">{options.length > 0 ? ' · ' : ''}📝 {item.Note}</span>}
                                   </p>
                                 )}
+                                {/* Kalemi siparişten çıkar — yanlış eklenen ürünü ödeme
+                                    ekranından ayrılmadan düzeltebilmek için. Tamamen
+                                    ödenmiş kalemde gösterilmez (çıkaracak bir şey yok). */}
+                                {canManageItems && item.Quantity - (item.PaidQuantity || 0) > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRemoveTarget(item)}
+                                    className="font-mono text-[10px] text-slate hover:text-ember mt-0.5"
+                                  >
+                                    🗑 Kalemi çıkar
+                                  </button>
+                                )}
                               </div>
 
                               {/* Birim fiyat */}
@@ -825,6 +873,57 @@ export default function PaymentDrawer({ order, resolveProductName, tableLabel, o
                 </section>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Kalem çıkarma onayı — sipariş iptalindeki CancelOrderModal ile aynı
+          "ayrı onay penceresi" deseni (bkz. Orders.jsx), inline onay yerine. */}
+      {removeTarget && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-[70]" onClick={() => !removeSubmitting && setRemoveTarget(null)}>
+          <div
+            className="bg-panel rounded-sm border border-hairline w-full max-w-sm shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-5 border-b border-hairline">
+              <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Kalemi Çıkar</p>
+              <h2 className="font-display text-lg font-semibold text-paper">
+                {resolveProductName ? resolveProductName(removeTarget.ProductId) : `Ürün #${removeTarget.ProductId}`} siparişten çıkarılsın mı?
+              </h2>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              {removeTarget.PaidQuantity > 0 ? (
+                <p className="text-sm text-paper">
+                  Bu üründen <span className="font-semibold text-moss">{removeTarget.PaidQuantity} adet</span> zaten ödendi, kalemde kalacak.
+                  Sadece ödenmemiş <span className="font-semibold text-ember">{removeTarget.Quantity - removeTarget.PaidQuantity} adet</span> siparişten çıkarılacak.
+                </p>
+              ) : (
+                <p className="text-sm text-paper">{removeTarget.Quantity} adetin tamamı siparişten çıkarılacak.</p>
+              )}
+              {removeError && (
+                <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{removeError}</p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-hairline flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRemoveTarget(null)}
+                disabled={removeSubmitting}
+                className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                           border border-hairline rounded-sm px-4 py-2.5 transition-colors disabled:opacity-50"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveItem}
+                disabled={removeSubmitting}
+                className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
+                           hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
+              >
+                {removeSubmitting ? 'Çıkarılıyor...' : 'Çıkar'}
+              </button>
+            </div>
           </div>
         </div>
       )}

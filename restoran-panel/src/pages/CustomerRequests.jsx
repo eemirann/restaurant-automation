@@ -123,24 +123,24 @@ export default function CustomerRequests() {
     <div className="p-10">
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Müşteri QR Menü
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Müşteri İstekleri</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Müşteri İstekleri</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchAll}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
           >
             ↻ Yenile
           </button>
           {isAdmin && (
             <button
               onClick={() => setShowQrCodes(true)}
-              className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                         hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+              className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                         hover:bg-[#ff5555] rounded-xl px-4 py-2 shadow-lg shadow-red-500/10 transition-all"
             >
               📱 Masa QR Kodları
             </button>
@@ -212,8 +212,8 @@ export default function CustomerRequests() {
                       <button
                         onClick={() => rejectOrder(r.CustomerOrderRequestId)}
                         disabled={busyId === r.CustomerOrderRequestId}
-                        className="flex-1 font-mono text-xs uppercase tracking-wide text-ember hover:text-ember/80
-                                   border border-ember/40 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
+                        className="flex-1 text-xs font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B]
+                                   border border-[#FF6B6B]/40 disabled:opacity-50 rounded-xl px-4 py-2.5 transition-all"
                       >
                         Reddet
                       </button>
@@ -249,8 +249,8 @@ export default function CustomerRequests() {
                       <button
                         onClick={() => resolveService(r.ServiceRequestId)}
                         disabled={busyId === r.ServiceRequestId}
-                        className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                                   hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors shrink-0"
+                        className="text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                                   hover:bg-[#ff5555] disabled:opacity-50 rounded-xl px-4 py-2.5 shadow-sm transition-all shrink-0"
                       >
                         {busyId === r.ServiceRequestId ? '...' : 'Hallettim'}
                       </button>
@@ -342,8 +342,8 @@ function TableQrCodesModal({ onClose }) {
             <button
               onClick={printAll}
               disabled={loading || tables.length === 0}
-              className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90
-                         disabled:opacity-40 rounded-sm px-4 py-2 transition-colors"
+              className="text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B] hover:bg-[#ff5555]
+                         disabled:opacity-40 rounded-xl px-4 py-2 shadow-sm transition-all"
             >
               🖨 Tümünü Yazdır
             </button>

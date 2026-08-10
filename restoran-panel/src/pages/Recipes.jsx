@@ -103,8 +103,8 @@ export default function Recipes() {
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-6">
-        <p className="font-mono text-[10px] tracking-[0.3em] text-ember uppercase mb-1.5">Reçete · BOM</p>
-        <h1 className="font-display text-3xl font-bold text-paper leading-none">Ürün Reçeteleri</h1>
+        <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-1.5">Reçete · BOM</p>
+        <h1 className="text-3xl font-extrabold text-paper leading-none tracking-tight">Ürün Reçeteleri</h1>
         <p className="font-mono text-xs text-slate mt-2">Menü ürünü satılınca reçetedeki hammaddeler stoktan otomatik düşer.</p>
       </div>
 
@@ -127,7 +127,7 @@ export default function Recipes() {
                   key={p.ProductId}
                   onClick={() => setSelectedId(p.ProductId)}
                   className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors text-sm ${
-                    selectedId === p.ProductId ? 'bg-ember/10 text-ember font-semibold' : 'text-paper hover:bg-hairline/60'
+                    selectedId === p.ProductId ? 'bg-[#FF6B6B]/10 text-[#FF6B6B] font-semibold' : 'text-paper hover:bg-hairline/60'
                   }`}
                 >
                   {p.Name}
@@ -255,7 +255,7 @@ export default function Recipes() {
                     </select>
                   </div>
                   <button onClick={addLine} disabled={adding}
-                    className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 disabled:opacity-40 rounded-lg px-4 py-2 min-h-[2.5rem] transition-colors">
+                    className="text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B] hover:bg-[#ff5555] disabled:opacity-40 rounded-lg px-4 py-2 min-h-[2.5rem] shadow-sm transition-all">
                     {adding ? 'Ekleniyor…' : '+ Ekle'}
                   </button>
                 </div>

@@ -126,6 +126,9 @@ async function getOrderById(req, res) {
 // ============================================================
 async function cancelOrder(req, res) {
     const { id } = req.params;
+    // Opsiyonel iptal sebebi (Toast'taki "Void Order" akışındaki sebep
+    // seçimiyle aynı amaç) — sadece audit'e yazılır, iş mantığını etkilemez.
+    const Reason = typeof req.body?.Reason === 'string' ? req.body.Reason.trim().slice(0, 500) : null;
 
     let pool;
     try {
@@ -212,7 +215,7 @@ async function cancelOrder(req, res) {
 
         await transaction.commit();
         emitTablesChanged();
-        logAudit(pool, { userId: req.user?.userId, action: 'ORDER_CANCEL', entityType: 'Order', entityId: Number(id), details: { TableId } });
+        logAudit(pool, { userId: req.user?.userId, action: 'ORDER_CANCEL', entityType: 'Order', entityId: Number(id), details: { TableId, Reason: Reason || null } });
 
         return res.status(200).json({ message: 'Sipariş iptal edildi, stok geri eklendi.' });
 
@@ -272,6 +275,7 @@ async function updateOrderStatus(req, res) {
             .query(`SELECT * FROM Orders WHERE OrderId = @OrderId`);
 
         emitTablesChanged();
+        logAudit(pool, { userId: req.user?.userId, action: 'ORDER_STATUS_CHANGE', entityType: 'Order', entityId: Number(id), details: { from: currentStatus, to: Status } });
         return res.status(200).json(updated.recordset[0]);
     } catch (err) {
         console.error('Sipariş durumu güncellenirken hata:', err);
@@ -551,6 +555,10 @@ async function addOrderItems(req, res) {
         await transaction.commit();
         emitTablesChanged();
         emitKitchen('kds:new', { orderId: Number(id) });
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'ORDER_ITEM_ADD', entityType: 'Order', entityId: Number(id),
+            details: { items: Items.map((i) => ({ ProductId: i.ProductId, Quantity: i.Quantity })), addedAmount },
+        });
 
         const updated = await pool.request()
             .input('OrderId', sql.Int, id)
@@ -680,6 +688,10 @@ async function removeOrderItem(req, res) {
 
         await transaction.commit();
         emitTablesChanged();
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'ORDER_ITEM_REMOVE', entityType: 'Order', entityId: Number(id),
+            details: { ProductId: item.ProductId, Quantity: item.Quantity },
+        });
 
         const updated = await pool.request()
             .input('OrderId', sql.Int, id)
@@ -835,6 +847,10 @@ async function updateOrderItemQuantity(req, res) {
 
         await transaction.commit();
         emitTablesChanged();
+        logAudit(pool, {
+            userId: req.user?.userId, action: 'ORDER_ITEM_QTY_CHANGE', entityType: 'Order', entityId: Number(id),
+            details: { ProductId: item.ProductId, from: item.Quantity, to: Quantity },
+        });
 
         const updated = await pool.request()
             .input('OrderId', sql.Int, id)
@@ -853,6 +869,35 @@ async function updateOrderItemQuantity(req, res) {
     }
 }
 
+// ============================================================
+// SİPARİŞ ZAMAN ÇİZELGESİ — bu siparişe (EntityType='Order', EntityId=id)
+// ait tüm AuditLog kayıtlarını kronolojik sırayla döner (kim/ne zaman/ne
+// yaptı). Yeni tablo AÇILMADI — mevcut AuditLog (bkz. utils/audit.js,
+// controllers/auditController.js) zaten bu amaca uygun; sadece OrderId'ye
+// göre filtrelenmiş bir okuma. tableController.js'teki TABLE_TRANSFER
+// audit'i de aynı EntityType/EntityId'yi kullandığından, masa
+// transfer/birleştirme olayları da otomatik olarak bu listede çıkar.
+// ============================================================
+async function getOrderHistory(req, res) {
+    const { id } = req.params;
+    try {
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('OrderId', sql.Int, id)
+            .query(`
+                SELECT a.AuditLogId, a.UserId, u.FullName AS UserName, a.Action, a.Details, a.CreatedAt
+                FROM AuditLog a
+                LEFT JOIN Users u ON u.UserId = a.UserId
+                WHERE a.EntityType = 'Order' AND a.EntityId = @OrderId
+                ORDER BY a.AuditLogId ASC
+            `);
+        return res.status(200).json(result.recordset);
+    } catch (err) {
+        console.error('Sipariş geçmişi getirilirken hata:', err);
+        return res.status(500).json({ error: 'Sipariş geçmişi getirilemedi' });
+    }
+}
+
 module.exports = {
     createOrder,
     getAllOrders,
@@ -861,5 +906,6 @@ module.exports = {
     updateOrderStatus,
     addOrderItems,
     removeOrderItem,
-    updateOrderItemQuantity
+    updateOrderItemQuantity,
+    getOrderHistory
 };

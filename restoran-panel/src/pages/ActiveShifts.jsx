@@ -54,11 +54,11 @@ export default function ActiveShifts() {
     <div className="p-6 lg:p-8">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
-          <p className="font-mono text-[10px] tracking-[0.3em] text-ember uppercase mb-1.5">Yönetici</p>
-          <h1 className="font-display text-3xl font-bold text-paper leading-none">Aktif Vardiyalar</h1>
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-1.5">Yönetici</p>
+          <h1 className="text-3xl font-extrabold text-paper leading-none tracking-tight">Aktif Vardiyalar</h1>
           <p className="font-mono text-xs text-slate mt-2">{rows.length} açık vardiya</p>
         </div>
-        <button onClick={() => load()} className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2.5 transition-colors">↻ Yenile</button>
+        <button onClick={() => load()} className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-3 py-2.5 bg-panel shadow-sm transition-colors">↻ Yenile</button>
       </div>
 
       {error && <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-6">{error}</p>}
@@ -120,7 +120,7 @@ export default function ActiveShifts() {
 
               <div className="grid grid-cols-3 gap-2">
                 <button onClick={() => setTransfer(s)} className="font-mono text-[10px] uppercase tracking-wide py-2 rounded-lg border border-hairline text-slate hover:border-azure hover:text-azure transition-colors">Devret</button>
-                <button onClick={() => setForceClose(s)} className="font-mono text-[10px] uppercase tracking-wide py-2 rounded-lg border border-ember/40 text-ember hover:bg-ember/10 transition-colors">Zorla Kapat</button>
+                <button onClick={() => setForceClose(s)} className="font-mono text-[10px] uppercase tracking-wide py-2 rounded-lg border border-[#FF6B6B]/40 text-[#FF6B6B] hover:bg-[#FF6B6B]/10 transition-colors">Zorla Kapat</button>
                 <button onClick={() => forceLogout(s)} className="font-mono text-[10px] uppercase tracking-wide py-2 rounded-lg border border-red-500/40 text-red-500 hover:bg-red-500/10 transition-colors">Zorla Çıkış</button>
               </div>
             </div>
@@ -197,7 +197,7 @@ function ForceCloseModal({ shift, onClose, onDone }) {
       {error && <p className="text-ember text-sm mb-3">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={onClose} disabled={busy} className="font-mono text-xs uppercase text-slate border border-hairline rounded-lg py-2.5 disabled:opacity-50">Vazgeç</button>
-        <button onClick={submit} disabled={busy} className="font-mono text-xs uppercase text-cream bg-ember hover:bg-ember/90 rounded-lg py-2.5 disabled:opacity-50">{busy ? '…' : 'Kapat'}</button>
+        <button onClick={submit} disabled={busy} className="font-mono text-xs uppercase text-white bg-[#FF6B6B] hover:bg-[#ff5555] rounded-lg py-2.5 disabled:opacity-50">{busy ? '…' : 'Kapat'}</button>
       </div>
     </Modal>
   );

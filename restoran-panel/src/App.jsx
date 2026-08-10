@@ -18,8 +18,6 @@ import Products from './pages/Products';
 import Users from './pages/Users';
 import Stock from './pages/Stock';
 import Categories from './pages/Categories';
-import Extras from './pages/Extras';
-import Syrups from './pages/Syrups';
 import Settings from './pages/Settings';
 import StockMovements from './pages/StockMovements';
 import Reports from './pages/Reports';
@@ -121,22 +119,10 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/extras"
-            element={
-              <ProtectedRoute allowedRoles={['Admin']}>
-                <Layout><Extras /></Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/syrups"
-            element={
-              <ProtectedRoute allowedRoles={['Admin']}>
-                <Layout><Syrups /></Layout>
-              </ProtectedRoute>
-            }
-          />
+          {/* Ekstralar/Şuruplar ayrı sayfaları kaldırıldı, Stok sayfasına
+              taşındı — eski linkleri (favori/yer imi) yönlendir. */}
+          <Route path="/extras" element={<Navigate to="/stock" replace />} />
+          <Route path="/syrups" element={<Navigate to="/stock" replace />} />
           <Route
             path="/settings"
             element={

@@ -2,6 +2,12 @@ import { useEffect, useState, useCallback } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import PaymentDrawer from '../components/PaymentDrawer';
+import { ACTIONS, dt, fmtDetails } from '../utils/auditLabels';
+
+// Toast'taki "Void Order" akışındaki hazır sebep listesiyle aynı fikir —
+// kasiyer/admin çoğu zaman aynı birkaç sebepten iptal eder, serbest metin
+// yazmak zorunda bırakmadan hızlı seçim sunar. "Diğer" seçilince metin alanı açılır.
+const CANCEL_REASONS = ['Yanlış sipariş girildi', 'Müşteri vazgeçti', 'Stok yetersiz', 'Diğer'];
 
 const STATUS_CONFIG = {
   Pending: { label: 'Bekliyor', dot: 'bg-amber-500', border: 'border-amber-500/40', bg: 'bg-amber-500/15' },
@@ -38,11 +44,15 @@ export default function Orders() {
 
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [orderDetail, setOrderDetail] = useState(null);
+  const [orderHistory, setOrderHistory] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [rowActionError, setRowActionError] = useState('');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // İptal onay + sebep modalı — hangi sipariş iptal edilmek isteniyor (orderId ya da null)
+  const [cancelTarget, setCancelTarget] = useState(null);
 
   // ---- Siparişleri getir ----
   const fetchOrders = useCallback(async () => {
@@ -77,15 +87,20 @@ export default function Orders() {
   const tableNumber = (tableId) =>
     tables.find((t) => t.TableId === tableId)?.TableNumber ?? tableId;
 
-  // ---- Detay aç ----
+  // ---- Detay aç ---- (detay + zaman çizelgesi paralel çekilir)
   const openDetail = async (orderId) => {
     setSelectedOrderId(orderId);
     setOrderDetail(null);
+    setOrderHistory([]);
     setDetailError('');
     setDetailLoading(true);
     try {
-      const res = await client.get(`/orders/${orderId}`);
-      setOrderDetail(res.data);
+      const [detailRes, historyRes] = await Promise.all([
+        client.get(`/orders/${orderId}`),
+        client.get(`/orders/${orderId}/history`).catch(() => ({ data: [] })), // geçmiş isteğe bağlı — hata detay görünümünü engellemesin
+      ]);
+      setOrderDetail(detailRes.data);
+      setOrderHistory(historyRes.data);
     } catch (err) {
       setDetailError(err.response?.data?.error || 'Sipariş detayı getirilemedi.');
     } finally {
@@ -96,18 +111,21 @@ export default function Orders() {
   const closeDetail = () => {
     setSelectedOrderId(null);
     setOrderDetail(null);
+    setOrderHistory([]);
     setDetailError('');
   };
 
-  // ---- İptal et (sadece Admin) ----
-  const cancelOrder = async (orderId) => {
+  // ---- İptal et (sadece Admin) ---- — CancelOrderModal'ın submit'i çağırır
+  const cancelOrder = async (orderId, reason) => {
     setRowActionError('');
     try {
-      await client.patch(`/orders/${orderId}/cancel`);
+      await client.patch(`/orders/${orderId}/cancel`, { Reason: reason || undefined });
+      setCancelTarget(null);
       await fetchOrders();
       if (selectedOrderId === orderId) await openDetail(orderId);
     } catch (err) {
       setRowActionError(err.response?.data?.error || 'Sipariş iptal edilemedi.');
+      throw err; // modal açık kalıp hatayı gösterebilsin diye yeniden fırlat
     }
   };
 
@@ -118,26 +136,27 @@ export default function Orders() {
 
   return (
     <div className="p-10">
-      {/* Başlık */}
+      {/* Başlık — Superdesign taslağıyla ("Kompakt Masa Yönetimi") aynı mercan
+          vurgu rengi, Tables.jsx'teki başlık/buton diliyle tutarlı. */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] uppercase tracking-[0.2em] mb-1">
             Mutfak · Servis
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Siparişler</h1>
+          <h1 className="text-4xl font-extrabold tracking-tight text-paper">Siparişler</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchOrders}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 shadow-sm transition-colors"
           >
             ↻ Yenile
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] rounded-xl px-4 py-2 shadow-lg shadow-red-500/10 transition-all"
           >
             + Yeni Sipariş
           </button>
@@ -156,15 +175,15 @@ export default function Orders() {
       </div>
 
       {/* Filtre sekmeleri */}
-      <div className="flex gap-1 mb-6 border-b border-hairline overflow-x-auto">
+      <div className="flex gap-1.5 mb-6 overflow-x-auto">
         {FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
-            className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
+            className={`text-[11px] font-bold uppercase tracking-wide px-4 py-1.5 rounded-full border transition-all whitespace-nowrap ${
               filter === f.value
-                ? 'border-ember text-paper font-semibold'
-                : 'border-transparent text-slate hover:text-paper'
+                ? 'bg-stone-900 text-white border-stone-900'
+                : 'bg-panel border-hairline text-slate hover:bg-hairline/40'
             }`}
           >
             {f.label}
@@ -181,11 +200,11 @@ export default function Orders() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : orders.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek sipariş bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
@@ -202,11 +221,11 @@ export default function Orders() {
                 const cfg = STATUS_CONFIG[o.Status] || STATUS_CONFIG.Pending;
                 const canCancel = isAdmin && !['Paid', 'Cancelled', 'Merged'].includes(o.Status);
                 return (
-                  <tr key={o.OrderId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
+                  <tr key={o.OrderId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30 transition-colors">
                     <td className="px-5 py-3 font-mono text-paper">#{o.OrderId}</td>
                     <td className="px-5 py-3 text-paper">Masa {tableNumber(o.TableId)}</td>
                     <td className="px-5 py-3">
-                      <span className={`inline-flex items-center gap-1.5 border rounded-sm px-2 py-1 text-xs font-mono uppercase tracking-wide ${cfg.border} ${cfg.bg}`}>
+                      <span className={`inline-flex items-center gap-1.5 border rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${cfg.border} ${cfg.bg}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
                         {cfg.label}
                       </span>
@@ -217,14 +236,14 @@ export default function Orders() {
                       <div className="flex justify-end gap-2 flex-wrap">
                         <button
                           onClick={() => openDetail(o.OrderId)}
-                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+                          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-stone-700 border border-stone-200 bg-white/60 hover:bg-white rounded-xl px-2.5 py-1.5 transition-all"
                         >
                           Detay
                         </button>
                         {canCancel && (
                           <button
-                            onClick={() => cancelOrder(o.OrderId)}
-                            className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                            onClick={() => setCancelTarget(o.OrderId)}
+                            className="text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl px-2.5 py-1.5 transition-all"
                           >
                             İptal Et
                           </button>
@@ -244,6 +263,7 @@ export default function Orders() {
         <OrderDetailModal
           orderId={selectedOrderId}
           detail={orderDetail}
+          history={orderHistory}
           loading={detailLoading}
           error={detailError}
           onClose={closeDetail}
@@ -252,6 +272,8 @@ export default function Orders() {
           statusConfig={STATUS_CONFIG}
           money={money}
           dateTime={dateTime}
+          canCancel={isAdmin && orderDetail && !['Paid', 'Cancelled', 'Merged'].includes(orderDetail.Status)}
+          onCancelClick={() => setCancelTarget(selectedOrderId)}
           onPaid={async () => {
             await fetchOrders();
             await openDetail(selectedOrderId);
@@ -272,6 +294,113 @@ export default function Orders() {
           }}
         />
       )}
+
+      {/* İptal onay + sebep modalı */}
+      {cancelTarget && (
+        <CancelOrderModal
+          orderId={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={(reason) => cancelOrder(cancelTarget, reason)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// İptal onay + sebep modalı — Toast'taki "Void Order" akışının aynısı:
+// önce bir sebep seçilir (ya da "Diğer" ile serbest metin girilir), sonra
+// onaylanır. Uygulamanın geri kalanında window.confirm hiç kullanılmıyor,
+// bu yüzden burada da gerçek bir modal tercih edildi (tutarlılık).
+// ============================================================
+function CancelOrderModal({ orderId, onClose, onConfirm }) {
+  const [reason, setReason] = useState(CANCEL_REASONS[0]);
+  const [customReason, setCustomReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleConfirm = async () => {
+    setError('');
+    const finalReason = reason === 'Diğer' ? customReason.trim() : reason;
+    if (reason === 'Diğer' && !finalReason) {
+      setError('Lütfen bir sebep yazın.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onConfirm(finalReason);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Sipariş iptal edilemedi.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-[60]" onClick={() => !submitting && onClose()}>
+      <div
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-sm shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-5 border-b border-hairline">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">İptal Onayı</p>
+          <h2 className="font-display text-lg font-semibold text-paper">Sipariş #{orderId} iptal edilsin mi?</h2>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Sebep</label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-paper bg-panel
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            >
+              {CANCEL_REASONS.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </div>
+
+          {reason === 'Diğer' && (
+            <div>
+              <textarea
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value)}
+                rows={2}
+                placeholder="İptal sebebini yazın..."
+                className="w-full border border-hairline rounded-sm px-3 py-2.5 font-body text-sm text-paper
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
+          )}
+
+          {error && (
+            <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3">{error}</p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-hairline flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-2.5 transition-colors disabled:opacity-50"
+          >
+            Vazgeç
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] disabled:opacity-50 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
+          >
+            {submitting ? 'İptal ediliyor...' : 'İptal Et'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -279,21 +408,31 @@ export default function Orders() {
 // ============================================================
 // Sipariş detay paneli
 // ============================================================
-function OrderDetailModal({ orderId, detail, loading, error, onClose, productName, tableNumber, statusConfig, money, dateTime, onPaid }) {
+function OrderDetailModal({ orderId, detail, history, loading, error, onClose, productName, tableNumber, statusConfig, money, dateTime, canCancel, onCancelClick, onPaid }) {
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
+        <div className="px-6 py-5 border-b border-hairline flex items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Sipariş Detayı</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">Sipariş Detayı</p>
             <h2 className="font-display text-xl font-semibold text-paper">#{orderId}</h2>
           </div>
-          <button onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
-            Kapat ✕
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            {canCancel && (
+              <button
+                onClick={onCancelClick}
+                className="text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl px-2.5 py-1.5 transition-all"
+              >
+                İptal Et
+              </button>
+            )}
+            <button onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
+              Kapat ✕
+            </button>
+          </div>
         </div>
 
         <div className="px-6 py-5">
@@ -372,6 +511,36 @@ function OrderDetailModal({ orderId, detail, loading, error, onClose, productNam
                   />
                 </div>
               )}
+
+              {/* Zaman çizelgesi — bu siparişe (AuditLog.EntityType='Order') ait
+                  kayıtlar, kronolojik sırada (kim/ne zaman/ne yaptı). */}
+              <div className="mt-5 pt-5 border-t border-hairline">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Geçmiş</p>
+                {history.length === 0 ? (
+                  <div className="border border-dashed border-hairline rounded-sm p-4 text-center">
+                    <p className="text-slate font-mono text-xs">Henüz kayıt yok.</p>
+                  </div>
+                ) : (
+                  <div className="border border-hairline rounded-sm divide-y divide-hairline">
+                    {history.map((h) => {
+                      const a = ACTIONS[h.Action] || { label: h.Action, cls: 'border-hairline text-slate' };
+                      return (
+                        <div key={h.AuditLogId} className="px-4 py-2.5 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`inline-flex items-center border rounded-sm px-1.5 py-0.5 font-mono uppercase tracking-wide ${a.cls}`}>
+                              {a.label}
+                            </span>
+                            <span className="font-mono text-slate shrink-0">{dt(h.CreatedAt)}</span>
+                          </div>
+                          <p className="text-slate mt-1">
+                            {h.UserName || '—'}{fmtDetails(h.Details) ? ` · ${fmtDetails(h.Details)}` : ''}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -441,12 +610,12 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
-        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Yeni</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">Yeni</p>
             <h2 className="font-display text-xl font-semibold text-paper">Sipariş Oluştur</h2>
           </div>
           <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
@@ -486,37 +655,49 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
 
             <div className="space-y-2.5">
               {items.map((item, idx) => (
-                <div key={idx} className="flex gap-2 items-start">
-                  <select
-                    value={item.ProductId}
-                    onChange={(e) => updateItem(idx, 'ProductId', e.target.value)}
-                    className="flex-1 border border-hairline rounded-sm px-3 py-2 font-body text-sm text-paper
-                               focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
-                  >
-                    <option value="">Ürün seçin</option>
-                    {products.filter((p) => p.IsActive !== false).map((p) => (
-                      <option key={p.ProductId} value={p.ProductId}>
-                        {p.Name}
-                      </option>
-                    ))}
-                  </select>
+                <div key={idx} className="border border-hairline rounded-sm p-2.5 space-y-2">
+                  <div className="flex gap-2 items-start">
+                    <select
+                      value={item.ProductId}
+                      onChange={(e) => updateItem(idx, 'ProductId', e.target.value)}
+                      className="flex-1 border border-hairline rounded-sm px-3 py-2 font-body text-sm text-paper
+                                 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                    >
+                      <option value="">Ürün seçin</option>
+                      {products.filter((p) => p.IsActive !== false).map((p) => (
+                        <option key={p.ProductId} value={p.ProductId}>
+                          {p.Name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.Quantity}
+                      onChange={(e) => updateItem(idx, 'Quantity', e.target.value)}
+                      className="w-20 border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper text-center
+                                 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                    />
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(idx)}
+                        className="font-mono text-xs text-slate hover:text-ember px-1"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  {/* Kalem bazlı not — "az şekerli", "fındık alerjisi" vb. (bkz. OrderDetails.Note,
+                      backend zaten destekliyor, buraya kadar hiç UI'sı yoktu). */}
                   <input
-                    type="number"
-                    min="1"
-                    value={item.Quantity}
-                    onChange={(e) => updateItem(idx, 'Quantity', e.target.value)}
-                    className="w-20 border border-hairline rounded-sm px-2 py-2 font-mono text-sm text-paper text-center
+                    type="text"
+                    value={item.Note}
+                    onChange={(e) => updateItem(idx, 'Note', e.target.value)}
+                    placeholder="📝 Kalem notu (opsiyonel) — ör. az şekerli"
+                    className="w-full border border-hairline rounded-sm px-3 py-1.5 font-body text-xs text-paper
                                focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                   />
-                  {items.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeItem(idx)}
-                      className="font-mono text-xs text-slate hover:text-ember px-1"
-                    >
-                      ✕
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
@@ -543,16 +724,16 @@ function CreateOrderModal({ tables, products, userId, onClose, onCreated }) {
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-2.5 transition-colors"
           >
             Vazgeç
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] disabled:opacity-50 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
           >
             {submitting ? 'Oluşturuluyor...' : 'Siparişi Oluştur'}
           </button>

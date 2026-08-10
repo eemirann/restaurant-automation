@@ -86,15 +86,15 @@ export default function Payments() {
       {/* Başlık */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Kasa · Tahsilat
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Ödemeler</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Ödemeler</h1>
         </div>
         <button
           onClick={fetchOrders}
-          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                     border border-hairline rounded-sm px-3 py-2 transition-colors"
+          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                     border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
         >
           ↻ Yenile
         </button>
@@ -107,8 +107,8 @@ export default function Payments() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Sipariş no veya masa ara..."
-          className="border border-hairline rounded-sm px-3 py-2 font-body text-sm text-paper w-64
-                     focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+          className="border border-hairline rounded-xl px-3 py-2 font-body text-sm text-paper w-64
+                     focus:outline-none focus:ring-2 focus:ring-[#FF6B6B]/40 focus:border-[#FF6B6B]"
         />
       </div>
 
@@ -117,9 +117,9 @@ export default function Payments() {
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
-            className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
+            className={`text-[11px] font-bold uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
               filter === f.value
-                ? 'border-ember text-paper font-semibold'
+                ? 'border-[#FF6B6B] text-[#FF6B6B]'
                 : 'border-transparent text-slate hover:text-paper'
             }`}
           >
@@ -135,11 +135,11 @@ export default function Payments() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : visibleOrders.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek sipariş bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
@@ -170,7 +170,7 @@ export default function Payments() {
                       <div className="flex justify-end">
                         <button
                           onClick={() => setSelectedOrderId(o.OrderId)}
-                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+                          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-2.5 py-1.5 transition-colors"
                         >
                           Ödeme Detayı
                         </button>
@@ -304,12 +304,12 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className="bg-panel rounded-sm border border-hairline w-full max-w-2xl max-h-[88vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-2xl max-h-[88vh] overflow-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Ödeme Detayı</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">Ödeme Detayı</p>
             <h2 className="font-display text-xl font-semibold text-paper">Sipariş #{orderId}</h2>
             {detail && (
               <p className="font-mono text-xs text-slate mt-0.5">
@@ -433,7 +433,7 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                                       <button
                                         onClick={() => submitRefund(p)}
                                         disabled={refundBusy}
-                                        className="font-mono text-[10px] uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 disabled:opacity-50 rounded-sm px-2 py-1"
+                                        className="font-mono text-[10px] uppercase tracking-wide text-white bg-[#FF6B6B] hover:bg-[#ff5555] disabled:opacity-50 rounded-lg px-2 py-1"
                                       >
                                         {refundBusy ? '...' : 'Onayla'}
                                       </button>
@@ -460,7 +460,7 @@ function PaymentDetailModal({ orderId, productName, tableNumber, statusConfig, o
                                     )}
                                     <button
                                       onClick={() => voidPayment(p.Id)}
-                                      className="font-mono text-[10px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2 py-1 transition-colors"
+                                      className="font-mono text-[10px] uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-lg px-2 py-1 transition-all"
                                     >
                                       İptal
                                     </button>

@@ -87,6 +87,8 @@ export function printKitchenTicket({ orderId, tableLabel, items, note, paperWidt
       const optionLines = [
         ...(it.extras || []).map((e) => `<div class="muted">&nbsp;&nbsp;+ ${e.quantity}x ${e.name}</div>`),
         ...(it.syrups || []).map((s) => `<div class="muted">&nbsp;&nbsp;+ ${s.quantity}x ${s.name}</div>`),
+        // Kalem bazlı not (ör. "az şekerli") — KDS ekranındakiyle aynı 📝 işaretiyle
+        ...(it.note ? [`<div class="muted">&nbsp;&nbsp;📝 ${it.note}</div>`] : []),
       ].join('');
       return `<tr><td colspan="2"><span class="big">${it.quantity}x ${it.name}</span>${optionLines}</td></tr>`;
     })

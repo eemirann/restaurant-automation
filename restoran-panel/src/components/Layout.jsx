@@ -38,10 +38,11 @@ const NAV_ITEMS = [
   {
     key: 'stock', label: 'Stok', roles: ['Admin'], icon: '📦', to: '/stock',
     children: [
+      // Ekstralar/Şuruplar için ayrı sayfalar kaldırıldı — Stok sayfası tek
+      // adres oldu; şurup/ekstra ekleme "Yeni Stok" çekmecesindeki Tür
+      // seçiciyle, mevcut kayıtlar rozetle (🧴/➕) ayırt edilerek yapılıyor.
       { to: '/stock', label: 'Stok', roles: ['Admin'], icon: '📦' },
       { to: '/recipes', label: 'Reçeteler', roles: ['Admin'], icon: '🧪' },
-      { to: '/extras', label: 'Ekstralar', roles: ['Admin'], icon: '🍯' },
-      { to: '/syrups', label: 'Şuruplar', roles: ['Admin'], icon: '🍮' },
     ],
   },
   { to: '/invoices', label: 'Faturalar', roles: ['Admin'], icon: '🧾' },

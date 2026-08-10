@@ -5,6 +5,31 @@ import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 
+// ============================================================
+// Ürün Türü Rozeti — Şurup/Ekstra sayfaları kaldırıldığı için, hangi stok
+// kaleminin bir hammadde/şurup/ekstra olduğu artık burada, satırın
+// içinde küçük bir renkli rozet + emoji ile ayırt ediliyor.
+// ============================================================
+function TypeBadge({ isSyrup, isExtra }) {
+  if (isSyrup) {
+    return (
+      <span className="inline-flex items-center gap-1 border border-violet-400/40 bg-violet-400/10 text-violet-300
+                        rounded-full px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide shrink-0">
+        🧴 Şurup
+      </span>
+    );
+  }
+  if (isExtra) {
+    return (
+      <span className="inline-flex items-center gap-1 border border-[#FF6B6B]/40 bg-[#FF6B6B]/10 text-[#FF6B6B]
+                        rounded-full px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide shrink-0">
+        ➕ Ekstra
+      </span>
+    );
+  }
+  return null;
+}
+
 export default function Stock() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -23,6 +48,12 @@ export default function Stock() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('name-asc');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Pasifleştirilmiş kalemler VARSAYILAN OLARAK gizli — Toast/Square gibi
+  // POS'larda "86'd" ürünler ayrı bir görünümde toplanır, ana listeyi
+  // kirletmez (bkz. Toast Menu Item Inventory, Square "Sold out" akışı).
+  // Kullanıcı isterse "Pasifleri Göster" ile açar.
+  const [showInactive, setShowInactive] = useState(false);
 
   // Yeni stok kalemi ekleme çekmecesi
   const [showAddDrawer, setShowAddDrawer] = useState(false);
@@ -57,10 +88,20 @@ export default function Stock() {
     client.get('/products', { params: { raw: 'stockable' } }).then((res) => setProducts(res.data)).catch(() => {});
   }, []);
 
+  const isItemTracked = (item) => item.IsTracked !== false && item.IsTracked !== 0;
+
   // Önce ürün adına göre ara (basit, memoization yok)
   let filteredItems = stockItems.filter((item) =>
     item.ProductName.toLocaleLowerCase('tr-TR').includes(searchTerm.toLocaleLowerCase('tr-TR'))
   );
+
+  const inactiveCount = filteredItems.filter((item) => !isItemTracked(item)).length;
+
+  // Pasifleştirilmiş kalemler varsayılan olarak listeden tamamen çıkarılır
+  // (bkz. showInactive tanımı) — "Pasifleri Göster" açıkken geri gelirler.
+  if (!showInactive) {
+    filteredItems = filteredItems.filter((item) => isItemTracked(item));
+  }
 
   // Sonra duruma göre filtrele
   if (statusFilter === 'available') {
@@ -83,6 +124,12 @@ export default function Stock() {
     filteredItems.sort((a, b) => b.Quantity - a.Quantity);
   } else if (sortBy === 'recent') {
     filteredItems.sort((a, b) => new Date(b.UpdatedAt) - new Date(a.UpdatedAt));
+  }
+  // Seçilen sıralamadan BAĞIMSIZ olarak pasif kalemler her zaman en alta
+  // sinker (Toast/Square'de "86'd" ürünlerin ayrı/geri planda durmasıyla
+  // aynı amaç — göz önce aktif ürünleri görsün).
+  if (showInactive) {
+    filteredItems.sort((a, b) => Number(!isItemTracked(a)) - Number(!isItemTracked(b)));
   }
 
   const outOfStockCount = stockItems.filter((item) => item.Quantity <= 0).length;
@@ -154,31 +201,44 @@ export default function Stock() {
       {/* Başlık */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Depo · Envanter
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Stok Yönetimi</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Stok Yönetimi</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchStock}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
           >
             ↻ Yenile
           </button>
           <button
             onClick={() => navigate('/stock-movements')}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
           >
             🕘 Hareket Geçmişi
           </button>
+          {inactiveCount > 0 && (
+            <button
+              onClick={() => setShowInactive((v) => !v)}
+              title="Pasifleştirilmiş kalemler varsayılan olarak gizlenir"
+              className={`text-[11px] font-bold uppercase tracking-wide border rounded-xl px-3 py-2 shadow-sm transition-colors ${
+                showInactive
+                  ? 'border-[#FF6B6B] text-[#FF6B6B] bg-[#FF6B6B]/10'
+                  : 'border-hairline text-slate hover:text-paper bg-panel'
+              }`}
+            >
+              {showInactive ? '🙈 Pasifleri Gizle' : `👁 Pasifleri Göster (${inactiveCount})`}
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={() => setShowAddDrawer(true)}
-              className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                         hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+              className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                         hover:bg-[#ff5555] rounded-xl px-4 py-2 shadow-lg shadow-red-500/10 transition-all"
             >
               + Yeni Stok
             </button>
@@ -300,11 +360,11 @@ export default function Stock() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : filteredItems.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek stok kaydı bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
@@ -329,8 +389,18 @@ export default function Stock() {
                 const statusDotClass = isOut ? 'bg-slate' : isLow ? 'bg-ember' : 'bg-moss';
                 const isTracked = item.IsTracked !== false && item.IsTracked !== 0;
                 return (
-                  <tr key={item.StockId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
-                    <td className="px-5 py-3 text-paper font-medium">{item.ProductName}</td>
+                  <tr
+                    key={item.StockId}
+                    className={`border-b border-hairline last:border-b-0 hover:bg-hairline/30 ${
+                      !isTracked ? 'opacity-45 hover:opacity-100 transition-opacity' : ''
+                    }`}
+                  >
+                    <td className="px-5 py-3 text-paper font-medium">
+                      <span className="flex items-center gap-2">
+                        {item.ProductName}
+                        <TypeBadge isSyrup={item.IsSyrup} isExtra={item.IsExtra} />
+                      </span>
+                    </td>
                     <td className="px-5 py-3 font-mono text-paper">{item.Quantity}</td>
                     <td className="px-5 py-3 font-mono text-slate">{item.MinStockLevel}</td>
                     <td className="px-5 py-3">
@@ -365,47 +435,55 @@ export default function Stock() {
                     {isAdmin && (
                       <td className="px-5 py-3">
                         <div className="flex justify-end items-center gap-2 flex-wrap">
-                          <button
-                            onClick={() => handleDecrease(item)}
-                            title="1 azalt"
-                            className="w-11 h-11 flex items-center justify-center font-mono text-paper border border-hairline rounded-sm
-                                       hover:border-ember hover:text-ember transition-colors"
-                          >
-                            −
-                          </button>
-                          <button
-                            onClick={() => handleIncrease(item)}
-                            title="1 artır"
-                            className="w-11 h-11 flex items-center justify-center font-mono text-cream bg-ember rounded-sm
-                                       hover:bg-ember/90 transition-colors"
-                          >
-                            +
-                          </button>
-                          <button
-                            onClick={() => setPurchaseItem(item)}
-                            title="Stok alımı ekle"
-                            className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
-                          >
-                            Alım Ekle
-                          </button>
+                          {/* Pasif kalemde stok hareketi anlamsız — azalt/artır/alım
+                              butonları gizlenir, sadece Düzenle + Aktif Et kalır
+                              (bkz. Toast/Square: "86'd" ürünlerde satış aksiyonları
+                              devre dışı kalır, sadece geri açma seçeneği kalır). */}
+                          {isTracked && (
+                            <>
+                              <button
+                                onClick={() => handleDecrease(item)}
+                                title="1 azalt"
+                                className="w-11 h-11 flex items-center justify-center font-mono text-paper border border-hairline rounded-xl
+                                           hover:border-[#FF6B6B] hover:text-[#FF6B6B] transition-colors"
+                              >
+                                −
+                              </button>
+                              <button
+                                onClick={() => handleIncrease(item)}
+                                title="1 artır"
+                                className="w-11 h-11 flex items-center justify-center font-mono text-white bg-[#FF6B6B] rounded-xl
+                                           hover:bg-[#ff5555] transition-colors"
+                              >
+                                +
+                              </button>
+                              <button
+                                onClick={() => setPurchaseItem(item)}
+                                title="Stok alımı ekle"
+                                className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-2.5 py-1.5 transition-colors"
+                              >
+                                Alım Ekle
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() => setEditItem(item)}
                             title="Adet / Min. stok düzenle"
-                            className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-azure border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+                            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-azure border border-hairline rounded-xl px-2.5 py-1.5 transition-colors"
                           >
                             Düzenle
                           </button>
                           {isTracked ? (
                             <button
                               onClick={() => handleDeactivate(item)}
-                              className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                              className="text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl px-2.5 py-1.5 transition-all"
                             >
                               Pasife Al
                             </button>
                           ) : (
                             <button
                               onClick={() => handleReactivate(item)}
-                              className="font-mono text-[11px] uppercase tracking-wide text-moss hover:text-moss/80 border border-moss/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                              className="text-[11px] font-bold uppercase tracking-wide text-moss hover:text-moss/80 border border-moss/40 rounded-xl px-2.5 py-1.5 transition-colors"
                             >
                               Aktif Et
                             </button>
@@ -484,6 +562,13 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // Tür: 'raw' (hammadde) | 'syrup' | 'extra' — Şurup/Ekstra sayfaları
+  // kaldırıldığı için yeni bir şurup/ekstra artık doğrudan bu tek formdan
+  // açılıyor (bkz. controllers/stockController.js createStockItem).
+  const [itemType, setItemType] = useState('raw');
+  const [typePrice, setTypePrice] = useState('');
+  const [servingSize, setServingSize] = useState('');
+
   // Ürün listesinde ara / A-Z sırala (Stok listesindeki arama/sıralama ile aynı mantık)
   const [productSearch, setProductSearch] = useState('');
   const [productSort, setProductSort] = useState('name-asc');
@@ -514,6 +599,10 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
       setError('Adet ve minimum stok negatif olamaz.');
       return;
     }
+    if (!existingStock && itemType !== 'raw' && (typePrice === '' || Number(typePrice) < 0)) {
+      setError('Şurup/Ekstra için negatif olmayan bir Fiyat girin.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -536,6 +625,9 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
           Supplier: supplier.trim() || undefined,
           InvoiceNumber: invoiceNumber.trim() || undefined,
           Notes: notes.trim() || undefined,
+          Type: itemType,
+          Price: itemType !== 'raw' ? Number(typePrice) : undefined,
+          ServingSize: itemType !== 'raw' && servingSize !== '' ? Number(servingSize) : undefined,
         });
       }
       onSaved();
@@ -563,7 +655,7 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
         {/* Başlık */}
         <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
           <div>
-            <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Stok</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.25em] uppercase mb-1">Stok</p>
             <h2 className="font-display text-lg font-semibold text-paper leading-tight">
               {existingStock ? 'Mevcut Stoğu Güncelle' : 'Yeni Stok Kalemi'}
             </h2>
@@ -644,6 +736,67 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
                              focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
                 />
               </div>
+
+              {/* Tür: bu kalem sipariş ekranında bir şurup/ekstra seçeneği
+                  olarak da çıksın mı? (bkz. controllers/stockController.js) */}
+              <div>
+                <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Tür</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'raw', label: '🥩 Hammadde' },
+                    { value: 'syrup', label: '🧴 Şurup' },
+                    { value: 'extra', label: '➕ Ekstra' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setItemType(opt.value)}
+                      className={`text-[11px] font-bold uppercase tracking-wide rounded-xl px-2 py-2 border transition-colors ${
+                        itemType === opt.value
+                          ? 'border-[#FF6B6B] text-[#FF6B6B] bg-[#FF6B6B]/10'
+                          : 'border-hairline text-slate hover:text-paper'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {itemType !== 'raw' && (
+                <>
+                  <div>
+                    <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                      {itemType === 'syrup' ? 'Şurup' : 'Ekstra'} Ücreti <span className="normal-case text-slate/70">(sipariş ekranında eklenince müşteriden alınacak fiyat)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={typePrice}
+                      onChange={(e) => setTypePrice(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
+                                 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+                      1 Porsiyon Kaç ml Tüketir? <span className="normal-case text-slate/70">(opsiyonel — girilmezse stoktan otomatik düşülmez)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={servingSize}
+                      onChange={(e) => setServingSize(e.target.value)}
+                      placeholder="ör. 10"
+                      className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
+                                 focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -740,8 +893,8 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-3 transition-colors disabled:opacity-50"
           >
             Vazgeç
           </button>
@@ -749,9 +902,9 @@ function StockAddDrawer({ products, stockItems, onClose, onSaved }) {
             type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 active:bg-ember/80 disabled:opacity-40 disabled:cursor-not-allowed
-                       rounded-sm px-6 py-3 transition-colors shadow-sm"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] active:bg-[#ff4444] disabled:opacity-40 disabled:cursor-not-allowed
+                       rounded-xl px-6 py-3 shadow-lg shadow-red-500/10 transition-all"
           >
             {submitting ? 'Kaydediliyor...' : 'Kaydet'}
           </button>
@@ -819,7 +972,7 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
         {/* Başlık */}
         <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
           <div>
-            <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Stok Alımı</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.25em] uppercase mb-1">Stok Alımı</p>
             <h2 className="font-display text-lg font-semibold text-paper leading-tight">{item.ProductName}</h2>
           </div>
           <button
@@ -914,8 +1067,8 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-3 transition-colors disabled:opacity-50"
           >
             Vazgeç
           </button>
@@ -923,9 +1076,9 @@ function StockPurchaseDrawer({ item, onClose, onSaved }) {
             type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 active:bg-ember/80 disabled:opacity-40 disabled:cursor-not-allowed
-                       rounded-sm px-6 py-3 transition-colors shadow-sm"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] active:bg-[#ff4444] disabled:opacity-40 disabled:cursor-not-allowed
+                       rounded-xl px-6 py-3 shadow-lg shadow-red-500/10 transition-all"
           >
             {submitting ? 'Kaydediliyor...' : 'Kaydet'}
           </button>
@@ -1019,7 +1172,7 @@ function StockEditDrawer({ item, onClose, onSaved }) {
 
         <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
           <div>
-            <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Stok Düzenle</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.25em] uppercase mb-1">Stok Düzenle</p>
             <h2 className="font-display text-lg font-semibold text-paper leading-tight">{item.ProductName}</h2>
           </div>
           <button
@@ -1073,7 +1226,7 @@ function StockEditDrawer({ item, onClose, onSaved }) {
                   type="checkbox"
                   checked={isSyrup}
                   onChange={(e) => { setIsSyrup(e.target.checked); setTypeSaved(false); }}
-                  className="w-4 h-4 accent-ember"
+                  className="w-4 h-4 accent-[#FF6B6B]"
                 />
                 Şurup olarak işaretle (sipariş ekranında şurup seçeneği olarak çıkar)
               </label>
@@ -1082,7 +1235,7 @@ function StockEditDrawer({ item, onClose, onSaved }) {
                   type="checkbox"
                   checked={isExtra}
                   onChange={(e) => { setIsExtra(e.target.checked); setTypeSaved(false); }}
-                  className="w-4 h-4 accent-ember"
+                  className="w-4 h-4 accent-[#FF6B6B]"
                 />
                 Ekstra olarak işaretle (sipariş ekranında ekstra seçeneği olarak çıkar)
               </label>
@@ -1111,9 +1264,9 @@ function StockEditDrawer({ item, onClose, onSaved }) {
               type="button"
               onClick={saveType}
               disabled={typeSaving || !typeChanged}
-              className="w-full font-mono text-xs uppercase tracking-wide text-paper border border-hairline
-                         hover:border-ember hover:text-ember disabled:opacity-40 disabled:cursor-not-allowed
-                         rounded-sm px-4 py-2.5 transition-colors"
+              className="w-full text-xs font-bold uppercase tracking-wide text-paper border border-hairline
+                         hover:border-[#FF6B6B] hover:text-[#FF6B6B] disabled:opacity-40 disabled:cursor-not-allowed
+                         rounded-xl px-4 py-2.5 transition-colors"
             >
               {typeSaving ? 'Kaydediliyor...' : 'Ürün Türünü Kaydet'}
             </button>
@@ -1125,8 +1278,8 @@ function StockEditDrawer({ item, onClose, onSaved }) {
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-3 transition-colors disabled:opacity-50"
           >
             Vazgeç
           </button>
@@ -1134,9 +1287,9 @@ function StockEditDrawer({ item, onClose, onSaved }) {
             type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-azure
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-cream bg-azure
                        hover:bg-azure/90 active:bg-azure/80 disabled:opacity-40 disabled:cursor-not-allowed
-                       rounded-sm px-6 py-3 transition-colors shadow-sm"
+                       rounded-xl px-6 py-3 shadow-sm transition-colors"
           >
             {submitting ? 'Kaydediliyor...' : 'Kaydet'}
           </button>

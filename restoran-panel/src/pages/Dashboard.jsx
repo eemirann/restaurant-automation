@@ -15,7 +15,9 @@ const fmtDur = (from, now) => {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 };
 
-const CATEGORY_COLORS = ['#FF4713', '#0090FF', '#00C853', '#FFB020', '#8B5CF6', 'rgb(var(--color-slate))'];
+// Superdesign taslağıyla ("Kompakt Masa Yönetimi") aynı kimlik — mercan
+// birincil, turkuaz ikincil (eskiden #FF4713 turuncu / #0090FF mavi).
+const CATEGORY_COLORS = ['#FF6B6B', '#14B8A6', '#00C853', '#FFB020', '#8B5CF6', 'rgb(var(--color-slate))'];
 
 const STATUS_CONFIG = {
   Pending: { label: 'Bekliyor', dot: 'bg-amber-500', border: 'border-amber-500/40', bg: 'bg-amber-500/15', bar: 'bg-amber-500' },
@@ -25,10 +27,14 @@ const STATUS_CONFIG = {
   Merged: { label: 'Birleştirildi', dot: 'bg-ink/50', border: 'border-ink/20', bg: 'bg-ink/5', bar: 'bg-ink/40' },
 };
 
+// "ember"/"blue" etiketleri korunuyor (statsById içinde bu isimlerle
+// referans veriliyor) ama Superdesign taslağıyla ("Kompakt Masa Yönetimi")
+// tutarlı olsun diye mercan/turkuaz sabit hex'lerine çevrildi — Tables.jsx
+// ve Orders.jsx'teki aynı kimlik değişikliğiyle aynı desen.
 const ACCENT_STYLES = {
   emerald: 'bg-emerald-500/15 text-emerald-400',
-  blue: 'bg-blue-500/15 text-blue-400',
-  ember: 'bg-ember/10 text-ember',
+  blue: 'bg-[#14B8A6]/15 text-[#0d9488]',
+  ember: 'bg-[#FF6B6B]/15 text-[#FF6B6B]',
   moss: 'bg-moss/10 text-moss',
   rose: 'bg-rose-500/15 text-rose-400',
   slate: 'bg-slate/10 text-slate',
@@ -287,7 +293,7 @@ export default function Dashboard() {
             onClick={() => setEditingWidgets((v) => !v)}
             className={`font-mono text-xs uppercase tracking-wide border rounded-sm px-3 py-2 transition-colors
                        flex items-center gap-2 ${
-                         editingWidgets ? 'border-ember text-ember bg-ember/5' : 'border-hairline text-slate hover:text-ember'
+                         editingWidgets ? 'border-[#FF6B6B] text-[#FF6B6B] bg-[#FF6B6B]/5' : 'border-hairline text-slate hover:text-[#FF6B6B]'
                        }`}
           >
             <IconSliders /> Widget'ları Düzenle
@@ -295,7 +301,7 @@ export default function Dashboard() {
           <button
             onClick={fetchData}
             disabled={loading}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-[#FF6B6B]
                        border border-hairline rounded-sm px-3 py-2 transition-colors
                        flex items-center gap-2 disabled:opacity-50"
           >
@@ -329,8 +335,8 @@ export default function Dashboard() {
               <AreaChart data={data.hourlyRevenue} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="hourlyFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0090FF" stopOpacity={0.28} />
-                    <stop offset="100%" stopColor="#0090FF" stopOpacity={0.02} />
+                    <stop offset="0%" stopColor="#14B8A6" stopOpacity={0.28} />
+                    <stop offset="100%" stopColor="#14B8A6" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} stroke="rgb(var(--color-hairline))" />
@@ -349,7 +355,7 @@ export default function Dashboard() {
                   tickFormatter={compactMoney}
                 />
                 <Tooltip
-                  cursor={{ stroke: '#0090FF', strokeWidth: 1, strokeDasharray: '4 4' }}
+                  cursor={{ stroke: '#14B8A6', strokeWidth: 1, strokeDasharray: '4 4' }}
                   formatter={(value) => [money(value), 'Ciro']}
                   contentStyle={{
                     borderRadius: 10,
@@ -365,10 +371,10 @@ export default function Dashboard() {
                 <Area
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#0090FF"
+                  stroke="#14B8A6"
                   strokeWidth={2.5}
                   fill="url(#hourlyFill)"
-                  dot={{ r: 3, fill: '#0090FF', strokeWidth: 0 }}
+                  dot={{ r: 3, fill: '#14B8A6', strokeWidth: 0 }}
                   activeDot={{ r: 5 }}
                 />
               </AreaChart>
@@ -511,8 +517,8 @@ export default function Dashboard() {
                 key={p.key}
                 onClick={() => changeBestSellingPreset(p.key)}
                 disabled={loading}
-                className={`font-mono text-[10px] uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-50 ${
-                  bestSellingPreset === p.key ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper'
+                className={`font-mono text-[10px] uppercase tracking-wide px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50 ${
+                  bestSellingPreset === p.key ? 'border-[#FF6B6B] bg-[#FF6B6B]/10 text-[#FF6B6B] font-semibold' : 'border-hairline text-slate hover:text-paper'
                 }`}
               >
                 {p.label}
@@ -539,7 +545,7 @@ export default function Dashboard() {
                   </div>
                   <div className="h-1.5 rounded-full bg-hairline overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-ember"
+                      className="h-full rounded-full bg-[#FF6B6B]"
                       style={{ width: `${maxSold ? Math.max((p.QuantitySold / maxSold) * 100, 6) : 0}%` }}
                     />
                   </div>
@@ -624,8 +630,8 @@ export default function Dashboard() {
             <AreaChart data={data.weeklyRevenue} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#FF4713" stopOpacity={0.28} />
-                  <stop offset="100%" stopColor="#FF4713" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#FF6B6B" stopOpacity={0.28} />
+                  <stop offset="100%" stopColor="#FF6B6B" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} stroke="rgb(var(--color-hairline))" />
@@ -643,7 +649,7 @@ export default function Dashboard() {
                 tickFormatter={compactMoney}
               />
               <Tooltip
-                cursor={{ stroke: '#FF4713', strokeWidth: 1, strokeDasharray: '4 4' }}
+                cursor={{ stroke: '#FF6B6B', strokeWidth: 1, strokeDasharray: '4 4' }}
                 formatter={(value) => [money(value), 'Ciro']}
                 labelFormatter={(label) => label}
                 contentStyle={{
@@ -660,10 +666,10 @@ export default function Dashboard() {
               <Area
                 type="monotone"
                 dataKey="revenue"
-                stroke="#FF4713"
+                stroke="#FF6B6B"
                 strokeWidth={2.5}
                 fill="url(#revenueFill)"
-                dot={{ r: 3, fill: '#FF4713', strokeWidth: 0 }}
+                dot={{ r: 3, fill: '#FF6B6B', strokeWidth: 0 }}
                 activeDot={{ r: 5 }}
               />
             </AreaChart>
@@ -676,7 +682,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <Panel
           title="Son Siparişler"
-          action={<Link to="/orders" className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80">Tümü →</Link>}
+          action={<Link to="/orders" className="font-mono text-[11px] uppercase tracking-wide text-[#FF6B6B] hover:text-[#ff5555]">Tümü →</Link>}
         >
           {!data ? (
             <p className="text-slate font-mono text-sm">Yükleniyor...</p>
@@ -709,7 +715,7 @@ export default function Dashboard() {
 
         <Panel
           title="Düşük Stok Ürünleri"
-          action={<Link to="/stock" className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80">Tümü →</Link>}
+          action={<Link to="/stock" className="font-mono text-[11px] uppercase tracking-wide text-[#FF6B6B] hover:text-[#ff5555]">Tümü →</Link>}
         >
           {!data ? (
             <p className="text-slate font-mono text-sm">Yükleniyor...</p>
@@ -744,7 +750,7 @@ export default function Dashboard() {
       {/* Açık Masalar */}
       <Panel
         title="Açık Masalar"
-        action={<Link to="/tables" className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80">Tümü →</Link>}
+        action={<Link to="/tables" className="font-mono text-[11px] uppercase tracking-wide text-[#FF6B6B] hover:text-[#ff5555]">Tümü →</Link>}
       >
         {!data ? (
           <p className="text-slate font-mono text-sm">Yükleniyor...</p>
@@ -754,9 +760,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {data.openTables.map((t) => (
               <div key={t.TableNumber} className="relative border border-hairline rounded-xl p-4 bg-hairline/20 overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-1 bg-ember/60" />
+                <div className="absolute top-0 left-0 right-0 h-1 bg-[#FF6B6B]/60" />
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-ember animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF6B6B] animate-pulse" />
                   <p className="font-mono text-[10px] uppercase tracking-widest text-slate">
                     Masa {t.TableNumber}
                   </p>
@@ -837,7 +843,7 @@ function WidgetEditor({ widgetPrefs, setWidgetPrefs }) {
                 type="checkbox"
                 checked={w.visible}
                 onChange={() => toggleVisible(w.id)}
-                className="accent-ember w-4 h-4 shrink-0"
+                className="accent-[#FF6B6B] w-4 h-4 shrink-0"
               />
               <span className="text-sm text-paper">{WIDGET_LABELS[w.id]}</span>
             </label>

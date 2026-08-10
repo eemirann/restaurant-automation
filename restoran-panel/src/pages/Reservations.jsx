@@ -117,10 +117,10 @@ export default function Reservations() {
       {/* Başlık */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Masalar · Rezervasyon
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Rezervasyonlar</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Rezervasyonlar</h1>
           <p className="font-body text-sm text-slate mt-1">
             Manuel sistemdir — rezervasyon oluşturmak masa durumunu otomatik değiştirmez, masayı ayrıca Rezerve olarak işaretlemeniz gerekir.
           </p>
@@ -128,16 +128,16 @@ export default function Reservations() {
         <div className="flex gap-2">
           <button
             onClick={fetchReservations}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
           >
             ↻ Yenile
           </button>
           {canManage && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                         hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+              className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                         hover:bg-[#ff5555] rounded-xl px-4 py-2 shadow-lg shadow-red-500/10 transition-all"
             >
               + Yeni Rezervasyon
             </button>
@@ -163,9 +163,9 @@ export default function Reservations() {
             <button
               key={f.value}
               onClick={() => setFilter(f.value)}
-              className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
+              className={`text-[11px] font-bold uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors whitespace-nowrap ${
                 filter === f.value
-                  ? 'border-ember text-paper font-semibold'
+                  ? 'border-[#FF6B6B] text-[#FF6B6B]'
                   : 'border-transparent text-slate hover:text-paper'
               }`}
             >
@@ -181,9 +181,9 @@ export default function Reservations() {
             <button
               key={v.key}
               onClick={() => setViewMode(v.key)}
-              className={`font-mono text-[11px] uppercase tracking-wide px-3 py-1.5 rounded-sm border transition-colors ${
+              className={`text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-full border transition-colors ${
                 viewMode === v.key
-                  ? 'border-ember text-cream bg-ember'
+                  ? 'border-[#FF6B6B] text-white bg-[#FF6B6B]'
                   : 'border-hairline text-slate hover:text-paper'
               }`}
             >
@@ -202,7 +202,7 @@ export default function Reservations() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : reservations.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek rezervasyon bulunamadı.</p>
         </div>
       ) : viewMode === 'calendar' ? (
@@ -215,7 +215,7 @@ export default function Reservations() {
           onCancel={cancelReservation}
         />
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
@@ -252,7 +252,7 @@ export default function Reservations() {
                           {r.Status === 'Active' && (
                             <button
                               onClick={() => cancelReservation(r)}
-                              className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                              className="text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl px-2.5 py-1.5 transition-all"
                             >
                               İptal Et
                             </button>
@@ -306,8 +306,8 @@ function CalendarView({ reservations, weekStart, setWeekStart, tableNumber, canM
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={() => setWeekStart(addDays(weekStart, -7))}
-          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                     border border-hairline rounded-sm px-3 py-1.5 transition-colors"
+          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                     border border-hairline rounded-xl px-3 py-1.5 bg-panel shadow-sm transition-colors"
         >
           ← Önceki Hafta
         </button>
@@ -315,16 +315,16 @@ function CalendarView({ reservations, weekStart, setWeekStart, tableNumber, canM
           <p className="font-mono text-xs text-slate">{weekLabel}</p>
           <button
             onClick={() => setWeekStart(startOfWeek(new Date()))}
-            className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80
-                       border border-ember/40 rounded-sm px-2.5 py-1 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B]
+                       border border-[#FF6B6B]/40 rounded-full px-2.5 py-1 transition-all"
           >
             Bu Hafta
           </button>
         </div>
         <button
           onClick={() => setWeekStart(addDays(weekStart, 7))}
-          className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                     border border-hairline rounded-sm px-3 py-1.5 transition-colors"
+          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                     border border-hairline rounded-xl px-3 py-1.5 bg-panel shadow-sm transition-colors"
         >
           Sonraki Hafta →
         </button>
@@ -336,12 +336,12 @@ function CalendarView({ reservations, weekStart, setWeekStart, tableNumber, canM
           return (
             <div
               key={i}
-              className={`border rounded-sm bg-panel min-h-[140px] flex flex-col ${
-                isToday ? 'border-ember/50' : 'border-hairline'
+              className={`border rounded-2xl bg-panel min-h-[140px] flex flex-col ${
+                isToday ? 'border-[#FF6B6B]/50' : 'border-hairline'
               }`}
             >
-              <div className={`px-3 py-2 border-b ${isToday ? 'border-ember/30 bg-ember/5' : 'border-hairline bg-hairline/30'}`}>
-                <p className={`font-mono text-[10px] uppercase tracking-widest ${isToday ? 'text-ember' : 'text-slate'}`}>
+              <div className={`px-3 py-2 border-b ${isToday ? 'border-[#FF6B6B]/30 bg-[#FF6B6B]/5' : 'border-hairline bg-hairline/30'}`}>
+                <p className={`font-mono text-[10px] uppercase tracking-widest ${isToday ? 'text-[#FF6B6B]' : 'text-slate'}`}>
                   {DAY_NAMES[i]}
                 </p>
                 <p className="font-mono text-xs text-paper mt-0.5">{shortDate(day)}</p>
@@ -368,7 +368,7 @@ function CalendarView({ reservations, weekStart, setWeekStart, tableNumber, canM
                         {canManage && r.Status === 'Active' && (
                           <button
                             onClick={() => onCancel(r)}
-                            className="font-mono text-[10px] uppercase tracking-wide text-ember hover:text-ember/80 mt-1"
+                            className="font-mono text-[10px] uppercase tracking-wide text-[#FF6B6B] hover:text-[#ff5555] mt-1"
                           >
                             İptal Et
                           </button>
@@ -445,7 +445,7 @@ function CreateReservationModal({ tables, onClose, onCreated }) {
 
         <div className="px-6 py-4 border-b border-hairline flex items-start justify-between shrink-0 bg-panel">
           <div>
-            <p className="font-mono text-[10px] tracking-[0.25em] text-ember uppercase mb-1">Yeni</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.25em] uppercase mb-1">Yeni</p>
             <h2 className="font-display text-lg font-semibold text-paper leading-tight">Rezervasyon Oluştur</h2>
           </div>
           <button
@@ -544,8 +544,8 @@ function CreateReservationModal({ tables, onClose, onCreated }) {
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="flex-1 font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-3 transition-colors disabled:opacity-50"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-3 transition-colors disabled:opacity-50"
           >
             Vazgeç
           </button>
@@ -553,9 +553,9 @@ function CreateReservationModal({ tables, onClose, onCreated }) {
             type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex-1 font-mono text-sm uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 active:bg-ember/80 disabled:opacity-40 disabled:cursor-not-allowed
-                       rounded-sm px-6 py-3 transition-colors shadow-sm"
+            className="flex-1 text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] active:bg-[#ff4444] disabled:opacity-40 disabled:cursor-not-allowed
+                       rounded-xl px-6 py-3 shadow-lg shadow-red-500/10 transition-all"
           >
             {submitting ? 'Oluşturuluyor...' : 'Oluştur'}
           </button>

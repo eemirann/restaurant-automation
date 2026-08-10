@@ -288,6 +288,115 @@ describe('PATCH /api/orders/:id/cancel - yetki', () => {
     });
 });
 
+describe('PATCH /api/orders/:id/cancel - sebep (Reason) audit\'e yazılır', () => {
+    test('Reason gönderilirse AuditLog.Details içine yazılır', async () => {
+        const adminToken = tokenFor('Admin');
+        const auditInserts = [];
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('SELECT TableId, Status FROM Orders')) {
+                return { recordset: [{ TableId: 1, Status: 'Pending' }] };
+            }
+            if (queryText.includes('SELECT OrderDetailsId, ProductId, Quantity FROM OrderDetails')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes("SELECT OrderId FROM Orders WHERE TableId")) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('INSERT INTO AuditLog')) {
+                auditInserts.push(inputs);
+                return { recordset: [] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .patch('/api/orders/1/cancel')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ Reason: 'Müşteri vazgeçti' });
+
+        expect(res.status).toBe(200);
+
+        // logAudit fire-and-forget çalışır (bkz. utils/audit.js) — event loop'un bir turunu bekle.
+        await new Promise((r) => setImmediate(r));
+        expect(auditInserts).toHaveLength(1);
+        expect(auditInserts[0].Action).toBe('ORDER_CANCEL');
+        expect(JSON.parse(auditInserts[0].Details)).toEqual({ TableId: 1, Reason: 'Müşteri vazgeçti' });
+    });
+
+    test('Reason gönderilmezse Details.Reason null olur', async () => {
+        const adminToken = tokenFor('Admin');
+        const auditInserts = [];
+
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('SELECT TableId, Status FROM Orders')) {
+                return { recordset: [{ TableId: 1, Status: 'Pending' }] };
+            }
+            if (queryText.includes('SELECT OrderDetailsId, ProductId, Quantity FROM OrderDetails')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('SELECT OrderId FROM Orders WHERE TableId')) {
+                return { recordset: [] };
+            }
+            if (queryText.includes('INSERT INTO AuditLog')) {
+                auditInserts.push(inputs);
+                return { recordset: [] };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .patch('/api/orders/1/cancel')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({});
+
+        expect(res.status).toBe(200);
+        await new Promise((r) => setImmediate(r));
+        expect(JSON.parse(auditInserts[0].Details)).toEqual({ TableId: 1, Reason: null });
+    });
+});
+
+describe('GET /api/orders/:id/history', () => {
+    test('AuditLog\'dan bu siparişe ait kayıtları kronolojik döner', async () => {
+        fakeDb.__setHandler(async (queryText, inputs) => {
+            if (queryText.includes('FROM AuditLog a')) {
+                expect(inputs.OrderId).toBe('1');
+                return {
+                    recordset: [
+                        { AuditLogId: 1, UserId: 5, UserName: 'Ayşe Kasiyer', Action: 'ORDER_ITEM_ADD', Details: '{"items":[{"ProductId":10,"Quantity":1}]}', CreatedAt: new Date() },
+                        { AuditLogId: 2, UserId: 5, UserName: 'Ayşe Kasiyer', Action: 'ORDER_CANCEL', Details: '{"TableId":1,"Reason":null}', CreatedAt: new Date() },
+                    ],
+                };
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .get('/api/orders/1/history')
+            .set('Authorization', `Bearer ${waiterToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveLength(2);
+        expect(res.body[0].Action).toBe('ORDER_ITEM_ADD');
+        expect(res.body[1].Action).toBe('ORDER_CANCEL');
+    });
+
+    test('DB hatasında 500 döner', async () => {
+        fakeDb.__setHandler(async (queryText) => {
+            if (queryText.includes('FROM AuditLog a')) {
+                throw new Error('DB patladı');
+            }
+            return { recordset: [] };
+        });
+
+        const res = await request(app)
+            .get('/api/orders/1/history')
+            .set('Authorization', `Bearer ${waiterToken}`);
+
+        expect(res.status).toBe(500);
+    });
+});
+
 describe('POST /api/orders - düşük stok bildirimi (emitStockAlert)', () => {
     test('stok minimum seviyenin altına düşerse commit sonrası emitStockAlert ürün adıyla çağrılır', async () => {
         fakeDb.__setHandler(async (queryText) => {

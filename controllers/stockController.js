@@ -1,5 +1,11 @@
 const { sql, connectDB } = require('../config/db');
 const { logAudit } = require('../utils/audit');
+const { getUnitIds, upsertServingSize } = require('../utils/servingSize');
+
+// Ürün Türü -> Kategori adı eşlemesi (Şurup/Ekstra sayfaları kaldırıldı,
+// oluşturma artık buradan; syrupController/extraController.createXxx ile
+// AYNI kategori isimlerini kullanır — kategori seed verisi ortak).
+const TYPE_CATEGORY_NAME = { syrup: 'Şurup', extra: 'Ekstra', raw: 'Hammadde' };
 
 // ============================================================
 // BİR ÜRÜNÜN STOK DURUMU (varsa) — ProductModal.jsx'teki "Stok Takibi"
@@ -63,7 +69,7 @@ async function getAllStock(req, res) {
 // ============================================================
 async function createStockItem(req, res) {
     try {
-        const { ProductId, ProductName, Quantity, MinStockLevel, UnitPrice, Supplier, InvoiceNumber, Notes } = req.body;
+        const { ProductId, ProductName, Quantity, MinStockLevel, UnitPrice, Supplier, InvoiceNumber, Notes, Type, Price, ServingSize } = req.body;
 
         if (!ProductId && !ProductName) {
             return res.status(400).json({ error: 'Ürün seçmeli veya yeni ürün adı girmelisiniz' });
@@ -76,11 +82,27 @@ async function createStockItem(req, res) {
             return res.status(400).json({ error: 'Adet ve minimum stok negatif olamaz' });
         }
 
+        // Tür: 'raw' (varsayılan, hammadde) | 'syrup' | 'extra'. Şurup/Ekstra
+        // sayfaları kaldırıldı — yeni bir şurup/ekstra artık DOĞRUDAN burada,
+        // tek formdan açılır (bkz. syrupController.createSyrup/extraController.createExtra
+        // ile aynı kategori/flag mantığı, kod tekrarı olmasın diye TYPE_CATEGORY_NAME +
+        // utils/servingSize.js paylaşılıyor).
+        const type = Type || 'raw';
+        if (!['raw', 'syrup', 'extra'].includes(type)) {
+            return res.status(400).json({ error: 'Geçersiz ürün türü' });
+        }
+        if (type !== 'raw' && (typeof Price !== 'number' || Price < 0)) {
+            return res.status(400).json({ error: 'Şurup/Ekstra için negatif olmayan bir Fiyat girilmelidir' });
+        }
+        if (ServingSize !== undefined && ServingSize !== null && (typeof ServingSize !== 'number' || ServingSize <= 0)) {
+            return res.status(400).json({ error: 'Porsiyon başına tüketim (varsa) 0\'dan büyük bir sayı olmalıdır' });
+        }
+
         const pool = await connectDB();
 
         let finalProductId = ProductId;
 
-        // Yeni ürün adı girildiyse: aynı isimde hammadde var mı bak, yoksa oluştur
+        // Yeni ürün adı girildiyse: aynı isimde (aynı türde) ürün var mı bak, yoksa oluştur
         if (!finalProductId) {
             const trimmedName = ProductName.trim();
             if (!trimmedName) {
@@ -89,24 +111,51 @@ async function createStockItem(req, res) {
 
             const existing = await pool.request()
                 .input('Name', sql.NVarChar, trimmedName)
-                .query(`SELECT ProductId FROM Products WHERE Name = @Name AND IsRawMaterial = 1`);
+                .query(`SELECT ProductId FROM Products WHERE Name = @Name`);
 
             if (existing.recordset.length > 0) {
                 finalProductId = existing.recordset[0].ProductId;
             } else {
-                const rawCategory = await pool.request()
-                    .query(`SELECT TOP 1 CategoryId FROM Categories WHERE Name = 'Hammadde'`);
+                const categoryResult = await pool.request()
+                    .input('CategoryName', sql.NVarChar(50), TYPE_CATEGORY_NAME[type])
+                    .query(`SELECT TOP 1 CategoryId FROM Categories WHERE Name = @CategoryName`);
 
                 const created = await pool.request()
                     .input('Name', sql.NVarChar, trimmedName)
-                    .input('Price', sql.Decimal(10, 2), 0)
-                    .input('CategoryId', sql.Int, rawCategory.recordset[0]?.CategoryId)
+                    .input('Price', sql.Decimal(10, 2), type === 'raw' ? 0 : Price)
+                    .input('CategoryId', sql.Int, categoryResult.recordset[0]?.CategoryId)
+                    .input('IsRawMaterial', sql.Bit, type === 'raw' ? 1 : 0)
+                    .input('IsSyrup', sql.Bit, type === 'syrup' ? 1 : 0)
+                    .input('IsExtra', sql.Bit, type === 'extra' ? 1 : 0)
                     .query(`
-                        INSERT INTO Products (Name, Price, CategoryId, IsRawMaterial)
+                        INSERT INTO Products (Name, Price, CategoryId, IsRawMaterial, IsSyrup, IsExtra)
                         OUTPUT INSERTED.ProductId
-                        VALUES (@Name, @Price, @CategoryId, 1)
+                        VALUES (@Name, @Price, @CategoryId, @IsRawMaterial, @IsSyrup, @IsExtra)
                     `);
                 finalProductId = created.recordset[0].ProductId;
+            }
+        }
+
+        // Var olan bir ürün (ör. daha önce hammadde olarak eklenmiş) seçilip
+        // Tür Şurup/Ekstra olarak işaretlendiyse: ürünü de güncelle (bkz.
+        // setStockItemType ile aynı amaç, burada ekleme akışının bir parçası).
+        if (type !== 'raw') {
+            const categoryResult = await pool.request()
+                .input('CategoryName', sql.NVarChar(50), TYPE_CATEGORY_NAME[type])
+                .query(`SELECT TOP 1 CategoryId FROM Categories WHERE Name = @CategoryName`);
+            await pool.request()
+                .input('ProductId', sql.Int, finalProductId)
+                .input('Price', sql.Decimal(10, 2), Price)
+                .input('CategoryId', sql.Int, categoryResult.recordset[0]?.CategoryId)
+                .input('IsSyrup', sql.Bit, type === 'syrup' ? 1 : 0)
+                .input('IsExtra', sql.Bit, type === 'extra' ? 1 : 0)
+                .query(`
+                    UPDATE Products SET IsSyrup = @IsSyrup, IsExtra = @IsExtra, Price = @Price, CategoryId = @CategoryId
+                    WHERE ProductId = @ProductId
+                `);
+
+            if (ServingSize !== undefined) {
+                await upsertServingSize(pool, finalProductId, ServingSize ?? null, await getUnitIds(pool));
             }
         }
 

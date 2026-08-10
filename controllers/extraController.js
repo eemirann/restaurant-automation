@@ -1,5 +1,6 @@
 const { sql, connectDB } = require('../config/db');
 const { logAudit } = require('../utils/audit');
+const { getUnitIds, upsertServingSize } = require('../utils/servingSize');
 
 // ============================================================
 // EKSTRALAR (ekstra shot, ekstra çikolata, şurup vb.)
@@ -13,42 +14,6 @@ const { logAudit } = require('../utils/audit');
 // utils/unitConversion.js). "1 porsiyon kaç stok birimi" ProductUnitConversions'a
 // yazılır, Products.ServingSize gibi ürüne özel bir kolona DEĞİL.
 // ============================================================
-
-async function getUnitIds(pool) {
-    const result = await pool.request().query(`SELECT UnitId, Code FROM Units WHERE Code IN (N'porsiyon', N'ml')`);
-    const porsiyon = result.recordset.find((u) => u.Code === 'porsiyon')?.UnitId;
-    const ml = result.recordset.find((u) => u.Code === 'ml')?.UnitId;
-    if (!porsiyon || !ml) throw new Error('"porsiyon"/"ml" birimleri bulunamadı, migration çalıştırılmamış olabilir');
-    return { porsiyon, ml };
-}
-
-async function upsertServingSize(pool, productId, servingSize, { porsiyon, ml }) {
-    if (servingSize == null) {
-        await pool.request()
-            .input('ProductId', sql.Int, productId)
-            .input('FromUnitId', sql.Int, porsiyon)
-            .query(`DELETE FROM ProductUnitConversions WHERE ProductId = @ProductId AND FromUnitId = @FromUnitId`);
-        return;
-    }
-
-    await pool.request()
-        .input('ProductId', sql.Int, productId)
-        .input('StockUnitId', sql.Int, ml)
-        .query(`UPDATE Products SET StockUnitId = @StockUnitId WHERE ProductId = @ProductId`);
-
-    await pool.request()
-        .input('ProductId', sql.Int, productId)
-        .input('FromUnitId', sql.Int, porsiyon)
-        .input('ToUnitId', sql.Int, ml)
-        .input('Factor', sql.Decimal(18, 6), servingSize)
-        .query(`
-            MERGE ProductUnitConversions AS target
-            USING (SELECT @ProductId AS ProductId, @FromUnitId AS FromUnitId, @ToUnitId AS ToUnitId) AS src
-            ON target.ProductId = src.ProductId AND target.FromUnitId = src.FromUnitId AND target.ToUnitId = src.ToUnitId
-            WHEN MATCHED THEN UPDATE SET Factor = @Factor
-            WHEN NOT MATCHED THEN INSERT (ProductId, FromUnitId, ToUnitId, Factor) VALUES (@ProductId, @FromUnitId, @ToUnitId, @Factor);
-        `);
-}
 
 async function getAllExtras(req, res) {
     try {
@@ -138,6 +103,15 @@ async function createExtra(req, res) {
             await upsertServingSize(pool, productId, ServingSize ?? null, await getUnitIds(pool));
         }
 
+        // syrupController.createSyrup ile AYNI gerekçe: ekstra da stoktan
+        // tüketilir, o yüzden Stock kaydı yoksa 0 adetle otomatik açılır.
+        await pool.request()
+            .input('ProductId', sql.Int, productId)
+            .query(`
+                IF NOT EXISTS (SELECT 1 FROM Stock WHERE ProductId = @ProductId)
+                INSERT INTO Stock (ProductId, Quantity, MinStockLevel, IsTracked) VALUES (@ProductId, 0, 0, 1)
+            `);
+
         const result = await pool.request()
             .input('Id', sql.Int, productId)
             .query(`SELECT ProductId, Name, Price, IsActive FROM Products WHERE ProductId = @Id`);
@@ -185,6 +159,15 @@ async function updateExtra(req, res) {
         if (ServingSize !== undefined) {
             await upsertServingSize(pool, Number(id), ServingSize ?? null, await getUnitIds(pool));
         }
+
+        // Bu düzeltmeden ÖNCE oluşturulmuş ekstralarda Stock kaydı hiç
+        // açılmamış olabilir — düzenlerken geriye dönük tamamlanır.
+        await pool.request()
+            .input('ProductId', sql.Int, id)
+            .query(`
+                IF NOT EXISTS (SELECT 1 FROM Stock WHERE ProductId = @ProductId)
+                INSERT INTO Stock (ProductId, Quantity, MinStockLevel, IsTracked) VALUES (@ProductId, 0, 0, 1)
+            `);
 
         res.status(200).json({ ...result.recordset[0], ServingSize: ServingSize ?? null });
     } catch (err) {

@@ -89,33 +89,49 @@ const fmtResTime = (v) => {
 // ============================================================
 // Premium masa kartı — minimal, sürükle-bırak destekli
 // ============================================================
+// Superdesign'ın SON masa yönetimi spesifikasyonu — lacivert/zümrüt/turkuaz/
+// kırmızı/mavi paleti, SADECE bu sayfada (diğer sayfalar mercan kimliğinde
+// kalıyor — kullanıcı bunu açıkça onayladı). Font (Plus Jakarta Sans) ve
+// ikonlar (emoji, iconify/Lucide DEĞİL — yeni bir CDN bağımlılığı eklememek
+// için bilinçli tercih) sitedeki mevcut kararlarla aynı kaldı.
+const TABLE_COLORS = {
+  navy: '#1E293B',
+  emeraldText: '#059669',
+  red: '#EF4444',
+  blue: '#3B82F6',
+};
+
 function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isAdmin, canManageReservation, canTakePayment, isDragging, isDropTarget, onOpen, onPayment, onBill, onEdit, onDelete, onReserve, onCancelReservation, onDragStart, onDragOverCard, onDropCard, onDragEnd }) {
   const hasActiveOrder = Boolean(table.ActiveOrderId);
   const cfg = STATUS_CONFIG[table.Status] || STATUS_CONFIG.Empty;
+  const isOccupied = table.Status === 'Occupied';
+  const isReserved = table.Status === 'Reserved';
 
   const baseShell = flashing
-    ? 'border-emerald-500/50 bg-emerald-500/10 ring-2 ring-emerald-500/40'
+    ? 'bg-emerald-50 border-2 border-emerald-500/60'
     : needsPay
-    ? 'border-red-500/50 bg-red-500/5 ring-1 ring-red-500/20'
-    : table.Status === 'Occupied'
-    ? 'border-ember/40 bg-ember/5'
-    : table.Status === 'Reserved'
-    ? 'border-azure/40 bg-azure/10'
-    : 'border-hairline bg-panel';
+    ? 'bg-red-50 border-2 border-red-500/50'
+    : isOccupied
+    ? 'bg-panel border-2 border-red-500/50'
+    : isReserved
+    ? 'bg-blue-50/40 border border-blue-200'
+    : 'bg-panel border border-hairline';
 
   const dragShell = isDropTarget
-    ? 'ring-2 ring-ember ring-offset-2 ring-offset-charcoal border-ember scale-[1.02]'
+    ? 'ring-2 ring-[#EF4444] ring-offset-2 ring-offset-charcoal scale-[1.02]'
     : isDragging
-    ? 'opacity-50 ring-2 ring-ember scale-[0.97]'
+    ? 'opacity-50 ring-2 ring-[#EF4444] scale-[0.97]'
     : '';
 
   const badge = flashing
-    ? { text: 'Ödendi', cls: 'border-emerald-500/50 bg-emerald-500/15 text-emerald-500', dot: 'bg-emerald-500' }
+    ? { text: 'Ödendi', icon: '✓', cls: 'bg-emerald-50 text-emerald-600' }
     : needsPay
-    ? { text: 'Ödeme Bekliyor', cls: 'border-red-500/50 bg-red-500/10 text-red-500', dot: 'bg-red-500' }
-    : table.Status === 'Reserved'
-    ? { text: 'Rezerve', cls: 'border-azure/40 bg-azure/10 text-azure', dot: 'bg-azure' }
-    : { text: cfg.label, cls: `${cfg.border} ${cfg.bg} text-paper`, dot: cfg.dot };
+    ? { text: 'Ödeme Bekliyor', icon: '⏰', cls: 'bg-red-50 text-red-600' }
+    : isOccupied
+    ? { text: cfg.label, icon: '●', cls: 'bg-red-50 text-red-600' }
+    : isReserved
+    ? { text: cfg.label, icon: '📅', cls: 'bg-blue-50 text-blue-600' }
+    : { text: cfg.label, icon: '✓', cls: 'bg-emerald-50 text-emerald-600' };
 
   const elapsed = hasActiveOrder ? fmtElapsed(table.OrderCreatedAt, now) : null;
 
@@ -127,55 +143,66 @@ function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isA
       onDragEnd={onDragEnd}
       onDragOver={(e) => onDragOverCard(e, table)}
       onDrop={(e) => onDropCard(e, table)}
-      className={`group relative rounded-2xl border p-5 cursor-pointer flex flex-col min-h-[13rem]
-                  shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300
+      className={`group relative rounded-[2rem] p-6 cursor-pointer flex flex-col min-h-[15rem]
+                  shadow-sm hover:shadow-xl hover:-translate-y-2 transition-all duration-300
                   ${hasActiveOrder ? 'active:cursor-grabbing' : ''} ${baseShell} ${dragShell}`}
     >
       {/* Üst: masa no + durum */}
       <div className="flex items-start justify-between">
         <div>
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate/70">Masa</p>
-            {areaLabel && (
-              <span className="font-mono text-[8px] uppercase tracking-wide text-slate/70 border border-hairline rounded px-1.5 py-0.5">{areaLabel}</span>
-            )}
-          </div>
-          <p className="font-display text-5xl font-bold text-paper leading-none tabular-nums">{table.TableNumber}</p>
+          <p className="text-[11px] font-bold text-slate/60 uppercase tracking-tight mb-1">
+            Masa{areaLabel ? ` / ${areaLabel}` : ''}
+          </p>
+          <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase ${badge.cls}`}>
+            {badge.icon} {badge.text}
+          </span>
         </div>
-        <span className={`inline-flex items-center gap-1.5 border rounded-full px-2.5 py-1 font-mono text-[9px] uppercase tracking-wide ${badge.cls}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-          {badge.text}
+        <div className="text-slate/60 font-bold text-sm">
+          {isOccupied && elapsed ? (
+            <span className="flex items-center gap-1" title="Oturma süresi">⏱ {elapsed}</span>
+          ) : (
+            <span className="flex items-center gap-1" title="Kapasite">👥 {table.Capacity || '—'}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Masa numarası — büyük, dolu bir salonda hızlıca taranabilsin diye */}
+      <p
+        className={`text-7xl font-black text-center my-3 tabular-nums leading-none transition-colors ${
+          isOccupied ? 'text-red-600' : 'text-slate-800 group-hover:text-emerald-600'
+        }`}
+        style={isReserved ? { color: TABLE_COLORS.navy } : undefined}
+      >
+        {table.TableNumber}
+      </p>
+
+      {/* Rezervasyon bilgisi (gerçek veri — isim/saat) */}
+      {isReserved && reservation && (
+        <div className="text-[11px] text-slate/70 text-center -mt-1 mb-1 space-y-0.5">
+          <p className="truncate font-semibold text-paper">👤 {reservation.CustomerName}</p>
+          <p>🕒 {fmtResTime(reservation.ReservationTime)}{reservation.PartySize ? ` · ${reservation.PartySize} kişi` : ''}</p>
+        </div>
+      )}
+
+      {/* Güncel hesap */}
+      <div className={`flex justify-between items-center mb-3 pt-3 border-t ${isOccupied ? 'border-red-100' : 'border-slate-50'}`}>
+        <span className={`text-[10px] font-bold uppercase ${isOccupied ? 'text-red-500' : 'text-slate-300'}`}>Hesap</span>
+        <span className={`font-black tabular-nums ${isOccupied ? 'text-2xl text-red-600' : 'text-sm text-slate-300'}`}>
+          {money(table.CurrentTotal)}
         </span>
       </div>
 
-      {/* Meta: kapasite + ürün adedi + oturma süresi */}
-      <div className="flex items-center gap-3 mt-3 font-mono text-[11px] text-slate">
-        <span className="flex items-center gap-1" title="Kapasite">👥 {table.Capacity || '—'}</span>
-        <span className="flex items-center gap-1" title="Ürün adedi">🍽 {table.ItemCount || 0}</span>
-        {elapsed && <span className="flex items-center gap-1" title="Oturma süresi">⏱ {elapsed}</span>}
-      </div>
-
-      {/* Güncel hesap */}
-      <div className={`rounded-xl px-3 py-2.5 mt-3 ${needsPay ? 'bg-red-500/10' : table.Status === 'Occupied' ? 'bg-ember/10' : 'bg-ink/[0.04]'}`}>
-        <p className="font-mono text-[9px] uppercase tracking-widest text-slate mb-0.5">Güncel Hesap</p>
-        <p className={`font-mono text-2xl font-bold tabular-nums ${
-          !hasActiveOrder ? 'text-slate' : needsPay ? 'text-red-500' : 'text-ember'
-        }`}>
-          {money(table.CurrentTotal)}
-        </p>
-      </div>
-
       {/* Aksiyon alanı — duruma göre tek net eylem */}
-      <div className="mt-auto pt-3">
+      <div className="mt-auto">
         {hasActiveOrder ? (
           <div className="flex gap-1.5">
             {canTakePayment && (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onPayment(); }}
-                className="flex-1 flex items-center justify-center gap-2 font-mono text-sm uppercase tracking-wide text-cream
-                           bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl py-3 min-h-[3rem]
-                           shadow-sm transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-white
+                           bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl py-2.5 min-h-[2.75rem]
+                           shadow-lg shadow-emerald-500/10 transition-all"
               >
                 💳 Ödeme Al
               </button>
@@ -184,56 +211,52 @@ function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isA
               type="button"
               onClick={(e) => { e.stopPropagation(); onBill(); }}
               title="Fatura Görüntüle"
-              className={`flex items-center justify-center font-mono text-sm text-slate border border-hairline
-                         hover:border-ember hover:text-ember rounded-xl px-3 min-h-[3rem] transition-colors ${
-                           canTakePayment ? '' : 'flex-1'
+              className={`flex items-center justify-center text-slate-400 border border-slate-200 bg-white/60
+                         hover:text-slate-700 hover:bg-white rounded-xl px-3 min-h-[2.75rem] transition-all ${
+                           canTakePayment ? '' : 'flex-1 text-[10px] font-bold uppercase tracking-wider gap-2'
                          }`}
             >
-              🧾{!canTakePayment && <span className="ml-2 uppercase tracking-wide">Fatura Görüntüle</span>}
+              🧾{!canTakePayment && <span>Fatura Görüntüle</span>}
             </button>
           </div>
-        ) : table.Status === 'Reserved' ? (
-          <div className="rounded-xl bg-azure/10 border border-azure/30 px-3 py-2.5">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-azure mb-1">Rezervasyon</p>
-            {reservation ? (
-              <div className="font-mono text-[11px] text-paper space-y-0.5">
-                <p className="truncate">👤 {reservation.CustomerName}</p>
-                <p className="text-slate">🕒 {fmtResTime(reservation.ReservationTime)}{reservation.PartySize ? ` · ${reservation.PartySize} kişi` : ''}</p>
-                {canManageReservation && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onCancelReservation(reservation); }}
-                    className="mt-1 font-mono text-[10px] uppercase tracking-wide text-ember hover:text-ember/80"
-                  >
-                    ✕ Rezervasyonu İptal Et
-                  </button>
-                )}
-              </div>
-            ) : (
-              <p className="font-mono text-[11px] text-slate">Detay yok</p>
-            )}
-          </div>
+        ) : isReserved ? (
+          canManageReservation ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onCancelReservation(reservation); }}
+              className="w-full flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-white
+                         bg-red-500 hover:bg-red-600 rounded-xl py-2.5 min-h-[2.75rem] shadow-lg shadow-red-500/10 transition-all"
+            >
+              📅✕ Rezerve İptal
+            </button>
+          ) : (
+            <p className="text-center text-[10px] font-bold uppercase tracking-wider text-slate/50 py-2.5">Rezerve — kartın tamamına dokunarak açabilirsin</p>
+          )
         ) : (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onOpen(); }}
-            className="w-full flex items-center justify-center gap-2 font-mono text-sm uppercase tracking-wide text-slate
-                       border border-hairline hover:border-ember hover:text-ember rounded-xl py-2.5 min-h-[3rem] transition-colors"
+            className="w-full flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-white
+                       bg-indigo-600 hover:bg-indigo-700 rounded-xl py-2.5 min-h-[2.75rem] shadow-lg shadow-indigo-500/10 transition-all"
           >
-            ➕ Sipariş Başlat
+            ▶ Sipariş Başlat
           </button>
         )}
       </div>
 
-      {/* Admin düzenle/sil — her zaman görünür (opacity-0+hover dokunmatik ekranda
-          hover olmadığı için hiç görünmez/tıklanamaz hale geliyordu) */}
+      {/* Admin/rezervasyon kısayolları — admin her zaman (sipariş açık olsa
+          bile) altta Düzenle/Sil görür, "Rezerve Et" sadece boş masada. */}
       {(isAdmin || (canManageReservation && table.Status === 'Empty')) && (
-        <div className="flex items-center justify-end gap-3 mt-2">
+        <div className="flex items-center justify-end gap-3 mt-2 pt-1">
           {canManageReservation && table.Status === 'Empty' && (
-            <button type="button" onClick={(e) => { e.stopPropagation(); onReserve(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-azure py-1 px-1">Rezerve Et</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onReserve(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-blue-600 py-1 px-1">Rezerve Et</button>
           )}
-          {isAdmin && <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-ember py-1 px-1">Düzenle</button>}
-          {isAdmin && <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-red-500 py-1 px-1">Sil</button>}
+          {isAdmin && (
+            <>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-[#EF4444] py-1 px-1">Düzenle</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="font-mono text-[9px] uppercase tracking-wide text-slate/60 hover:text-red-500 py-1 px-1">Sil</button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -550,18 +573,21 @@ export default function Tables() {
 
   return (
     <div className="p-6 lg:p-8">
-      {/* ============ Başlık ============ */}
+      {/* ============ Başlık ============
+          Superdesign son spesifikasyonu: lacivert/zümrüt/turkuaz/kırmızı/mavi
+          paleti SADECE bu sayfada — diğer sayfalar (Orders/Dashboard/Settings)
+          mercan kimliğinde kalıyor, kullanıcı bunu açıkça onayladı. */}
       <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
         <div>
-          <p className="font-mono text-[10px] tracking-[0.3em] text-ember uppercase mb-1.5">Masa Düzeni</p>
-          <h1 className="font-display text-3xl font-bold text-paper leading-none">Masalar</h1>
+          <p className="text-[10px] font-bold text-[#EF4444] tracking-[0.2em] uppercase mb-1.5">Masa Düzeni</p>
+          <h1 className="text-4xl font-extrabold text-paper leading-none tracking-tight">Masalar</h1>
           <p className="font-mono text-xs text-slate mt-2 capitalize">{clock}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => fetchTables({ silent: true })}
             title="Yenile"
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2.5 transition-colors"
+            className="w-10 h-10 flex items-center justify-center text-slate hover:text-paper border border-hairline rounded-xl bg-panel shadow-sm transition-colors"
           >
             ↻
           </button>
@@ -569,7 +595,7 @@ export default function Tables() {
             <button
               onClick={() => setShowAreaManager(true)}
               title="Salon/Teras/Bahçe gibi bölümleri yönet"
-              className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2.5 transition-colors"
+              className="text-[11px] font-bold uppercase tracking-widest text-slate hover:text-paper border border-hairline rounded-xl px-4 py-2.5 bg-panel shadow-sm transition-colors flex items-center gap-2"
             >
               ⚙ Bölümler
             </button>
@@ -577,7 +603,7 @@ export default function Tables() {
           {isAdmin && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 rounded-lg px-4 py-2.5 transition-colors shadow-sm"
+              className="text-[11px] font-bold uppercase tracking-widest text-white bg-[#EF4444] hover:bg-red-600 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/20 transition-all flex items-center gap-2"
             >
               + Yeni Masa
             </button>
@@ -594,13 +620,13 @@ export default function Tables() {
             <button
               key={a.key || 'all'}
               onClick={() => setSelectedArea(a.key)}
-              className={`shrink-0 font-mono text-xs uppercase tracking-wide px-4 py-2.5 rounded-t-lg border-b-2 transition-all ${
+              className={`shrink-0 text-sm font-bold uppercase tracking-wider px-2 py-2.5 pb-3 border-b-[3px] transition-all ${
                 active
-                  ? 'border-ember text-ember font-semibold bg-ember/5'
-                  : 'border-transparent text-slate hover:text-paper'
+                  ? 'border-[#EF4444] text-[#EF4444]'
+                  : 'border-transparent text-slate/70 hover:text-paper'
               }`}
             >
-              {a.label} <span className="opacity-60">({c})</span>
+              {a.label} <span className="opacity-60 text-xs">({c})</span>
             </button>
           );
         })}
@@ -616,8 +642,8 @@ export default function Tables() {
               <button
                 key={f.value}
                 onClick={() => setFilter(f.value)}
-                className={`font-mono text-xs uppercase tracking-wide px-3.5 py-2 rounded-lg border transition-all ${
-                  active ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper hover:border-slate/40'
+                className={`text-[11px] font-bold uppercase tracking-wide px-4 py-1.5 rounded-full border-2 transition-all whitespace-nowrap ${
+                  active ? 'bg-panel border-[#EF4444] text-[#EF4444]' : 'bg-panel border-hairline text-slate hover:bg-hairline/40'
                 }`}
               >
                 {f.label} <span className="opacity-60">{badgeCount}</span>
@@ -633,11 +659,11 @@ export default function Tables() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Masa no ara…"
-            className="w-44 border border-hairline rounded-lg pl-9 pr-3 py-2 font-mono text-sm text-paper bg-panel
-                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            className="w-44 border border-hairline rounded-xl pl-9 pr-3 py-2 font-mono text-sm text-paper bg-panel
+                       focus:outline-none focus:ring-2 focus:ring-[#EF4444]/40 focus:border-[#EF4444]"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate hover:text-ember text-xs">✕</button>
+            <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate hover:text-[#EF4444] text-xs">✕</button>
           )}
         </div>
       </div>
@@ -654,7 +680,7 @@ export default function Tables() {
 
       {/* ============ Kart ızgarası ============ */}
       {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {Array.from({ length: 10 }).map((_, i) => (
             <div key={i} className="rounded-2xl border border-hairline bg-panel h-52 animate-pulse" />
           ))}
@@ -666,7 +692,7 @@ export default function Tables() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {visibleTables.map((table) => (
             <TableCard
               key={table.TableId}
@@ -734,6 +760,21 @@ export default function Tables() {
           <style>{`@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
           <span className="text-moss">✓</span> {toast.message}
         </div>
+      )}
+
+      {/* Mobil hızlı eylem (FAB) — küçük ekranlarda üstteki "+ Yeni Masa"
+          butonuna erişmek zahmetli olabilir diye, aynı işlevi tekrar sunan
+          sabit bir köşe butonu. Sadece admin (üstteki buton da öyle). */}
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={() => setShowCreateModal(true)}
+          title="Yeni Masa"
+          className="md:hidden fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-slate-800 text-white
+                     shadow-xl flex items-center justify-center text-2xl leading-none"
+        >
+          +
+        </button>
       )}
 
       {selectedTableId && (
@@ -869,13 +910,13 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
     detail.activeOrder && !['Paid', 'Cancelled', 'Merged'].includes(detail.activeOrder.Status);
 
   const headerMeta = (
-    <div className="flex items-center gap-2 font-mono text-xs">
-      <span className="inline-flex items-center gap-1.5 border border-hairline rounded-sm px-2.5 py-1 bg-hairline/30 text-slate">
-        👥 <span className="text-paper font-semibold">{detail.Capacity ? `${detail.Capacity} kişi` : '—'}</span>
+    <div className="flex items-center gap-2 text-xs">
+      <span className="inline-flex items-center gap-1.5 border border-hairline rounded-md px-3 py-1.5 bg-hairline/30 text-slate">
+        👥 <span className="text-paper font-bold">{detail.Capacity ? `${detail.Capacity} kişi` : '—'}</span>
       </span>
-      <span className={`inline-flex items-center gap-1.5 border rounded-sm px-2.5 py-1 ${cfg.border} ${cfg.bg}`}>
+      <span className={`inline-flex items-center gap-1.5 border rounded-md px-3 py-1.5 ${cfg.border} ${cfg.bg}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-        <span className="text-paper font-semibold">{cfg.label}</span>
+        <span className="text-paper font-bold">{cfg.label}</span>
       </span>
     </div>
   );
@@ -1030,6 +1071,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
   // olanlar dışında hiçbir şey sipariş ekranında gösterilmez.
   const [optionsByProduct, setOptionsByProduct] = useState({});
   const [extraPickerFor, setExtraPickerFor] = useState(null); // hangi kalem için opsiyon seçici açık
+  const [noteEditorFor, setNoteEditorFor] = useState(null); // hangi kalem için not alanı açık
 
   // Sadaklık puanı ile ücretsiz ürün ekleme (SADECE mevcut bir siparişe —
   // henüz oluşturulmamış bir siparişe eklenecek OrderId yok). Bkz. backend:
@@ -1166,6 +1208,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
         quantity: (prev[productId]?.quantity || 0) + 1,
         extras: prev[productId]?.extras || {},
         syrups: prev[productId]?.syrups || {},
+        note: prev[productId]?.note || '',
       },
     }));
   };
@@ -1223,6 +1266,17 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
     });
   };
 
+  // Sepetteki bir kaleme özel not (ör. "az şekerli", "fındık alerjisi") —
+  // OrderDetails.Note zaten backend'de destekleniyordu, sadece bu ekranda
+  // yazacak bir UI eksikti (bkz. submitOrder'daki itemsPayload).
+  const updateLineNote = (productId, noteText) => {
+    setCart((prev) => {
+      const line = prev[productId];
+      if (!line) return prev;
+      return { ...prev, [productId]: { ...line, note: noteText } };
+    });
+  };
+
   const lineTotal = (product, line) =>
     calculateLineTotal(product?.Price, line.quantity, [
       { selections: line.extras, catalogById: catalogMapFor(product?.ProductId, 'extras') },
@@ -1263,6 +1317,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
           Quantity: line.quantity,
           ...(extrasPayload.length > 0 ? { Extras: extrasPayload } : {}),
           ...(syrupsPayload.length > 0 ? { Syrups: syrupsPayload } : {}),
+          ...(line.note?.trim() ? { Note: line.note.trim() } : {}),
         };
       });
 
@@ -1292,6 +1347,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
           syrups: Object.entries(line.syrups)
             .filter(([, qty]) => qty > 0)
             .map(([syrupId, qty]) => ({ quantity: qty, name: findOption(productId, 'syrups', syrupId)?.Name || 'Şurup' })),
+          note: line.note?.trim() || undefined,
         };
       });
       // Ayarlar · Donanım sekmesinden kapatılabilir (KitchenAutoPrintEnabled) —
@@ -1323,44 +1379,51 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
     <div>
       <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-2">Sipariş Oluştur</p>
 
-      {/* Üst sabit alan: arama + kategoriler (yatay bar) — sayfa kaydırılmadan
-          her zaman görünür, sadece aşağıdaki ürün ızgarası kendi içinde kayar. */}
-      <div className="mb-3 space-y-2">
-        <MenuFilterBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
-        {categoriesWithProducts.length > 0 && (
-          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-            <button
-              type="button"
-              onClick={() => setActiveCategoryId('all')}
-              className={`shrink-0 font-mono text-[11px] uppercase tracking-wide px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap ${
-                activeCategoryId === 'all'
-                  ? 'border-ember bg-ember/10 text-ember font-semibold'
-                  : 'border-hairline text-slate hover:text-paper hover:border-paper/30'
-              }`}
-            >
-              Tümü
-            </button>
-            {categoriesWithProducts.map((c) => (
-              <button
-                key={c.CategoryId}
-                type="button"
-                onClick={() => setActiveCategoryId(c.CategoryId)}
-                className={`shrink-0 font-mono text-[11px] uppercase tracking-wide px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap ${
-                  String(activeCategoryId) === String(c.CategoryId)
-                    ? 'border-ember bg-ember/10 text-ember font-semibold'
-                    : 'border-hairline text-slate hover:text-paper hover:border-paper/30'
-                }`}
-              >
-                {c.Name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="flex gap-4 items-start">
-        {/* SOL: hızlı filtre rayı (dikey, dar) — Popüler/Mevcut/Tükenen + Sepettekiler */}
-        <div className="w-28 shrink-0 flex flex-col gap-1.5">
+        {/* SOL SÜTUN: arama + kategoriler + (hızlı filtre rayı + ürün ızgarası).
+            Sepet paneli artık bu sütunun DIŞINDA, ayrı bir sütun — arama barı
+            sepetin üzerine taşmıyor, sepet en üstten başlayıp daha uzun durabiliyor. */}
+        <div className="flex-1 min-w-0">
+          {/* Üst sabit alan: arama + kategoriler (yatay bar) — sayfa kaydırılmadan
+              her zaman görünür, sadece aşağıdaki ürün ızgarası kendi içinde kayar. */}
+          <div className="mb-3 space-y-2">
+            <MenuFilterBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+            {categoriesWithProducts.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                {/* Superdesign "Kahve Mağazası" spesifikasyonu — SADECE bu sipariş
+                    başlatma ekranında turuncu/kırmızı kimlik (diğer sayfalar mercan). */}
+                <button
+                  type="button"
+                  onClick={() => setActiveCategoryId('all')}
+                  className={`shrink-0 text-[11px] font-bold uppercase tracking-wide px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap ${
+                    activeCategoryId === 'all'
+                      ? 'border-[#D97706] bg-[#D97706]/10 text-[#D97706]'
+                      : 'border-hairline text-slate hover:text-paper hover:border-paper/30'
+                  }`}
+                >
+                  Tümü
+                </button>
+                {categoriesWithProducts.map((c) => (
+                  <button
+                    key={c.CategoryId}
+                    type="button"
+                    onClick={() => setActiveCategoryId(c.CategoryId)}
+                    className={`shrink-0 text-[11px] font-bold uppercase tracking-wide px-3.5 py-2 rounded-full border transition-colors whitespace-nowrap ${
+                      String(activeCategoryId) === String(c.CategoryId)
+                        ? 'border-[#D97706] bg-[#D97706]/10 text-[#D97706]'
+                        : 'border-hairline text-slate hover:text-paper hover:border-paper/30'
+                    }`}
+                  >
+                    {c.Name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-4 items-start">
+            {/* SOL: hızlı filtre rayı (dikey, dar) — Popüler/Mevcut/Tükenen + Sepettekiler */}
+            <div className="w-28 shrink-0 flex flex-col gap-1.5">
           {QUICK_FILTERS.map((f) => (
             <button
               key={f.value}
@@ -1426,15 +1489,19 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
             </div>
           )}
         </div>
+          </div>
+        </div>
 
-        {/* SAĞ: sabit sepet paneli (~%30) */}
-        <div className="w-80 shrink-0 border border-hairline rounded-sm bg-hairline/20 flex flex-col max-h-[68vh]">
+        {/* SAĞ: sabit sepet paneli — arama barının artık üzerine taşmadığı ayrı
+            bir sütun; bu sayede daha geniş ve en üstten başlayarak daha uzun
+            olabiliyor (bkz. yukarıdaki SOL SÜTUN yorum notu). */}
+        <div className="w-96 shrink-0 border border-hairline rounded-2xl bg-panel shadow-sm flex flex-col max-h-[82vh]">
           <div className="px-4 pt-3 pb-2 border-b border-hairline">
             <div className="flex items-center justify-between gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-widest text-slate flex items-center gap-1.5">
-                🧺 Sepet
+              <p className="text-xs font-bold uppercase tracking-widest text-paper flex items-center gap-1.5">
+                🛒 Sepet
                 {itemCount > 0 && (
-                  <span className="font-mono text-[10px] text-cream bg-ember rounded-full px-1.5 py-0.5 leading-none tabular-nums">
+                  <span className="font-mono text-[10px] text-white bg-[#EF4444] rounded-full px-1.5 py-0.5 leading-none tabular-nums">
                     {itemCount}
                   </span>
                 )}
@@ -1443,7 +1510,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 <button
                   type="button"
                   onClick={() => setCart({})}
-                  className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember transition-colors"
+                  className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-red-500 transition-colors"
                 >
                   Temizle
                 </button>
@@ -1631,13 +1698,13 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 const productOptionsLoaded = Boolean(optionsByProduct[productId]);
                 const productOptions = optionsFor(productId);
                 return (
-                  <div key={productId} className="border border-ember/40 rounded-sm bg-panel px-2.5 py-2">
+                  <div key={productId} className="border border-[#D97706]/30 rounded-xl bg-panel px-2.5 py-2">
                     {/* 1. satır: ürün adı + satır tutarı */}
                     <div className="flex items-baseline justify-between gap-2">
-                      <p className="text-sm text-paper font-medium truncate leading-tight">
+                      <p className="text-sm text-paper font-bold truncate leading-tight">
                         {product?.Name || `Ürün #${productId}`}
                       </p>
-                      <span className="font-mono text-xs text-paper font-semibold tabular-nums shrink-0">
+                      <span className="font-mono text-xs text-[#D97706] font-bold tabular-nums shrink-0">
                         {money(lineTotal(product, line))}
                       </span>
                     </div>
@@ -1647,8 +1714,8 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                         type="button"
                         aria-label="Adet azalt"
                         onClick={() => removeFromCart(productId)}
-                        className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal
-                                   border border-hairline rounded-sm select-none touch-manipulation transition-colors"
+                        className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-red-500 active:bg-charcoal
+                                   border border-hairline rounded-xl select-none touch-manipulation transition-colors"
                       >
                         −
                       </button>
@@ -1657,8 +1724,8 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                         type="button"
                         aria-label="Adet artır"
                         onClick={() => addToCart(productId)}
-                        className="w-11 h-11 flex items-center justify-center font-mono text-base text-cream bg-ember hover:bg-ember/90 active:bg-ember/80
-                                   rounded-sm select-none touch-manipulation transition-colors"
+                        className="w-11 h-11 flex items-center justify-center font-mono text-base text-white bg-[#EF4444] hover:bg-red-600 active:bg-red-700
+                                   rounded-xl select-none touch-manipulation transition-colors"
                       >
                         +
                       </button>
@@ -1668,7 +1735,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                       <button
                         type="button"
                         onClick={() => removeLineFromCart(productId)}
-                        className="w-11 h-11 ml-auto shrink-0 flex items-center justify-center font-mono text-xs text-slate hover:text-ember
+                        className="w-11 h-11 ml-auto shrink-0 flex items-center justify-center font-mono text-xs text-slate hover:text-red-500
                                    touch-manipulation transition-colors"
                         title="Sepetten çıkar"
                         aria-label="Sepetten çıkar"
@@ -1689,7 +1756,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                               type="button"
                               onClick={() => removeOptionFromLine(productId, 'extras', extraId)}
                               title="Kaldırmak için tıkla"
-                              className="font-mono text-[10px] uppercase tracking-wide text-ember border border-ember/40 bg-ember/5 rounded-full px-2.5 py-1 hover:bg-ember/10"
+                              className="font-mono text-[10px] uppercase tracking-wide text-[#D97706] border border-[#D97706]/40 bg-[#D97706]/5 rounded-full px-2.5 py-1 hover:bg-[#D97706]/10"
                             >
                               {line.extras[extraId]}x {extra.Name} ✕
                             </button>
@@ -1704,7 +1771,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                               type="button"
                               onClick={() => removeOptionFromLine(productId, 'syrups', syrupId)}
                               title="Kaldırmak için tıkla"
-                              className="font-mono text-[10px] uppercase tracking-wide text-ember border border-ember/40 bg-ember/5 rounded-full px-2.5 py-1 hover:bg-ember/10"
+                              className="font-mono text-[10px] uppercase tracking-wide text-[#D97706] border border-[#D97706]/40 bg-[#D97706]/5 rounded-full px-2.5 py-1 hover:bg-[#D97706]/10"
                             >
                               {line.syrups[syrupId]}x {syrup.Name} ✕
                             </button>
@@ -1753,6 +1820,45 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                               ))}
                             </>
                           )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Kalem notu (ör. "az şekerli", "fındık alerjisi") — sipariş
+                        seviyesindeki genel nottan ayrı, sadece bu ürüne özel. */}
+                    <div className="mt-1.5">
+                      {noteEditorFor !== productId && !line.note && (
+                        <button
+                          type="button"
+                          onClick={() => setNoteEditorFor(productId)}
+                          className="font-mono text-[10px] uppercase tracking-wide text-slate hover:text-ember"
+                        >
+                          📝 Not ekle
+                        </button>
+                      )}
+                      {noteEditorFor !== productId && line.note && (
+                        <button
+                          type="button"
+                          onClick={() => setNoteEditorFor(productId)}
+                          className="font-mono text-[10px] text-ember border border-ember/40 bg-ember/5 rounded-full px-2.5 py-1 hover:bg-ember/10 max-w-full truncate"
+                          title="Düzenlemek için tıkla"
+                        >
+                          📝 {line.note}
+                        </button>
+                      )}
+                      {noteEditorFor === productId && (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={line.note || ''}
+                            onChange={(e) => updateLineNote(productId, e.target.value)}
+                            onBlur={() => setNoteEditorFor(null)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setNoteEditorFor(null); }}
+                            placeholder="ör. az şekerli, fındık alerjisi"
+                            className="flex-1 border border-hairline rounded-sm px-2.5 py-1.5 font-mono text-xs text-paper bg-panel
+                                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                          />
                         </div>
                       )}
                     </div>
@@ -1824,7 +1930,7 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                 <span className="font-mono text-xs text-slate uppercase tracking-wide">
                   Toplam{itemCount > 0 ? ` · ${itemCount} adet` : ''}
                 </span>
-                <span className="font-mono text-paper font-semibold text-xl tabular-nums">{money(total)}</span>
+                <span className="font-mono text-[#EF4444] font-bold text-xl tabular-nums">{money(total)}</span>
               </div>
             )}
 
@@ -1832,11 +1938,11 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
               type="button"
               onClick={submitOrder}
               disabled={submitting || itemCount === 0}
-              className="w-full font-mono text-sm uppercase tracking-wide text-cream bg-ember
-                         hover:bg-ember/90 active:bg-ember/80 disabled:opacity-40 disabled:cursor-not-allowed
-                         rounded-sm px-6 py-3.5 min-h-[3rem] transition-colors mb-4"
+              className="w-[96%] mx-auto flex items-center justify-center gap-2 text-sm font-bold uppercase tracking-wide text-white bg-[#2C1810]
+                         hover:bg-[#3d2419] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed
+                         rounded-xl px-6 py-3.5 min-h-[3rem] shadow-lg transition-all mb-4"
             >
-              {submitting ? 'Gönderiliyor...' : existingOrderId ? 'Siparişe Ekle' : 'Sipariş Ver'}
+              ✓ {submitting ? 'Gönderiliyor...' : existingOrderId ? 'Siparişe Ekle' : 'Sipariş Ver'}
             </button>
           </div>
         </div>

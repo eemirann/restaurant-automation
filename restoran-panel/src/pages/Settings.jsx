@@ -296,7 +296,7 @@ export default function Settings() {
   return (
     <div className="p-10">
       <div className="mb-8">
-        <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+        <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
           Panel · Genel
         </p>
         <h1 className="font-display text-3xl font-semibold text-paper">Ayarlar</h1>
@@ -305,7 +305,7 @@ export default function Settings() {
         </p>
       </div>
 
-      <div className="border border-hairline rounded-sm bg-panel overflow-hidden flex items-start">
+      <div className="border border-hairline rounded-3xl bg-panel overflow-hidden flex items-start shadow-sm">
         {/* Sol: dikey sekme listesi */}
         <div className="w-56 shrink-0 border-r border-hairline py-3 self-stretch">
           {TABS.map((tab) => (
@@ -313,9 +313,9 @@ export default function Settings() {
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className={`w-full text-left font-mono text-xs uppercase tracking-wide px-5 py-3 border-l-2 transition-colors ${
+              className={`w-full text-left text-[11px] font-bold uppercase tracking-wide px-5 py-3 border-l-2 transition-colors ${
                 activeTab === tab.key
-                  ? 'border-ember text-ember font-semibold bg-ember/5'
+                  ? 'border-[#FF6B6B] text-[#FF6B6B] bg-[#FF6B6B]/5'
                   : 'border-transparent text-slate hover:text-paper hover:bg-hairline/30'
               }`}
             >
@@ -676,8 +676,8 @@ export default function Settings() {
                           type="button"
                           onClick={handleProviderSubmit}
                           disabled={providerSubmitting}
-                          className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                                     hover:bg-ember/90 disabled:opacity-40 rounded-sm px-4 py-2.5 transition-colors"
+                          className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                                     hover:bg-[#ff5555] disabled:opacity-40 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
                         >
                           {providerSubmitting ? 'Kaydediliyor...' : 'Sağlayıcı Ayarlarını Kaydet'}
                         </button>
@@ -695,7 +695,7 @@ export default function Settings() {
                         type="checkbox"
                         checked={popupEnabled}
                         onChange={(e) => setPopupEnabled(e.target.checked)}
-                        className="accent-ember w-4 h-4 mt-0.5 shrink-0"
+                        className="accent-[#FF6B6B] w-4 h-4 mt-0.5 shrink-0"
                       />
                       <span>
                         <span className="block font-mono text-xs uppercase tracking-wide text-slate">
@@ -746,7 +746,7 @@ export default function Settings() {
                         type="checkbox"
                         checked={kitchenAutoPrintEnabled}
                         onChange={(e) => setKitchenAutoPrintEnabled(e.target.checked)}
-                        className="accent-ember w-4 h-4 mt-0.5 shrink-0"
+                        className="accent-[#FF6B6B] w-4 h-4 mt-0.5 shrink-0"
                       />
                       <span>
                         <span className="block font-mono text-xs uppercase tracking-wide text-slate">
@@ -770,8 +770,8 @@ export default function Settings() {
                           key={w}
                           type="button"
                           onClick={() => setPrinterPaperWidth(w)}
-                          className={`font-mono text-xs uppercase tracking-wide px-4 py-2 rounded-sm border transition-colors ${
-                            printerPaperWidth === w ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper'
+                          className={`text-[11px] font-bold uppercase tracking-wide px-4 py-2 rounded-full border transition-colors ${
+                            printerPaperWidth === w ? 'border-[#FF6B6B] bg-[#FF6B6B]/10 text-[#FF6B6B]' : 'border-hairline text-slate hover:text-paper'
                           }`}
                         >
                           {w}mm
@@ -836,7 +836,7 @@ export default function Settings() {
                         type="checkbox"
                         checked={stockChartEnabled}
                         onChange={(e) => setStockChartEnabled(e.target.checked)}
-                        className="accent-ember w-4 h-4 mt-0.5 shrink-0"
+                        className="accent-[#FF6B6B] w-4 h-4 mt-0.5 shrink-0"
                       />
                       <span>
                         <span className="block font-mono text-xs uppercase tracking-wide text-slate">
@@ -856,7 +856,7 @@ export default function Settings() {
                         type="checkbox"
                         checked={autoBackupEnabled}
                         onChange={(e) => setAutoBackupEnabled(e.target.checked)}
-                        className="accent-ember w-4 h-4 mt-0.5 shrink-0"
+                        className="accent-[#FF6B6B] w-4 h-4 mt-0.5 shrink-0"
                       />
                       <span>
                         <span className="block font-mono text-xs uppercase tracking-wide text-slate">
@@ -896,8 +896,8 @@ export default function Settings() {
                         type="button"
                         onClick={handleBackupNow}
                         disabled={backupNowLoading}
-                        className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                                   hover:bg-ember/90 disabled:opacity-40 rounded-sm px-4 py-2.5 transition-colors"
+                        className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                                   hover:bg-[#ff5555] disabled:opacity-40 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
                       >
                         {backupNowLoading ? 'Yedekleniyor...' : 'Şimdi Yedekle'}
                       </button>
@@ -935,9 +935,9 @@ export default function Settings() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="font-mono text-sm uppercase tracking-wide text-cream bg-ember
-                           hover:bg-ember/90 active:bg-ember/80 disabled:opacity-40 disabled:cursor-not-allowed
-                           rounded-sm px-6 py-3 transition-colors shadow-sm"
+                className="text-[12px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                           hover:bg-[#ff5555] active:bg-[#ff4444] disabled:opacity-40 disabled:cursor-not-allowed
+                           rounded-xl px-6 py-3 shadow-lg shadow-red-500/10 transition-all"
               >
                 {submitting ? 'Kaydediliyor...' : 'Kaydet'}
               </button>

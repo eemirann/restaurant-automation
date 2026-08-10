@@ -57,10 +57,10 @@ export default function Campaigns() {
     <div className="p-10">
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Müşteri QR Menüsü
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Kampanyalar</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Kampanyalar</h1>
           <p className="font-body text-sm text-slate mt-1">
             QR menünün üstündeki karüselde gösterilir. "Combo" tipi sepete eklenebilir sabit fiyatlı bir
             ürün paketidir; "Bilgi" tipi sadece bilgilendirme kartıdır.
@@ -68,7 +68,7 @@ export default function Campaigns() {
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 rounded-sm px-4 py-2.5 transition-colors shadow-sm shrink-0"
+          className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B] hover:bg-[#ff5555] rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all shrink-0"
         >
           + Yeni Kampanya
         </button>
@@ -81,7 +81,7 @@ export default function Campaigns() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : campaigns.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Henüz kampanya yok.</p>
         </div>
       ) : (
@@ -94,7 +94,7 @@ export default function Campaigns() {
             };
             const isLive = c.IsActive && new Date(c.StartAt) <= now && new Date(c.EndAt) >= now && withinDailyWindow();
             return (
-              <div key={c.CampaignId} className="border border-hairline rounded-sm bg-panel overflow-hidden">
+              <div key={c.CampaignId} className="border border-stone-100 rounded-2xl bg-panel overflow-hidden shadow-sm">
                 <div className="w-full aspect-video bg-hairline/40">
                   {c.ImageUrl ? (
                     <img src={imageUrl(c.ImageUrl)} alt={c.Title} className="w-full h-full object-cover" />
@@ -117,7 +117,7 @@ export default function Campaigns() {
                   </div>
                   <p className="text-paper font-semibold leading-tight mb-1">{c.Title}</p>
                   {c.CampaignType === 'Combo' && (
-                    <p className="font-mono text-xs text-ember mb-1">{c.ComboName} · {money(c.ComboPrice)}</p>
+                    <p className="font-mono text-xs text-[#FF6B6B] font-bold mb-1">{c.ComboName} · {money(c.ComboPrice)}</p>
                   )}
                   {c.Description && <p className="text-xs text-slate mb-2 line-clamp-2">{c.Description}</p>}
                   <p className="font-mono text-[10px] text-slate mb-1">
@@ -131,13 +131,13 @@ export default function Campaigns() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => setEditingCampaign(c)}
-                      className="flex-1 font-mono text-[11px] uppercase tracking-wide text-slate hover:text-azure border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+                      className="flex-1 text-[11px] font-bold uppercase tracking-wide text-slate hover:text-azure border border-hairline rounded-xl px-2.5 py-1.5 transition-colors"
                     >
                       Düzenle
                     </button>
                     <button
                       onClick={() => handleDelete(c)}
-                      className="flex-1 font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                      className="flex-1 text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl px-2.5 py-1.5 transition-all"
                     >
                       Kaldır
                     </button>
@@ -280,12 +280,12 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
-        className="bg-panel rounded-sm border border-hairline w-full max-w-xl max-h-[88vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-xl max-h-[88vh] overflow-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Kampanya</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">Kampanya</p>
             <h2 className="font-display text-xl font-semibold text-paper">{title}</h2>
           </div>
           <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
@@ -383,7 +383,7 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
               />
             </div>
             <label className="flex items-center gap-2 cursor-pointer pb-2.5">
-              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="accent-ember w-4 h-4" />
+              <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="accent-[#FF6B6B] w-4 h-4" />
               <span className="font-mono text-xs uppercase tracking-wide text-paper">Aktif</span>
             </label>
           </div>
@@ -394,8 +394,8 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
               <button
                 type="button"
                 onClick={() => setCampaignType('Info')}
-                className={`flex-1 font-mono text-xs uppercase tracking-wide px-3 py-2.5 rounded-sm border transition-colors ${
-                  campaignType === 'Info' ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate'
+                className={`flex-1 text-xs font-bold uppercase tracking-wide px-3 py-2.5 rounded-xl border transition-colors ${
+                  campaignType === 'Info' ? 'border-[#FF6B6B] bg-[#FF6B6B]/10 text-[#FF6B6B]' : 'border-hairline text-slate'
                 }`}
               >
                 Bilgi Kartı
@@ -403,8 +403,8 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
               <button
                 type="button"
                 onClick={() => setCampaignType('Combo')}
-                className={`flex-1 font-mono text-xs uppercase tracking-wide px-3 py-2.5 rounded-sm border transition-colors ${
-                  campaignType === 'Combo' ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate'
+                className={`flex-1 text-xs font-bold uppercase tracking-wide px-3 py-2.5 rounded-xl border transition-colors ${
+                  campaignType === 'Combo' ? 'border-[#FF6B6B] bg-[#FF6B6B]/10 text-[#FF6B6B]' : 'border-hairline text-slate'
                 }`}
               >
                 Combo (sepete eklenir)
@@ -517,16 +517,16 @@ function CampaignModal({ title, initial, products, onClose, onSubmit, onSaved })
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
+            className="text-xs font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-2.5 transition-colors"
           >
             Vazgeç
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
+            className="text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] disabled:opacity-50 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
           >
             {submitting ? 'Kaydediliyor...' : 'Kaydet'}
           </button>

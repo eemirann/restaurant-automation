@@ -121,8 +121,8 @@ export default function Shifts() {
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-6">
-        <p className="font-mono text-[10px] tracking-[0.3em] text-ember uppercase mb-1.5">Kasa</p>
-        <h1 className="font-display text-3xl font-bold text-paper leading-none">Vardiya Yönetimi</h1>
+        <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-1.5">Kasa</p>
+        <h1 className="text-3xl font-extrabold text-paper leading-none tracking-tight">Vardiya Yönetimi</h1>
       </div>
 
       {error && <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-6">{error}</p>}
@@ -198,7 +198,7 @@ export default function Shifts() {
                 type="checkbox"
                 checked={showDeleted}
                 onChange={(e) => setShowDeleted(e.target.checked)}
-                className="accent-ember w-3.5 h-3.5"
+                className="accent-[#FF6B6B] w-3.5 h-3.5"
               />
               <span className="font-mono text-[10px] uppercase tracking-wide text-slate">Silinenleri Göster</span>
             </label>
@@ -255,7 +255,7 @@ export default function Shifts() {
                         <button
                           onClick={() => deleteHistoryShift(s)}
                           disabled={historyBusy === s.ShiftId}
-                          className="font-mono text-[10px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2 py-1 transition-colors disabled:opacity-40"
+                          className="font-mono text-[10px] uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-lg px-2 py-1 transition-all disabled:opacity-40"
                         >
                           Sil
                         </button>

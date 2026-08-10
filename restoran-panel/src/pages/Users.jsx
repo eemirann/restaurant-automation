@@ -86,23 +86,23 @@ export default function Users() {
       {/* Başlık */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Yönetim · Personel
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Kullanıcılar</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Kullanıcılar</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchUsers}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
           >
             ↻ Yenile
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] rounded-xl px-4 py-2 shadow-lg shadow-red-500/10 transition-all"
           >
             + Yeni Kullanıcı
           </button>
@@ -128,9 +128,9 @@ export default function Users() {
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
-            className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors ${
+            className={`text-[11px] font-bold uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors ${
               filter === f.value
-                ? 'border-ember text-paper font-semibold'
+                ? 'border-[#FF6B6B] text-[#FF6B6B]'
                 : 'border-transparent text-slate hover:text-paper'
             }`}
           >
@@ -148,11 +148,11 @@ export default function Users() {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : visibleUsers.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek kullanıcı bulunamadı.</p>
         </div>
       ) : (
-        <div className="border border-hairline rounded-sm overflow-hidden bg-panel">
+        <div className="border border-stone-100 rounded-3xl overflow-hidden bg-panel shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
@@ -199,7 +199,7 @@ export default function Users() {
                       <div className="flex justify-end gap-2 flex-wrap">
                         <button
                           onClick={() => setManagingUser(u)}
-                          className="font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm px-2.5 py-1.5 transition-colors"
+                          className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-2.5 py-1.5 transition-colors"
                         >
                           Yönet
                         </button>
@@ -208,14 +208,14 @@ export default function Users() {
                             onClick={() => deactivateUser(u.UserId)}
                             disabled={isSelf}
                             title={isSelf ? 'Kendi hesabınızı pasife alamazsınız' : undefined}
-                            className="font-mono text-[11px] uppercase tracking-wide text-ember hover:text-ember/80 border border-ember/40 rounded-sm px-2.5 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl px-2.5 py-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             Pasife Al
                           </button>
                         ) : (
                           <button
                             onClick={() => reactivateUser(u.UserId)}
-                            className="font-mono text-[11px] uppercase tracking-wide text-moss hover:text-moss/80 border border-moss/40 rounded-sm px-2.5 py-1.5 transition-colors"
+                            className="text-[11px] font-bold uppercase tracking-wide text-moss hover:text-moss/80 border border-moss/40 rounded-xl px-2.5 py-1.5 transition-colors"
                           >
                             Aktif Et
                           </button>
@@ -309,12 +309,12 @@ function CreateUserModal({ onClose, onCreated }) {
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <form
         onSubmit={handleSubmit}
-        className="bg-panel rounded-sm border border-hairline w-full max-w-md max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-md max-h-[85vh] overflow-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Personel</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">Personel</p>
             <h2 className="font-display text-xl font-semibold text-paper">Yeni Kullanıcı</h2>
           </div>
           <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
@@ -402,16 +402,16 @@ function CreateUserModal({ onClose, onCreated }) {
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper
-                       border border-hairline rounded-sm px-4 py-2.5 transition-colors"
+            className="text-xs font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-4 py-2.5 transition-colors"
           >
             Vazgeç
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 disabled:opacity-50 rounded-sm px-4 py-2.5 transition-colors"
+            className="text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] disabled:opacity-50 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
           >
             {submitting ? 'Oluşturuluyor...' : 'Oluştur'}
           </button>
@@ -476,12 +476,12 @@ function ManageUserModal({ user, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className="bg-panel rounded-sm border border-hairline w-full max-w-md max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-md max-h-[85vh] overflow-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Yönet</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">Yönet</p>
             <h2 className="font-display text-xl font-semibold text-paper">{user.FullName}</h2>
             <p className="font-mono text-xs text-slate mt-0.5">{user.UserName}</p>
           </div>

@@ -28,7 +28,7 @@ export default function ProductCard({ product, quantity = 0, onOpen }) {
       whileHover={avail ? { y: -3, scale: 1.015 } : undefined}
       whileTap={avail ? { scale: 0.98 } : undefined}
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className={`group relative flex flex-col text-left rounded-xl border bg-panel overflow-hidden
+      className={`group relative flex flex-col text-left rounded-2xl border bg-panel overflow-hidden
                   shadow-sm hover:shadow-lg transition-shadow duration-200
                   ${avail ? 'border-hairline cursor-pointer' : 'border-hairline opacity-60 cursor-pointer'}`}
     >
@@ -46,10 +46,11 @@ export default function ProductCard({ product, quantity = 0, onOpen }) {
           </div>
         )}
 
-        {/* Rozetler */}
+        {/* Rozetler — bu kart SADECE sipariş başlatma ekranında kullanılıyor,
+            Superdesign'ın "Kahve Mağazası" spesifikasyonuna göre turuncu/kırmızı. */}
         <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
           {popular && (
-            <span className="font-mono text-[9px] uppercase tracking-wide bg-ember text-cream rounded-full px-2 py-0.5 shadow-sm">
+            <span className="font-mono text-[9px] uppercase tracking-wide bg-[#D97706] text-white rounded-full px-2 py-0.5 shadow-sm">
               ⭐ Popüler
             </span>
           )}
@@ -69,7 +70,7 @@ export default function ProductCard({ product, quantity = 0, onOpen }) {
         )}
 
         {quantity > 0 && (
-          <span className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-ember text-cream font-mono text-[11px] font-semibold shadow-sm">
+          <span className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-[#EF4444] text-white font-mono text-[11px] font-semibold shadow-sm">
             {quantity}
           </span>
         )}
@@ -84,11 +85,11 @@ export default function ProductCard({ product, quantity = 0, onOpen }) {
           <p className="text-xs text-slate line-clamp-2 leading-snug">{product.Description}</p>
         )}
         <div className="mt-2 flex items-center justify-between">
-          <span className="font-mono text-sm text-paper font-semibold">{money(product.Price)}</span>
+          <span className="font-mono text-sm font-bold text-[#D97706]">{money(product.Price)}</span>
           {avail && (
             <span
-              className="w-7 h-7 flex items-center justify-center rounded-full bg-ember/10 text-ember
-                         text-sm font-semibold group-hover:bg-ember group-hover:text-cream transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#EF4444] text-white
+                         text-sm font-semibold shadow-sm group-hover:bg-red-600 transition-colors"
             >
               +
             </span>

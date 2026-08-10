@@ -96,16 +96,16 @@ export default function Kds() {
       {/* Başlık */}
       <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
-          <p className="font-mono text-[10px] tracking-[0.3em] text-ember uppercase mb-1.5">Mutfak</p>
-          <h1 className="font-display text-3xl font-bold text-paper leading-none">Mutfak Ekranı (KDS)</h1>
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-1.5">Mutfak</p>
+          <h1 className="text-3xl font-extrabold text-paper leading-none tracking-tight">Mutfak Ekranı (KDS)</h1>
           <p className="font-mono text-xs text-slate mt-2">{activeCount} bekleyen kalem · {tickets.length} adisyon</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowReady((v) => !v)}
             title="Hazır/servis edilmiş kalemler, ödeme alınana kadar burada kalır"
-            className={`font-mono text-xs uppercase tracking-wide px-3.5 py-2.5 rounded-lg border transition-colors ${
-              showReady ? 'border-moss bg-moss/10 text-moss font-semibold' : 'border-hairline text-slate hover:text-paper'
+            className={`text-[11px] font-bold uppercase tracking-wide px-3.5 py-2.5 rounded-xl border shadow-sm transition-colors ${
+              showReady ? 'border-moss bg-moss/10 text-moss' : 'border-hairline text-slate hover:text-paper bg-panel'
             }`}
           >
             Hazır/Servis edilenleri de göster
@@ -113,7 +113,7 @@ export default function Kds() {
           <button
             onClick={() => fetchQueue()}
             title="Yenile"
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2.5 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-3 py-2.5 bg-panel shadow-sm transition-colors"
           >
             ↻
           </button>
@@ -158,7 +158,7 @@ export default function Kds() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-paper font-medium">
-                              <span className="font-mono text-ember font-bold">{item.Quantity}×</span> {item.ProductName}
+                              <span className="font-mono text-[#FF6B6B] font-bold">{item.Quantity}×</span> {item.ProductName}
                             </p>
                             {item.Note && <p className="font-mono text-[11px] text-azure/90 mt-0.5">📝 {item.Note}</p>}
                           </div>
@@ -178,8 +178,8 @@ export default function Kds() {
                                 type="button"
                                 disabled={busy || active}
                                 onClick={() => setStatus(item, st)}
-                                className={`font-mono text-[10px] uppercase tracking-wide py-2 rounded-lg border transition-all disabled:opacity-50 ${
-                                  active ? `${c.pill} font-semibold` : 'border-hairline text-slate hover:border-ember hover:text-ember'
+                                className={`font-mono text-[10px] uppercase tracking-wide py-2 rounded-xl border transition-all disabled:opacity-50 ${
+                                  active ? `${c.pill} font-semibold` : 'border-hairline text-slate hover:border-[#FF6B6B] hover:text-[#FF6B6B]'
                                 }`}
                               >
                                 {c.label}

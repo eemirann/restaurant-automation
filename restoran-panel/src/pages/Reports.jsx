@@ -91,13 +91,13 @@ export default function Reports() {
       {/* Başlık */}
       <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
-          <p className="font-mono text-[10px] tracking-[0.3em] text-ember uppercase mb-1.5">Raporlar</p>
-          <h1 className="font-display text-3xl font-bold text-paper leading-none">Satış Raporları</h1>
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-1.5">Raporlar</p>
+          <h1 className="text-3xl font-extrabold text-paper leading-none tracking-tight">Satış Raporları</h1>
         </div>
         <button
           onClick={downloadCsv}
           disabled={downloading || loading || !data}
-          className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 disabled:opacity-40 rounded-lg px-4 py-2.5 transition-colors shadow-sm"
+          className="text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B] hover:bg-[#ff5555] disabled:opacity-40 rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
         >
           {downloading ? 'İndiriliyor…' : '⬇ CSV İndir'}
         </button>
@@ -109,8 +109,8 @@ export default function Reports() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-all ${
-              tab === t.key ? 'border-ember text-ember font-semibold' : 'border-transparent text-slate hover:text-paper'
+            className={`text-xs font-bold uppercase tracking-wide px-4 py-2.5 border-b-2 transition-all ${
+              tab === t.key ? 'border-[#FF6B6B] text-[#FF6B6B]' : 'border-transparent text-slate hover:text-paper'
             }`}
           >
             {t.label}
@@ -140,7 +140,7 @@ export default function Reports() {
             </div>
           </>
         )}
-        <button onClick={fetchReport} className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2 transition-colors">↻ Yenile</button>
+        <button onClick={fetchReport} className="text-xs font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors">↻ Yenile</button>
       </div>
 
       {error && <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-6">{error}</p>}

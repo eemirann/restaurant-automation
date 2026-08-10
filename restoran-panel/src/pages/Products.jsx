@@ -183,16 +183,16 @@ const reactivateProduct = async (productId) => {
       {/* Başlık */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-ember uppercase mb-2">
+          <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.3em] uppercase mb-2">
             Menü · Mutfak
           </p>
-          <h1 className="font-display text-3xl font-semibold text-paper">Ürünler</h1>
+          <h1 className="text-4xl font-extrabold text-paper tracking-tight">Ürünler</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchProducts}
-            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                       border border-hairline rounded-sm px-3 py-2 transition-colors"
+            className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                       border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors"
           >
             ↻ Yenile
           </button>
@@ -209,8 +209,8 @@ const reactivateProduct = async (productId) => {
                 onClick={triggerImport}
                 disabled={importing}
                 title="Bir JSON dosyasından kategori/ürün/varyant/reçete içe aktar"
-                className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                           border border-hairline rounded-sm px-3 py-2 transition-colors disabled:opacity-50"
+                className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                           border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors disabled:opacity-50"
               >
                 {importing ? 'İçe Aktarılıyor…' : '⇧ İçe Aktar'}
               </button>
@@ -218,15 +218,15 @@ const reactivateProduct = async (productId) => {
                 onClick={exportMenu}
                 disabled={exporting}
                 title="Kategori/ürün/varyant/reçete verisini JSON olarak indir"
-                className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember
-                           border border-hairline rounded-sm px-3 py-2 transition-colors disabled:opacity-50"
+                className="text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper
+                           border border-hairline rounded-xl px-3 py-2 bg-panel shadow-sm transition-colors disabled:opacity-50"
               >
                 {exporting ? 'İndiriliyor…' : '⇩ Dışa Aktar'}
               </button>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                           hover:bg-ember/90 rounded-sm px-4 py-2 transition-colors"
+                className="text-[11px] font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                           hover:bg-[#ff5555] rounded-xl px-4 py-2 shadow-lg shadow-red-500/10 transition-all"
               >
                 + Yeni Ürün
               </button>
@@ -257,11 +257,11 @@ const reactivateProduct = async (productId) => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Ürün ara..."
-            className="w-full border border-hairline rounded-sm pl-9 pr-3 py-2.5 font-body text-paper
-                       focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            className="w-full border border-hairline rounded-xl pl-9 pr-3 py-2.5 font-body text-paper
+                       focus:outline-none focus:ring-2 focus:ring-[#FF6B6B]/40 focus:border-[#FF6B6B]"
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-ember text-xs">✕</button>
+            <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate hover:text-[#FF6B6B] text-xs">✕</button>
           )}
         </div>
       </div>
@@ -272,9 +272,9 @@ const reactivateProduct = async (productId) => {
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
-            className={`font-mono text-xs uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors ${
+            className={`text-[11px] font-bold uppercase tracking-wide px-4 py-2.5 border-b-2 transition-colors ${
               filter === f.value
-                ? 'border-ember text-paper font-semibold'
+                ? 'border-[#FF6B6B] text-[#FF6B6B]'
                 : 'border-transparent text-slate hover:text-paper'
             }`}
           >
@@ -292,7 +292,7 @@ const reactivateProduct = async (productId) => {
       {loading ? (
         <p className="text-slate font-mono text-sm">Yükleniyor...</p>
       ) : visibleProducts.length === 0 ? (
-        <div className="border border-dashed border-hairline rounded-sm p-10 text-center bg-panel/50">
+        <div className="border border-dashed border-hairline rounded-3xl p-10 text-center bg-panel/50">
           <p className="text-slate font-mono text-sm">Gösterilecek ürün bulunamadı.</p>
         </div>
       ) : (
@@ -392,21 +392,21 @@ const reactivateProduct = async (productId) => {
                           <div className="flex gap-2 mt-2 pt-3 border-t border-hairline">
                             <button
                               onClick={() => setEditingProduct(p)}
-                              className="flex-1 font-mono text-[11px] uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-sm py-2 transition-colors"
+                              className="flex-1 text-[11px] font-bold uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-xl py-2 transition-colors"
                             >
                               Düzenle
                             </button>
                             {active ? (
                               <button
                                 onClick={() => deactivateProduct(p.ProductId)}
-                                className="flex-1 font-mono text-[11px] uppercase tracking-wide text-ember hover:text-cream hover:bg-ember border border-ember/40 rounded-sm py-2 transition-colors"
+                                className="flex-1 text-[11px] font-bold uppercase tracking-wide text-[#FF6B6B] hover:text-white hover:bg-[#FF6B6B] border border-[#FF6B6B]/40 rounded-xl py-2 transition-all"
                               >
                                 Pasife Al
                               </button>
                             ) : (
                               <button
                                 onClick={() => reactivateProduct(p.ProductId)}
-                                className="flex-1 font-mono text-[11px] uppercase tracking-wide text-moss hover:text-charcoal hover:bg-moss border border-moss/40 rounded-sm py-2 transition-colors"
+                                className="flex-1 text-[11px] font-bold uppercase tracking-wide text-moss hover:text-charcoal hover:bg-moss border border-moss/40 rounded-xl py-2 transition-colors"
                               >
                                 Aktif Et
                               </button>
@@ -471,12 +471,12 @@ function ImportSummaryModal({ summary, onClose }) {
   return (
     <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
       <div
-        className="bg-panel rounded-sm border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-lg"
+        className="bg-panel rounded-3xl border border-hairline w-full max-w-lg max-h-[85vh] overflow-auto shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 border-b border-hairline flex items-start justify-between">
           <div>
-            <p className="font-mono text-xs tracking-[0.2em] text-ember uppercase mb-1">Menü</p>
+            <p className="text-[10px] font-bold text-[#FF6B6B] tracking-[0.2em] uppercase mb-1">Menü</p>
             <h2 className="font-display text-xl font-semibold text-paper">İçe Aktarma Tamamlandı</h2>
           </div>
           <button type="button" onClick={onClose} className="font-mono text-xs text-slate hover:text-paper">
@@ -512,8 +512,8 @@ function ImportSummaryModal({ summary, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="font-mono text-xs uppercase tracking-wide text-cream bg-ember
-                       hover:bg-ember/90 rounded-sm px-4 py-2.5 transition-colors"
+            className="text-xs font-bold uppercase tracking-wide text-white bg-[#FF6B6B]
+                       hover:bg-[#ff5555] rounded-xl px-4 py-2.5 shadow-lg shadow-red-500/10 transition-all"
           >
             Tamam
           </button>

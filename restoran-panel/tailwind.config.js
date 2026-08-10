@@ -25,9 +25,17 @@ export default {
         paper: 'rgb(var(--color-paper) / <alpha-value>)',
       },
       fontFamily: {
-        display: ['"Fraunces"', 'serif'],
-        body: ['"Inter"', 'sans-serif'],
+        // Superdesign taslağıyla ("Kompakt Masa Yönetimi") aynı tek font ailesi —
+        // Zodiak+Satoshi ikilisinin yerini aldı, bkz. index.css'teki Google Fonts import'u.
+        display: ['"Plus Jakarta Sans"', 'sans-serif'],
+        body: ['"Plus Jakarta Sans"', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'monospace'],
+      },
+      // rounded-sm uygulamanın HER yerinde (~380 kullanım) kullanılan ana köşe
+      // yarıçapı — tek satırda yumuşatınca hiçbir bileşen dosyasına dokunmadan
+      // tüm uygulama daha yumuşak/modern görünür (bkz. Superdesign taslağı).
+      borderRadius: {
+        sm: '0.625rem',
       },
     },
   },
