@@ -103,11 +103,12 @@ export default function Kds() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowReady((v) => !v)}
+            title="Hazır/servis edilmiş kalemler, ödeme alınana kadar burada kalır"
             className={`font-mono text-xs uppercase tracking-wide px-3.5 py-2.5 rounded-lg border transition-colors ${
               showReady ? 'border-moss bg-moss/10 text-moss font-semibold' : 'border-hairline text-slate hover:text-paper'
             }`}
           >
-            Hazır olanları göster
+            Hazır/Servis edilenleri de göster
           </button>
           <button
             onClick={() => fetchQueue()}

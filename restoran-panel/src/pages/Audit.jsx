@@ -33,7 +33,9 @@ const ACTIONS = {
   SYRUP_DELETE: { label: 'Şurup Sil', cls: 'border-red-500/40 bg-red-500/10 text-red-500' },
 };
 
-const dt = (v) => (v ? new Date(v).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+const dt = (v) => (v ? new Date(v).toLocaleString('tr-TR', {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+}) : '—');
 
 const fmtDetails = (d) => {
   if (!d) return '';
@@ -56,19 +58,24 @@ export default function Audit() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionFilter, setActionFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await client.get('/audit');
+      const params = {};
+      if (fromDate) params.from = fromDate;
+      if (toDate) params.to = toDate;
+      const res = await client.get('/audit', { params });
       setRows(res.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Denetim günlüğü getirilemedi.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -104,6 +111,37 @@ export default function Audit() {
 
       {tab === 'audit' ? (
         <>
+          {/* Tarih aralığı filtresi — verilmezse son 200 kayıt (bkz. backend) */}
+          <div className="flex flex-wrap items-end gap-3 mb-5">
+            <div>
+              <label className="block font-mono text-[9px] uppercase tracking-wide text-slate/70 mb-1">Başlangıç</label>
+              <input
+                type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+                className="border border-hairline rounded-lg px-3 py-2 font-mono text-xs text-paper bg-charcoal
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
+            <div>
+              <label className="block font-mono text-[9px] uppercase tracking-wide text-slate/70 mb-1">Bitiş</label>
+              <input
+                type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+                className="border border-hairline rounded-lg px-3 py-2 font-mono text-xs text-paper bg-charcoal
+                           focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+              />
+            </div>
+            {(fromDate || toDate) && (
+              <button
+                onClick={() => { setFromDate(''); setToDate(''); }}
+                className="font-mono text-xs uppercase tracking-wide text-slate hover:text-ember border border-hairline rounded-lg px-3 py-2.5 transition-colors"
+              >
+                Temizle
+              </button>
+            )}
+            {!fromDate && !toDate && (
+              <p className="font-mono text-[10px] text-slate mb-2.5">Tarih seçilmezse son 200 kayıt gösterilir.</p>
+            )}
+          </div>
+
           {/* Aksiyon filtresi */}
           <div className="flex gap-1.5 mb-5 flex-wrap">
             <button onClick={() => setActionFilter('')} className={`font-mono text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg border transition-all ${!actionFilter ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper'}`}>Tümü</button>

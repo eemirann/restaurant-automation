@@ -1,4 +1,4 @@
-const { connectDB } = require('../config/db');
+const { sql, connectDB } = require('../config/db');
 
 const DAY_NAMES_TR = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt']; // JS getDay(): 0 = Pazar
 
@@ -50,6 +50,26 @@ function buildHourlyRevenue(rows) {
 async function getDashboardStats(req, res) {
     try {
         const pool = await connectDB();
+
+        // "En Çok Satan Ürünler" widget'ı için opsiyonel tarih aralığı
+        // (?bestSellingFrom=&bestSellingTo=, YYYY-MM-DD) — ikisi de yoksa
+        // TÜM ZAMANLAR (eski davranış) korunur. Sadece bu widget'a özel;
+        // diğer istatistikler (bugünkü ciro vb.) kendi sabit aralıklarında kalır.
+        const { bestSellingFrom, bestSellingTo } = req.query;
+        let bestSellingDateFilter = '';
+        const bestSellingRequest = pool.request();
+        if (bestSellingFrom) {
+            const d = new Date(bestSellingFrom);
+            if (isNaN(d.getTime())) return res.status(400).json({ error: 'bestSellingFrom geçerli bir tarih (YYYY-MM-DD) olmalı' });
+            bestSellingRequest.input('BestSellingFrom', sql.Date, d);
+            bestSellingDateFilter += ' AND CAST(o.CreatedAt AS DATE) >= @BestSellingFrom';
+        }
+        if (bestSellingTo) {
+            const d = new Date(bestSellingTo);
+            if (isNaN(d.getTime())) return res.status(400).json({ error: 'bestSellingTo geçerli bir tarih (YYYY-MM-DD) olmalı' });
+            bestSellingRequest.input('BestSellingTo', sql.Date, d);
+            bestSellingDateFilter += ' AND CAST(o.CreatedAt AS DATE) <= @BestSellingTo';
+        }
 
         const summaryResult = await pool.request().query(`
             SELECT
@@ -114,12 +134,12 @@ async function getDashboardStats(req, res) {
             ORDER BY t.TableNumber ASC
         `);
 
-        const bestSellingResult = await pool.request().query(`
+        const bestSellingResult = await bestSellingRequest.query(`
             SELECT TOP 5 p.Name AS ProductName, SUM(od.Quantity) AS QuantitySold
             FROM OrderDetails od
             JOIN Products p ON p.ProductId = od.ProductId
             JOIN Orders o ON o.OrderId = od.OrderId
-            WHERE o.Status != 'Cancelled'
+            WHERE o.Status != 'Cancelled'${bestSellingDateFilter}
             GROUP BY p.Name
             ORDER BY SUM(od.Quantity) DESC
         `);
@@ -151,16 +171,51 @@ async function getDashboardStats(req, res) {
             percent: categoryRevenueTotal > 0 ? Math.round((Number(r.Revenue) / categoryRevenueTotal) * 100) : 0,
         }));
 
-        // Bugünkü kâr oranı — sadece Cost'u girilmiş ürünler üzerinden (girilmemişse
-        // yanıltıcı bir oran vermek yerine ayrı say, frontend uyarı gösterebilsin).
+        // Bugünkü kâr oranı — maliyet, reçetesi (BOM) olan ürünlerde hammadde
+        // maliyetlerinden OTOMATİK hesaplanır, yoksa elle girilen Products.Cost'a
+        // düşer; ekstra/şurup maliyetleri de (varsa, Birim Dönüşüm Sistemi ile
+        // ölçeklenerek — bkz. migrations/2026_08_14_unit_conversion_system.sql)
+        // eklenir (bkz. reportController.js getProductsReport'taki AYNI desen).
+        // Ana ürün maliyeti bilinmiyorsa ürün "fiyatlanmamış" sayılır, yanıltıcı
+        // bir oran vermek yerine ayrı sayılır.
         const profitResult = await pool.request().query(`
+            DECLARE @PorsiyonUnitId INT = (SELECT UnitId FROM Units WHERE Code = N'porsiyon');
+            ;WITH RecipeCost AS (
+                SELECT r.ProductId,
+                       CASE WHEN COUNT(*) = SUM(CASE WHEN rm.Cost IS NOT NULL THEN 1 ELSE 0 END)
+                            THEN SUM(r.Quantity * f.Factor * rm.Cost)
+                            ELSE NULL END AS UnitCost
+                FROM Recipes r
+                JOIN Products rm ON rm.ProductId = r.RawMaterialProductId
+                CROSS APPLY dbo.fn_ProductUnitFactor(rm.ProductId, r.UnitId, rm.StockUnitId) f
+                GROUP BY r.ProductId
+            ),
+            LineExtraCost AS (
+                SELECT ode.OrderDetailsId, SUM(ode.Quantity * f.Factor * ISNULL(ep.Cost, 0)) AS UnitCost
+                FROM OrderDetailExtras ode
+                JOIN Products ep ON ep.ProductId = ode.ExtraProductId
+                CROSS APPLY dbo.fn_ProductUnitFactor(ep.ProductId, @PorsiyonUnitId, ep.StockUnitId) f
+                GROUP BY ode.OrderDetailsId
+            ),
+            LineSyrupCost AS (
+                SELECT ods.OrderDetailsId, SUM(ods.Quantity * f.Factor * ISNULL(sp.Cost, 0)) AS UnitCost
+                FROM OrderDetailSyrups ods
+                JOIN Products sp ON sp.ProductId = ods.SyrupProductId
+                CROSS APPLY dbo.fn_ProductUnitFactor(sp.ProductId, @PorsiyonUnitId, sp.StockUnitId) f
+                GROUP BY ods.OrderDetailsId
+            )
             SELECT
-                ISNULL(SUM(CASE WHEN p.Cost IS NOT NULL THEN od.Quantity * od.UnitPrice ELSE 0 END), 0) AS PricedRevenue,
-                ISNULL(SUM(CASE WHEN p.Cost IS NOT NULL THEN od.Quantity * p.Cost ELSE 0 END), 0) AS PricedCost,
-                ISNULL(SUM(CASE WHEN p.Cost IS NULL THEN od.Quantity ELSE 0 END), 0) AS UnpricedQuantity
+                ISNULL(SUM(CASE WHEN COALESCE(rc.UnitCost, p.Cost) IS NOT NULL THEN od.Quantity * od.UnitPrice ELSE 0 END), 0) AS PricedRevenue,
+                ISNULL(SUM(CASE WHEN COALESCE(rc.UnitCost, p.Cost) IS NOT NULL
+                                THEN od.Quantity * (COALESCE(rc.UnitCost, p.Cost) + ISNULL(lec.UnitCost, 0) + ISNULL(lsc.UnitCost, 0))
+                                ELSE 0 END), 0) AS PricedCost,
+                ISNULL(SUM(CASE WHEN COALESCE(rc.UnitCost, p.Cost) IS NULL THEN od.Quantity ELSE 0 END), 0) AS UnpricedQuantity
             FROM OrderDetails od
             JOIN Orders o ON o.OrderId = od.OrderId
             JOIN Products p ON p.ProductId = od.ProductId
+            LEFT JOIN RecipeCost rc ON rc.ProductId = p.ProductId
+            LEFT JOIN LineExtraCost lec ON lec.OrderDetailsId = od.OrderDetailsId
+            LEFT JOIN LineSyrupCost lsc ON lsc.OrderDetailsId = od.OrderDetailsId
             WHERE CAST(o.CreatedAt AS DATE) = CAST(GETDATE() AS DATE) AND o.Status != 'Cancelled'
         `);
         const profitRow = profitResult.recordset[0];
@@ -240,6 +295,7 @@ async function getDashboardStats(req, res) {
             lowStockProducts: lowStockResult.recordset,
             openTables: openTablesResult.recordset,
             bestSellingProducts: bestSellingResult.recordset,
+            bestSellingRange: (bestSellingFrom || bestSellingTo) ? { from: bestSellingFrom || null, to: bestSellingTo || null } : null,
             categoryDistribution,
             profitRatio,
             hourlyRevenue: buildHourlyRevenue(hourlyRevenueResult.recordset),

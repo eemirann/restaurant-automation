@@ -173,8 +173,29 @@ async function getZReport(req, res) {
 
 // ============================================================
 // ÜRÜN SATIŞ & KÂR RAPORU  (GET /api/reports/products?from=&to=&format=)
-// Ürün bazında satılan adet, ciro, maliyet ve kâr (Products.Cost).
-// Cost girilmemiş ürünlerde Cost/Profit null döner.
+// Ürün bazında satılan adet, ciro, maliyet ve kâr.
+//
+// MALİYET KAYNAĞI (öncelik sırasıyla):
+//   1) Reçetesi (BOM) olan ürünlerde: SUM(hammadde miktarı * hammadde Cost'u)
+//      — reçete/hammadde maliyeti değiştiğinde OTOMATİK güncel kalır, elle
+//      Cost girmeye/güncellemeye gerek kalmaz (bkz. RecipeCost alt sorgusu).
+//      Reçetedeki hammaddelerden BİRİNİN BİLE Cost'u girilmemişse (NULL),
+//      toplam maliyet yanıltıcı olmasın diye NULL döner — kısmi/yanlış bir
+//      rakam göstermek, hiç göstermemekten daha kötü.
+//   2) Reçetesi olmayan ürünlerde (ör. doğrudan satılan hammadde/şişe içecek):
+//      elle girilen Products.Cost.
+// Ana ürün maliyeti bilinmiyorsa (1) ve (2) de yoksa Cost/Profit null döner
+// (frontend bunu ayrıca işaretler) — bu, ana maliyet sürücüsü olduğu için
+// hâlâ katı kurallı.
+//
+// EKSTRA + ŞURUP MALİYETİ: sipariş kalemine eklenen ekstra/şurupların KENDİ
+// Cost'u da (varsa) toplam maliyete eklenir — şurupta porsiyon başına
+// gerçek tüketim, Birim Dönüşüm Sistemi (bkz. migrations/2026_08_14_
+// unit_conversion_system.sql, dbo.fn_ProductUnitFactor — inline TVF,
+// performans için scalar UDF DEĞİL) ile hesaplanır. Bunlar için Cost
+// girilmemişse (ana ürünün aksine) tüm hesaplamayı NULL'a düşürmek yerine
+// 0 sayılır — ekstra/şurup ana maliyet sürücüsü değil, eksik bilgi ana
+// ürünün raporunu tamamen gizlemesin diye.
 // ============================================================
 async function getProductsReport(req, res) {
     try {
@@ -187,20 +208,56 @@ async function getProductsReport(req, res) {
             .input('From', sql.Date, new Date(range.from))
             .input('To', sql.Date, new Date(range.to))
             .query(`
+                DECLARE @PorsiyonUnitId INT = (SELECT UnitId FROM Units WHERE Code = N'porsiyon');
+                ;WITH RecipeCost AS (
+                    -- r.Quantity * (girilen birim -> hammaddenin stok birimi dönüşüm
+                    -- faktörü, bkz. fn_ProductUnitFactor) * hammaddenin stok birimi
+                    -- başına maliyeti. r.UnitId NULL ise faktör 1 (eski davranış).
+                    SELECT r.ProductId,
+                           CASE WHEN COUNT(*) = SUM(CASE WHEN rm.Cost IS NOT NULL THEN 1 ELSE 0 END)
+                                THEN SUM(r.Quantity * f.Factor * rm.Cost)
+                                ELSE NULL END AS UnitCost
+                    FROM Recipes r
+                    JOIN Products rm ON rm.ProductId = r.RawMaterialProductId
+                    CROSS APPLY dbo.fn_ProductUnitFactor(rm.ProductId, r.UnitId, rm.StockUnitId) f
+                    GROUP BY r.ProductId
+                ),
+                LineExtraCost AS (
+                    -- Kalemin 1 adedi için ekstra maliyeti (od.Quantity ile DIŞARIDA
+                    -- çarpılır) — ekstranın kendi porsiyon->stok birimi dönüşümü dahil.
+                    SELECT ode.OrderDetailsId, SUM(ode.Quantity * f.Factor * ISNULL(ep.Cost, 0)) AS UnitCost
+                    FROM OrderDetailExtras ode
+                    JOIN Products ep ON ep.ProductId = ode.ExtraProductId
+                    CROSS APPLY dbo.fn_ProductUnitFactor(ep.ProductId, @PorsiyonUnitId, ep.StockUnitId) f
+                    GROUP BY ode.OrderDetailsId
+                ),
+                LineSyrupCost AS (
+                    -- Kalemin 1 adedi için şurup maliyeti: porsiyon * (porsiyon->stok birimi
+                    -- dönüşüm faktörü) * stok birimi başına maliyet (bkz. fn_ProductUnitFactor)
+                    SELECT ods.OrderDetailsId, SUM(ods.Quantity * f.Factor * ISNULL(sp.Cost, 0)) AS UnitCost
+                    FROM OrderDetailSyrups ods
+                    JOIN Products sp ON sp.ProductId = ods.SyrupProductId
+                    CROSS APPLY dbo.fn_ProductUnitFactor(sp.ProductId, @PorsiyonUnitId, sp.StockUnitId) f
+                    GROUP BY ods.OrderDetailsId
+                )
                 SELECT
                     p.ProductId,
                     p.Name AS ProductName,
                     SUM(od.Quantity) AS QuantitySold,
                     SUM(od.Quantity * od.UnitPrice) AS Revenue,
-                    CASE WHEN p.Cost IS NULL THEN NULL ELSE SUM(od.Quantity * p.Cost) END AS Cost,
-                    CASE WHEN p.Cost IS NULL THEN NULL
-                         ELSE SUM(od.Quantity * od.UnitPrice) - SUM(od.Quantity * p.Cost) END AS Profit
+                    CASE WHEN COALESCE(rc.UnitCost, p.Cost) IS NULL THEN NULL
+                         ELSE SUM(od.Quantity * (COALESCE(rc.UnitCost, p.Cost) + ISNULL(lec.UnitCost, 0) + ISNULL(lsc.UnitCost, 0))) END AS Cost,
+                    CASE WHEN COALESCE(rc.UnitCost, p.Cost) IS NULL THEN NULL
+                         ELSE SUM(od.Quantity * od.UnitPrice) - SUM(od.Quantity * (COALESCE(rc.UnitCost, p.Cost) + ISNULL(lec.UnitCost, 0) + ISNULL(lsc.UnitCost, 0))) END AS Profit
                 FROM OrderDetails od
                 JOIN Orders o ON o.OrderId = od.OrderId
                 JOIN Products p ON p.ProductId = od.ProductId
+                LEFT JOIN RecipeCost rc ON rc.ProductId = p.ProductId
+                LEFT JOIN LineExtraCost lec ON lec.OrderDetailsId = od.OrderDetailsId
+                LEFT JOIN LineSyrupCost lsc ON lsc.OrderDetailsId = od.OrderDetailsId
                 WHERE o.Status <> 'Cancelled'
                   AND CAST(o.CreatedAt AS DATE) BETWEEN @From AND @To
-                GROUP BY p.ProductId, p.Name, p.Cost
+                GROUP BY p.ProductId, p.Name, p.Cost, rc.UnitCost
                 ORDER BY Revenue DESC
             `);
 

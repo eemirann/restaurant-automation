@@ -50,8 +50,11 @@ export default function Stock() {
   // Sayfa ilk açıldığında stok ve ürün listesini getir
   useEffect(() => {
     fetchStock();
-    // raw: 'all' -> menü ürünleri + hammaddeler + ekstralar + şuruplar (hepsi stok kaydı alabilir)
-    client.get('/products', { params: { raw: 'all' } }).then((res) => setProducts(res.data)).catch(() => {});
+    // raw: 'stockable' -> hammadde + ekstra + şurup (SADECE malzemeler).
+    // Satılan bitmiş menü ürünleri (ör. "Cappuccino") burada seçilebilir
+    // OLMAMALI — stok, ürünlerde kullanılan malzemeleri takip eder
+    // (bkz. controllers/productController.js).
+    client.get('/products', { params: { raw: 'stockable' } }).then((res) => setProducts(res.data)).catch(() => {});
   }, []);
 
   // Önce ürün adına göre ara (basit, memoization yok)
@@ -945,6 +948,40 @@ function StockEditDrawer({ item, onClose, onSaved }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // Bu stok kalemine bağlı ürünü şurup/ekstra olarak işaretleme — YENİ bir
+  // kayıt açmaz, doğrudan bu ürünü günceller (bkz. backend: setStockItemType).
+  const [isSyrup, setIsSyrup] = useState(!!item.IsSyrup);
+  const [isExtra, setIsExtra] = useState(!!item.IsExtra);
+  const [typePrice, setTypePrice] = useState(item.Price ?? '');
+  const [typeSaving, setTypeSaving] = useState(false);
+  const [typeError, setTypeError] = useState('');
+  const [typeSaved, setTypeSaved] = useState(false);
+
+  const typeChanged = isSyrup !== !!item.IsSyrup || isExtra !== !!item.IsExtra;
+
+  const saveType = async () => {
+    setTypeError('');
+    setTypeSaved(false);
+    if ((isSyrup || isExtra) && (typePrice === '' || Number(typePrice) < 0)) {
+      setTypeError('Şurup/Ekstra ücretini girin (negatif olmayan bir sayı).');
+      return;
+    }
+    setTypeSaving(true);
+    try {
+      await client.patch(`/stock/${item.StockId}/type`, {
+        IsSyrup: isSyrup,
+        IsExtra: isExtra,
+        Price: (isSyrup || isExtra) ? Number(typePrice) : undefined,
+      });
+      setTypeSaved(true);
+      onSaved();
+    } catch (err) {
+      setTypeError(err.response?.data?.error || 'Kaydedilemedi.');
+    } finally {
+      setTypeSaving(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -1025,6 +1062,62 @@ function StockEditDrawer({ item, onClose, onSaved }) {
           {error && (
             <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 bg-panel py-2">{error}</p>
           )}
+
+          {/* Şurup/Ekstra olarak işaretleme — ayrı bir "kaydet" akışı, adet/min
+              stok formunu tetiklemez (backend'de ayrı bir uç, /stock/:id/type). */}
+          <div className="border-t border-hairline pt-4 mt-2">
+            <p className="font-mono text-xs uppercase tracking-wide text-slate mb-2.5">Ürün Türü</p>
+            <div className="space-y-2 mb-3">
+              <label className="flex items-center gap-2.5 text-sm text-paper cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isSyrup}
+                  onChange={(e) => { setIsSyrup(e.target.checked); setTypeSaved(false); }}
+                  className="w-4 h-4 accent-ember"
+                />
+                Şurup olarak işaretle (sipariş ekranında şurup seçeneği olarak çıkar)
+              </label>
+              <label className="flex items-center gap-2.5 text-sm text-paper cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isExtra}
+                  onChange={(e) => { setIsExtra(e.target.checked); setTypeSaved(false); }}
+                  className="w-4 h-4 accent-ember"
+                />
+                Ekstra olarak işaretle (sipariş ekranında ekstra seçeneği olarak çıkar)
+              </label>
+            </div>
+
+            {(isSyrup || isExtra) && (
+              <div className="mb-3">
+                <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">Ekstra Ücret</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={typePrice}
+                  onChange={(e) => { setTypePrice(e.target.value); setTypeSaved(false); }}
+                  placeholder="0.00"
+                  className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
+                             focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+                />
+              </div>
+            )}
+
+            {typeError && <p className="text-ember text-xs font-medium mb-2">{typeError}</p>}
+            {typeSaved && !typeChanged && <p className="text-moss text-xs font-medium mb-2">Kaydedildi ✓</p>}
+
+            <button
+              type="button"
+              onClick={saveType}
+              disabled={typeSaving || !typeChanged}
+              className="w-full font-mono text-xs uppercase tracking-wide text-paper border border-hairline
+                         hover:border-ember hover:text-ember disabled:opacity-40 disabled:cursor-not-allowed
+                         rounded-sm px-4 py-2.5 transition-colors"
+            >
+              {typeSaving ? 'Kaydediliyor...' : 'Ürün Türünü Kaydet'}
+            </button>
+          </div>
         </form>
 
         <div className="px-6 py-4 border-t border-hairline shrink-0 bg-panel flex gap-2">

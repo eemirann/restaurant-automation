@@ -9,6 +9,10 @@ import NotificationCenter from './NotificationCenter';
 import client, { imageUrl } from '../api/client';
 import { ROLE_LABELS } from '../constants/roles';
 
+// Düz liste ÇOK uzamıştı (22 madde) — ilişkili sayfalar gruplandı:
+// "Ürünler" kendi altında Kategoriler'i, "Stok" kendi altında (malzemeyle
+// ilgili) Reçeteler/Ekstralar/Şuruplar'ı taşıyor. Gruba tıklamak açar/kapar,
+// grubun kendi linki (ör. "Ürünler") ayrıca tıklanabilir sayfa olarak kalır.
 const NAV_ITEMS = [
   // Panel (Dashboard) yalnızca yöneticide — kasiyer/garson/mutfak kendi
   // ekranıyla başlar (bkz. constants/roles.js > ROLE_HOME).
@@ -23,18 +27,35 @@ const NAV_ITEMS = [
   { to: '/reports', label: 'Raporlar', roles: ['Admin', 'Cashier'], icon: '📈' },
   { to: '/shifts', label: 'Vardiya', roles: null, icon: '🗄️' },
   { to: '/active-shifts', label: 'Aktif Vardiya', roles: ['Admin'], icon: '🟢' },
-  { to: '/products', label: 'Ürünler', roles: ['Admin'], icon: '☕' },
-  { to: '/categories', label: 'Kategoriler', roles: ['Admin'], icon: '🗂️' },
+  {
+    key: 'products', label: 'Ürünler', roles: ['Admin'], icon: '☕', to: '/products',
+    children: [
+      { to: '/products', label: 'Ürünler', roles: ['Admin'], icon: '☕' },
+      { to: '/categories', label: 'Kategoriler', roles: ['Admin'], icon: '🗂️' },
+    ],
+  },
   { to: '/users', label: 'Kullanıcılar', roles: ['Admin'], icon: '👤' },
-  { to: '/stock', label: 'Stok', roles: ['Admin'], icon: '📦' },
-  { to: '/recipes', label: 'Reçeteler', roles: ['Admin'], icon: '🧪' },
-  { to: '/extras', label: 'Ekstralar', roles: ['Admin'], icon: '🍯' },
-  { to: '/syrups', label: 'Şuruplar', roles: ['Admin'], icon: '🍮' },
+  {
+    key: 'stock', label: 'Stok', roles: ['Admin'], icon: '📦', to: '/stock',
+    children: [
+      { to: '/stock', label: 'Stok', roles: ['Admin'], icon: '📦' },
+      { to: '/recipes', label: 'Reçeteler', roles: ['Admin'], icon: '🧪' },
+      { to: '/extras', label: 'Ekstralar', roles: ['Admin'], icon: '🍯' },
+      { to: '/syrups', label: 'Şuruplar', roles: ['Admin'], icon: '🍮' },
+    ],
+  },
   { to: '/invoices', label: 'Faturalar', roles: ['Admin'], icon: '🧾' },
   { to: '/campaigns', label: 'Kampanyalar', roles: ['Admin'], icon: '🎉' },
   { to: '/audit', label: 'Denetim', roles: ['Admin'], icon: '🛡️' },
   { to: '/settings', label: 'Ayarlar', roles: ['Admin'], icon: '⚙️' },
 ];
+
+// CommandPalette (Ctrl/Cmd+K) hiyerarşiyi bilmez — tüm sayfaları TEK düz
+// liste olarak arar, grup başlıkları kendi 'to'suna göre bir kez, çocukları
+// ayrı ayrı eklenir (grup başlığının linki zaten ilk çocukla aynı sayfaya
+// gittiği için grup satırı burada tekrarlanmaz).
+const flattenNavItems = (items) =>
+  items.flatMap((item) => (item.children ? item.children : [item]));
 
 // Mutfak rolü kiosk/tablet gibi çalışır: yalnızca Mutfak (KDS) ekranı.
 // Rota tarafındaki karşılığı: ProtectedRoute.jsx (başka adrese giderse /kds'e döner).
@@ -45,6 +66,9 @@ const KITCHEN_PATHS = ['/kds'];
 const FULLSCREEN_PATHS = ['/tables'];
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
+// Hangi grupların açık/kapalı olduğu — sidebar daralt/genişlet ile AYNI
+// desen (localStorage, JSON dizi olarak açık grup key'leri).
+const SIDEBAR_OPEN_GROUPS_KEY = 'sidebarOpenGroups';
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
@@ -97,10 +121,34 @@ export default function Layout({ children }) {
     navigate('/login');
   };
 
-  const visibleItems = NAV_ITEMS.filter((item) => {
+  const canSee = (item) => {
     if (user?.role === 'Kitchen') return KITCHEN_PATHS.includes(item.to);
     return !item.roles || item.roles.includes(user?.role);
+  };
+
+  // Gruplar: önce çocuklar role göre süzülür, hiç çocuk kalmazsa grup
+  // TAMAMEN gizlenir (boş bir grup başlığı göstermenin anlamı yok).
+  const visibleItems = NAV_ITEMS
+    .map((item) => (item.children ? { ...item, children: item.children.filter(canSee) } : item))
+    .filter((item) => (item.children ? item.children.length > 0 : canSee(item)));
+
+  const paletteItems = flattenNavItems(visibleItems);
+
+  // Bir grup, aktif rota kendi çocuklarından birineyse (URL değişince)
+  // otomatik AÇIK sayılır — kullanıcı "Reçeteler"e gidip menüye baktığında
+  // grubun kapalı görünmesi kafa karıştırırdı.
+  const [openGroups, setOpenGroups] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(SIDEBAR_OPEN_GROUPS_KEY)) || []; } catch { return []; }
   });
+  const isGroupOpen = (item) =>
+    openGroups.includes(item.key) || item.children?.some((c) => c.to === location.pathname);
+  const toggleGroup = (key) => {
+    setOpenGroups((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      localStorage.setItem(SIDEBAR_OPEN_GROUPS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-charcoal font-body flex">
@@ -138,26 +186,88 @@ export default function Layout({ children }) {
         </div>
 
         <nav className="flex-1 py-4 overflow-y-auto">
-          {visibleItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              title={collapsed ? item.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center gap-3 py-3 text-sm font-medium transition-colors border-l-2 ${
-                  collapsed ? 'px-0 justify-center' : 'px-6'
-                } ${
-                  isActive
-                    ? 'border-ember bg-cream/5 text-cream'
-                    : 'border-transparent text-slate hover:text-cream hover:bg-cream/5'
-                }`
-              }
-            >
-              <span className="text-base leading-none w-5 text-center shrink-0">{item.icon}</span>
-              {!collapsed && item.label}
-            </NavLink>
-          ))}
+          {visibleItems.map((item) => {
+            if (!item.children) {
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  title={collapsed ? item.label : undefined}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 py-3 text-sm font-medium transition-colors border-l-2 ${
+                      collapsed ? 'px-0 justify-center' : 'px-6'
+                    } ${
+                      isActive
+                        ? 'border-ember bg-cream/5 text-cream'
+                        : 'border-transparent text-slate hover:text-cream hover:bg-cream/5'
+                    }`
+                  }
+                >
+                  <span className="text-base leading-none w-5 text-center shrink-0">{item.icon}</span>
+                  {!collapsed && item.label}
+                </NavLink>
+              );
+            }
+
+            // Grup: daralt/genişlet modunda ayrım yapmaz, çocuklarını hep
+            // düz simge listesi gibi gösterir (grup başlığı gizli kalır) —
+            // dar sidebar'da açılır kapanır başlık zaten sığmaz.
+            if (collapsed) {
+              return item.children.map((child) => (
+                <NavLink
+                  key={child.to}
+                  to={child.to}
+                  title={child.label}
+                  className={({ isActive }) =>
+                    `flex items-center justify-center py-3 text-sm font-medium transition-colors border-l-2 px-0 ${
+                      isActive
+                        ? 'border-ember bg-cream/5 text-cream'
+                        : 'border-transparent text-slate hover:text-cream hover:bg-cream/5'
+                    }`
+                  }
+                >
+                  <span className="text-base leading-none w-5 text-center shrink-0">{child.icon}</span>
+                </NavLink>
+              ));
+            }
+
+            const open = isGroupOpen(item);
+            return (
+              <div key={item.key}>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(item.key)}
+                  className="w-full flex items-center gap-3 py-3 px-6 text-sm font-medium transition-colors border-l-2
+                             border-transparent text-slate hover:text-cream hover:bg-cream/5"
+                >
+                  <span className="text-base leading-none w-5 text-center shrink-0">{item.icon}</span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                  <span className={`text-[10px] text-sand/50 transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+                </button>
+                {open && (
+                  <div className="pb-1">
+                    {item.children.map((child) => (
+                      <NavLink
+                        key={child.to}
+                        to={child.to}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3 py-2.5 pl-12 pr-6 text-sm transition-colors border-l-2 ${
+                            isActive
+                              ? 'border-ember bg-cream/5 text-cream font-medium'
+                              : 'border-transparent text-slate/80 hover:text-cream hover:bg-cream/5'
+                          }`
+                        }
+                      >
+                        <span className="text-sm leading-none w-4 text-center shrink-0">{child.icon}</span>
+                        {child.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className={`py-4 border-t border-cream/10 flex items-center ${collapsed ? 'px-3 justify-center' : 'px-6 justify-between'}`}>
@@ -235,7 +345,7 @@ export default function Layout({ children }) {
         </button>
       )}
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={visibleItems} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
     </div>
   );
 }

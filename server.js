@@ -52,6 +52,7 @@ const campaignRoutes = require('./routes/campaigns');
 const loyaltyRoutes = require('./routes/loyalty');
 const logsRoutes = require('./routes/logs');
 const branchRoutes = require('./routes/branches');
+const unitRoutes = require('./routes/units');
 
 // ============================================================
 // Süreç seviyesinde yakalanmayan hatalar — bunlar olmadan Node.js
@@ -126,6 +127,7 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/branches', branchRoutes);
+app.use('/api/units', unitRoutes);
 
 // ============================================================
 // MÜŞTERİ QR MENÜSÜ (musteri-menu/dist) — statik servis

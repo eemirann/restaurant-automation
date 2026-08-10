@@ -1,4 +1,5 @@
 const { sql } = require('../config/db');
+const { resolveConversionFactor } = require('./unitConversion');
 
 // ============================================================
 // BOM-FARKINDA STOK DÜŞME / GERİ EKLEME YARDIMCILARI
@@ -68,13 +69,31 @@ async function restoreStockForItem(transaction, productId, quantity) {
 async function resolveStockTargets(transaction, productId, quantity) {
     const recipe = await new sql.Request(transaction)
         .input('ProductId', sql.Int, productId)
-        .query(`SELECT RawMaterialProductId, Quantity FROM Recipes WHERE ProductId = @ProductId`);
+        .query(`
+            SELECT r.RawMaterialProductId, r.Quantity, r.UnitId, rm.StockUnitId
+            FROM Recipes r
+            JOIN Products rm ON rm.ProductId = r.RawMaterialProductId
+            WHERE r.ProductId = @ProductId
+        `);
 
     if (recipe.recordset.length > 0) {
-        return recipe.recordset.map((line) => ({
-            productId: line.RawMaterialProductId,
-            amount: Number(line.Quantity) * quantity,
-        }));
+        const targets = [];
+        for (const line of recipe.recordset) {
+            // Reçetedeki Quantity'nin girildiği birim (r.UnitId, ör. "porsiyon"
+            // ya da "kg") ile hammaddenin STOKTA tutulduğu birim (rm.StockUnitId,
+            // ör. "g") farklı olabilir — Birim Dönüşüm Sistemi (bkz.
+            // utils/unitConversion.js) bunu otomatik çevirir. r.UnitId NULL ise
+            // (eski satırlar) VEYA hammaddenin StockUnitId'si hiç ayarlanmamışsa
+            // faktör 1'dir, eski davranış aynen korunur.
+            const factor = line.StockUnitId
+                ? await resolveConversionFactor(transaction, line.RawMaterialProductId, line.UnitId, line.StockUnitId)
+                : 1;
+            targets.push({
+                productId: line.RawMaterialProductId,
+                amount: Number(line.Quantity) * factor * quantity,
+            });
+        }
+        return targets;
     }
 
     return [{ productId, amount: quantity }];

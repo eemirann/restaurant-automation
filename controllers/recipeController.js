@@ -10,15 +10,25 @@ async function getRecipeByProduct(req, res) {
         const { productId } = req.params;
         const pool = await connectDB();
 
+        // ConversionFactor: r.UnitId (girilen birim, ör. "porsiyon") ile
+        // rm.StockUnitId (hammaddenin stok birimi, ör. "ml") arasındaki oran —
+        // bkz. dbo.fn_ProductUnitFactor (inline TVF, migrations/2026_08_14_
+        // unit_conversion_system.sql). r.UnitId NULL ise (eski satırlar) 1
+        // döner, yani Quantity zaten stok birimindeymiş gibi davranılır.
         const result = await pool.request()
             .input('ProductId', sql.Int, productId)
             .query(`
                 SELECT r.RecipeId, r.ProductId, r.RawMaterialProductId,
-                       rm.Name AS RawMaterialName, r.Quantity, r.Unit,
-                       s.Quantity AS RawMaterialStock
+                       rm.Name AS RawMaterialName, r.Quantity, r.UnitId,
+                       u.Code AS UnitCode, rm.StockUnitId, su.Code AS StockUnitCode,
+                       s.Quantity AS RawMaterialStock, rm.Cost AS RawMaterialCost,
+                       f.Factor AS ConversionFactor
                 FROM Recipes r
                 JOIN Products rm ON rm.ProductId = r.RawMaterialProductId
                 LEFT JOIN Stock s ON s.ProductId = r.RawMaterialProductId
+                LEFT JOIN Units u ON u.UnitId = r.UnitId
+                LEFT JOIN Units su ON su.UnitId = rm.StockUnitId
+                OUTER APPLY dbo.fn_ProductUnitFactor(rm.ProductId, r.UnitId, rm.StockUnitId) f
                 WHERE r.ProductId = @ProductId
                 ORDER BY rm.Name ASC
             `);
@@ -32,11 +42,16 @@ async function getRecipeByProduct(req, res) {
 
 // ============================================================
 // REÇETEYE HAMMADDE SATIRI EKLE (SADECE ADMIN)
-// Body: { ProductId, RawMaterialProductId, Quantity, Unit? }
+// Body: { ProductId, RawMaterialProductId, Quantity, UnitId? }
+// UnitId: Quantity'nin girildiği birim (bkz. GET /api/units) — ör.
+// hammadde stokta "g" tutuluyorsa ama burada "kg" ya da ürüne özel
+// "porsiyon" seçilebilir, Birim Dönüşüm Sistemi otomatik çevirir (bkz.
+// utils/unitConversion.js). Belirtilmezse Quantity zaten stok biriminde
+// kabul edilir (eski davranış).
 // ============================================================
 async function addRecipeItem(req, res) {
     try {
-        const { ProductId, RawMaterialProductId, Quantity, Unit } = req.body;
+        const { ProductId, RawMaterialProductId, Quantity, UnitId } = req.body;
 
         if (!Number.isInteger(ProductId) || !Number.isInteger(RawMaterialProductId)) {
             return res.status(400).json({ error: 'ProductId ve RawMaterialProductId sayısal olmalıdır' });
@@ -46,6 +61,9 @@ async function addRecipeItem(req, res) {
         }
         if (typeof Quantity !== 'number' || Quantity <= 0) {
             return res.status(400).json({ error: 'Quantity 0\'dan büyük bir sayı olmalıdır' });
+        }
+        if (UnitId !== undefined && UnitId !== null && !Number.isInteger(UnitId)) {
+            return res.status(400).json({ error: 'UnitId sayısal olmalıdır' });
         }
 
         const pool = await connectDB();
@@ -71,11 +89,11 @@ async function addRecipeItem(req, res) {
             .input('ProductId', sql.Int, ProductId)
             .input('RawMaterialProductId', sql.Int, RawMaterialProductId)
             .input('Quantity', sql.Decimal(10, 3), Quantity)
-            .input('Unit', sql.NVarChar(20), Unit || null)
+            .input('UnitId', sql.Int, UnitId ?? null)
             .query(`
-                INSERT INTO Recipes (ProductId, RawMaterialProductId, Quantity, Unit)
+                INSERT INTO Recipes (ProductId, RawMaterialProductId, Quantity, UnitId)
                 OUTPUT INSERTED.*
-                VALUES (@ProductId, @RawMaterialProductId, @Quantity, @Unit)
+                VALUES (@ProductId, @RawMaterialProductId, @Quantity, @UnitId)
             `);
 
         res.status(201).json(result.recordset[0]);
@@ -91,29 +109,41 @@ async function addRecipeItem(req, res) {
 
 // ============================================================
 // REÇETE SATIRINI GÜNCELLE (SADECE ADMIN)
-// Body: { Quantity?, Unit? }
+// Body: { Quantity?, UnitId? }
+// UnitId'yi AÇIKÇA null göndermek "birim yok, Quantity zaten stok
+// biriminde" anlamına dönüştürür (bkz. getRecipeByProduct'taki not) —
+// bu yüzden undefined/null ayrımı özenle korunur (JSON.stringify(null)
+// body'de gerçekten "UnitId":null olarak gelir, undefined ise hiç
+// gönderilmemiş demektir).
 // ============================================================
 async function updateRecipeItem(req, res) {
     try {
         const { id } = req.params;
-        const { Quantity, Unit } = req.body;
+        const { Quantity, UnitId } = req.body;
 
         if (Quantity !== undefined && (typeof Quantity !== 'number' || Quantity <= 0)) {
             return res.status(400).json({ error: 'Quantity 0\'dan büyük bir sayı olmalıdır' });
         }
+        if (UnitId !== undefined && UnitId !== null && !Number.isInteger(UnitId)) {
+            return res.status(400).json({ error: 'UnitId sayısal olmalıdır' });
+        }
 
         const pool = await connectDB();
-        const result = await pool.request()
+        const request = pool.request()
             .input('Id', sql.Int, id)
-            .input('Quantity', sql.Decimal(10, 3), Quantity !== undefined ? Quantity : null)
-            .input('Unit', sql.NVarChar(20), Unit !== undefined ? Unit : null)
-            .query(`
-                UPDATE Recipes
-                SET Quantity = ISNULL(@Quantity, Quantity),
-                    Unit = CASE WHEN @Unit IS NULL THEN Unit ELSE @Unit END
-                OUTPUT INSERTED.*
-                WHERE RecipeId = @Id
-            `);
+            .input('Quantity', sql.Decimal(10, 3), Quantity !== undefined ? Quantity : null);
+
+        let setClause = 'Quantity = ISNULL(@Quantity, Quantity)';
+        if (UnitId !== undefined) {
+            request.input('UnitId', sql.Int, UnitId);
+            setClause += ', UnitId = @UnitId';
+        }
+
+        const result = await request.query(`
+            UPDATE Recipes SET ${setClause}
+            OUTPUT INSERTED.*
+            WHERE RecipeId = @Id
+        `);
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Reçete satırı bulunamadı' });

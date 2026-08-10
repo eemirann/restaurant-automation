@@ -7,6 +7,7 @@ const { logAudit } = require('../utils/audit');
 const { attachOrderItemOptions } = require('../utils/orderItemOptions');
 const { buildOrderInTransaction } = require('../utils/orderBuilder');
 const { HttpError } = require('../utils/httpError');
+const { toStockUnit, getPorsiyonUnitId } = require('../utils/unitConversion');
 
 // ============================================================
 // SİPARİŞ OLUŞTUR
@@ -176,16 +177,20 @@ async function cancelOrder(req, res) {
                 .input('OrderDetailsId', sql.Int, item.OrderDetailsId)
                 .query(`SELECT ExtraProductId, Quantity FROM OrderDetailExtras WHERE OrderDetailsId = @OrderDetailsId`);
 
+            const porsiyonUnitIdForCancel = await getPorsiyonUnitId(transaction);
             for (const extra of extrasResult.recordset) {
-                await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+                const extraFactor = await toStockUnit(transaction, extra.ExtraProductId, 1, porsiyonUnitIdForCancel);
+                await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity * extraFactor);
             }
 
             const syrupsResult = await new sql.Request(transaction)
                 .input('OrderDetailsId', sql.Int, item.OrderDetailsId)
                 .query(`SELECT SyrupProductId, Quantity FROM OrderDetailSyrups WHERE OrderDetailsId = @OrderDetailsId`);
 
+            const porsiyonUnitId = await getPorsiyonUnitId(transaction);
             for (const syrup of syrupsResult.recordset) {
-                await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+                const stockUnitsPerServing = await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitId);
+                await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity * stockUnitsPerServing);
             }
         }
 
@@ -415,7 +420,9 @@ async function addOrderItems(req, res) {
 
                 const extraUnitPrice = Number(extraProduct.Price);
                 unitPrice += extraUnitPrice * extra.Quantity;
-                resolvedExtras.push({ ExtraProductId: extra.ExtraProductId, Quantity: extra.Quantity, UnitPrice: extraUnitPrice });
+                const porsiyonUnitIdForAdd = await getPorsiyonUnitId(transaction);
+                const extraStockUnitsPerServing = await toStockUnit(transaction, extra.ExtraProductId, 1, porsiyonUnitIdForAdd);
+                resolvedExtras.push({ ExtraProductId: extra.ExtraProductId, Quantity: extra.Quantity, UnitPrice: extraUnitPrice, StockUnitsPerServing: extraStockUnitsPerServing });
             }
 
             // Şuruplar (Ekstralar ile birebir aynı mantık, ProductSyrups üzerinden)
@@ -444,7 +451,9 @@ async function addOrderItems(req, res) {
 
                 const syrupUnitPrice = Number(syrupProduct.Price);
                 unitPrice += syrupUnitPrice * syrup.Quantity;
-                resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice });
+                const porsiyonUnitId = await getPorsiyonUnitId(transaction);
+                const stockUnitsPerServing = await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitId);
+                resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice, StockUnitsPerServing: stockUnitsPerServing });
             }
 
             validatedItems.push({
@@ -514,7 +523,7 @@ async function addOrderItems(req, res) {
                         .input('UnitPrice', sql.Decimal(10, 2), extra.UnitPrice)
                         .query('INSERT INTO OrderDetailExtras (OrderDetailsId, ExtraProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @ExtraProductId, @Quantity, @UnitPrice)');
 
-                    const extraWarnings = await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+                    const extraWarnings = await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity * (extra.StockUnitsPerServing ?? 1));
                     lowStockWarnings.push(...extraWarnings);
                 }
 
@@ -526,7 +535,7 @@ async function addOrderItems(req, res) {
                         .input('UnitPrice', sql.Decimal(10, 2), syrup.UnitPrice)
                         .query('INSERT INTO OrderDetailSyrups (OrderDetailsId, SyrupProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @SyrupProductId, @Quantity, @UnitPrice)');
 
-                    const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+                    const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity * (syrup.StockUnitsPerServing ?? 1));
                     lowStockWarnings.push(...syrupWarnings);
                 }
             }
@@ -647,12 +656,15 @@ async function removeOrderItem(req, res) {
         // Reçetesi varsa hammaddeler, yoksa ürünün kendisi geri eklenir (BOM-farkında)
         await restoreStockForItem(transaction, item.ProductId, item.Quantity);
 
+        const porsiyonUnitIdForRemoval = await getPorsiyonUnitId(transaction);
         for (const extra of extrasResult.recordset) {
-            await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+            const extraFactor = await toStockUnit(transaction, extra.ExtraProductId, 1, porsiyonUnitIdForRemoval);
+            await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity * extraFactor);
         }
 
         for (const syrup of syrupsResult.recordset) {
-            await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+            const stockUnitsPerServing = await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitIdForRemoval);
+            await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity * stockUnitsPerServing);
         }
 
         const newTotal = Math.max(Number(order.TotalAmount) - Number(item.UnitPrice) * item.Quantity, 0);
@@ -741,6 +753,15 @@ async function updateOrderItemQuantity(req, res) {
         const item = itemResult.recordset[0];
         const diff = Quantity - item.Quantity;
 
+        // Adet AZALTMA (diff < 0) SADECE Cashier/Admin — Garson bir kalemi
+        // mutfağa/kasaya bildirildikten sonra kendi başına düşüremez (suistimal/
+        // yanlışlıkla azaltma riski). Artırma (yeni ürün ekleme etkisiyle aynı)
+        // Garson'a hâlâ açık.
+        if (diff < 0 && req.user?.role === 'Waiter') {
+            await transaction.rollback();
+            return res.status(403).json({ error: 'Adet azaltma yetkiniz yok. Kasiyer veya yöneticiye başvurun.' });
+        }
+
         // Yeni adet, kalem-bazlı ödemeyle zaten tahsil edilmiş adedin altına düşemez
         // (aksi halde RemainingQuantity negatif olur, kalan adet backend'de tutarsızlaşır).
         const paidResult = await new sql.Request(transaction)
@@ -771,11 +792,13 @@ async function updateOrderItemQuantity(req, res) {
                 .input('OrderDetailsId', sql.Int, itemId)
                 .query(`SELECT ExtraProductId, Quantity FROM OrderDetailExtras WHERE OrderDetailsId = @OrderDetailsId`);
 
+            const porsiyonUnitIdForUpdateExtra = await getPorsiyonUnitId(transaction);
             for (const extra of extrasResult.recordset) {
+                const extraFactor = await toStockUnit(transaction, extra.ExtraProductId, 1, porsiyonUnitIdForUpdateExtra);
                 if (diff > 0) {
-                    await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * diff);
+                    await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * diff * extraFactor);
                 } else {
-                    await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * -diff);
+                    await restoreStockForItem(transaction, extra.ExtraProductId, extra.Quantity * -diff * extraFactor);
                 }
             }
 
@@ -783,11 +806,13 @@ async function updateOrderItemQuantity(req, res) {
                 .input('OrderDetailsId', sql.Int, itemId)
                 .query(`SELECT SyrupProductId, Quantity FROM OrderDetailSyrups WHERE OrderDetailsId = @OrderDetailsId`);
 
+            const porsiyonUnitIdForUpdate = await getPorsiyonUnitId(transaction);
             for (const syrup of syrupsResult.recordset) {
+                const stockUnitsPerServing = await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitIdForUpdate);
                 if (diff > 0) {
-                    await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * diff);
+                    await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * diff * stockUnitsPerServing);
                 } else {
-                    await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * -diff);
+                    await restoreStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * -diff * stockUnitsPerServing);
                 }
             }
         }

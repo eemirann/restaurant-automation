@@ -1,6 +1,7 @@
 const { sql } = require('../config/db');
 const { deductStockForItem } = require('./stockDeduction');
 const { HttpError } = require('./httpError');
+const { toStockUnit, getPorsiyonUnitId } = require('./unitConversion');
 
 // ============================================================
 // Sipariş kalemlerinin (Items) şekil doğrulaması. Fiyat/stok/ekstra
@@ -237,7 +238,10 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
 
             const extraUnitPrice = Number(extraProduct.Price);
             unitPrice += extraUnitPrice * extra.Quantity;
-            resolvedExtras.push({ ExtraProductId: extra.ExtraProductId, Quantity: extra.Quantity, UnitPrice: extraUnitPrice });
+            // Şuruplarla BİREBİR AYNI mantık (bkz. utils/unitConversion.js).
+            const porsiyonUnitIdForExtra = await getPorsiyonUnitId(transaction);
+            const stockUnitsPerServing = await toStockUnit(transaction, extra.ExtraProductId, 1, porsiyonUnitIdForExtra);
+            resolvedExtras.push({ ExtraProductId: extra.ExtraProductId, Quantity: extra.Quantity, UnitPrice: extraUnitPrice, StockUnitsPerServing: stockUnitsPerServing });
         }
 
         // Şuruplar — Ekstralar ile birebir aynı mantık (ProductSyrups üzerinden
@@ -265,7 +269,14 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
 
             const syrupUnitPrice = Number(syrupProduct.Price);
             unitPrice += syrupUnitPrice * syrup.Quantity;
-            resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice });
+            // Müşterinin/garsonun seçtiği "1x, 2x..." adet PORSİYON birimindedir
+            // (bkz. utils/unitConversion.js) — Birim Dönüşüm Sistemi, ürünün Stok
+            // Birimine (Products.StockUnitId, ör. ml) göre gerçek stok tüketimini
+            // hesaplar. Ürün için StockUnitId hiç ayarlanmamışsa faktör 1'dir
+            // (eski davranış, geriye dönük uyumlu).
+            const porsiyonUnitId = await getPorsiyonUnitId(transaction);
+            const stockUnitsPerServing = (await toStockUnit(transaction, syrup.SyrupProductId, 1, porsiyonUnitId));
+            resolvedSyrups.push({ SyrupProductId: syrup.SyrupProductId, Quantity: syrup.Quantity, UnitPrice: syrupUnitPrice, StockUnitsPerServing: stockUnitsPerServing });
         }
 
         validatedItems.push({
@@ -350,7 +361,7 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
                 .input('UnitPrice', sql.Decimal(10, 2), extra.UnitPrice)
                 .query('INSERT INTO OrderDetailExtras (OrderDetailsId, ExtraProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @ExtraProductId, @Quantity, @UnitPrice)');
 
-            const extraWarnings = await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity);
+            const extraWarnings = await deductStockForItem(transaction, extra.ExtraProductId, extra.Quantity * item.Quantity * (extra.StockUnitsPerServing ?? 1));
             lowStockWarnings.push(...extraWarnings);
         }
 
@@ -363,7 +374,7 @@ async function buildOrderInTransaction(transaction, { TableId, UserId, Items, No
                 .input('UnitPrice', sql.Decimal(10, 2), syrup.UnitPrice)
                 .query('INSERT INTO OrderDetailSyrups (OrderDetailsId, SyrupProductId, Quantity, UnitPrice) VALUES (@OrderDetailsId, @SyrupProductId, @Quantity, @UnitPrice)');
 
-            const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity);
+            const syrupWarnings = await deductStockForItem(transaction, syrup.SyrupProductId, syrup.Quantity * item.Quantity * (syrup.StockUnitsPerServing ?? 1));
             lowStockWarnings.push(...syrupWarnings);
         }
     }

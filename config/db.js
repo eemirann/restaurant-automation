@@ -26,7 +26,17 @@ const dbConfig = {
     password: process.env.DB_PASSWORD,
     options: {
         encrypt: false,
-        trustServerCertificate: true
+        trustServerCertificate: true,
+        // KRİTİK: mssql/tedious varsayılanı useUTC=true'dur — yani SQL Server'dan
+        // dönen DATETIME değerlerini UTC sanıp öyle işler. Ama GETDATE() (tüm
+        // migration'larda CreatedAt/PaymentDate/vb. için kullanılıyor) sunucunun
+        // YEREL saatini döner (Türkiye, UTC+3). Bu uyuşmazlık yüzünden her
+        // tarih/saat, ekrana (toLocaleString ile yerel saate ikinci kez
+        // çevrilince) OLDUĞUNDAN ~3 SAAT İLERİ görünüyordu (ör. Denetim
+        // Günlüğü'nde giriş saati 19:49 yazıp gerçekte 16:52 olması gibi).
+        // useUTC: false ile sürücü, DB'den gelen değeri zaten yerel saat kabul
+        // eder (dönüştürmez) — GETDATE()'in gerçek davranışıyla eşleşir.
+        useUTC: false
     }
 };
 

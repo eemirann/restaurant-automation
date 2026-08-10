@@ -6,6 +6,7 @@ const num = (n) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 3 }).
 export default function Recipes() {
   const [products, setProducts] = useState([]);
   const [rawMaterials, setRawMaterials] = useState([]);
+  const [units, setUnits] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
 
@@ -16,12 +17,15 @@ export default function Recipes() {
   // Yeni satır formu
   const [rawId, setRawId] = useState('');
   const [qty, setQty] = useState('');
-  const [unit, setUnit] = useState('');
+  const [unitId, setUnitId] = useState('');
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     client.get('/products').then((r) => setProducts(r.data)).catch(() => {});
     client.get('/products', { params: { raw: 1 } }).then((r) => setRawMaterials(r.data)).catch(() => {});
+    // Birim Dönüşüm Sistemi (bkz. migrations/2026_08_14_unit_conversion_system.sql)
+    // — "Birim" artık serbest metin değil, bu listeden seçilir.
+    client.get('/units').then((r) => setUnits(r.data)).catch(() => {});
   }, []);
 
   const loadRecipe = useCallback(async (productId) => {
@@ -42,6 +46,15 @@ export default function Recipes() {
 
   const selectedProduct = products.find((p) => p.ProductId === selectedId);
 
+  // Backend'deki reportController/dashboardController ile AYNI mantık VE
+  // AYNI sayı: ConversionFactor da backend'den geliyor (dbo.fn_ProductUnitFactor),
+  // burada ayrıca hesaplanmıyor — iki yerde farklı sonuç çıkma riski yok.
+  // Reçetedeki hammaddelerden biri bile fiyatlanmamışsa (Cost=NULL) toplam
+  // maliyet de yanıltıcı olmasın diye null döner.
+  const calculatedCost = recipe.some((line) => line.RawMaterialCost == null)
+    ? null
+    : recipe.reduce((sum, line) => sum + Number(line.Quantity) * Number(line.ConversionFactor ?? 1) * Number(line.RawMaterialCost), 0);
+
   const normalizedSearch = search.trim().toLocaleLowerCase('tr-TR');
   const visibleProducts = products.filter((p) =>
     normalizedSearch ? p.Name.toLocaleLowerCase('tr-TR').includes(normalizedSearch) : true
@@ -57,9 +70,9 @@ export default function Recipes() {
         ProductId: selectedId,
         RawMaterialProductId: Number(rawId),
         Quantity: Number(qty),
-        Unit: unit.trim() || undefined,
+        UnitId: unitId ? Number(unitId) : undefined,
       });
-      setRawId(''); setQty(''); setUnit('');
+      setRawId(''); setQty(''); setUnitId('');
       await loadRecipe(selectedId);
     } catch (err) {
       setError(err.response?.data?.error || 'Satır eklenemedi.');
@@ -134,6 +147,25 @@ export default function Recipes() {
             <>
               <h2 className="font-display text-xl font-semibold text-paper mb-3">{selectedProduct?.Name} · Reçete</h2>
 
+              {!loadingRecipe && recipe.length > 0 && (
+                <div className="rounded-2xl border border-hairline bg-panel p-4 mb-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-slate mb-1">Hesaplanan Maliyet</p>
+                    {calculatedCost === null ? (
+                      <p className="font-body text-sm text-amber-500">
+                        Hesaplanamadı — bir veya daha fazla hammaddenin maliyeti (Cost) girilmemiş.
+                      </p>
+                    ) : (
+                      <p className="font-display text-2xl font-semibold text-paper">₺{num(calculatedCost)}</p>
+                    )}
+                  </div>
+                  <p className="font-mono text-[10px] text-slate max-w-xs text-right">
+                    Raporlarda ve kâr hesabında bu ürün için elle girilen Ürün Maliyeti yerine
+                    OTOMATİK olarak bu değer kullanılır.
+                  </p>
+                </div>
+              )}
+
               {error && <p className="text-ember text-sm font-medium border-l-2 border-ember pl-3 mb-4">{error}</p>}
 
               <div className="rounded-2xl border border-hairline overflow-hidden bg-panel mb-4">
@@ -142,7 +174,7 @@ export default function Recipes() {
                     <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-wide text-slate">
                       <th className="px-4 py-2.5">Hammadde</th>
                       <th className="px-4 py-2.5 w-28">Miktar</th>
-                      <th className="px-4 py-2.5 w-24">Birim</th>
+                      <th className="px-4 py-2.5 w-32">Birim</th>
                       <th className="px-4 py-2.5 text-right w-28">Stok</th>
                       <th className="px-4 py-2.5 w-12"></th>
                     </tr>
@@ -164,12 +196,23 @@ export default function Recipes() {
                             />
                           </td>
                           <td className="px-4 py-2">
-                            <input
-                              type="text" defaultValue={line.Unit || ''}
-                              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (line.Unit || '')) updateLine(line, { Unit: v }); }}
-                              placeholder="—"
-                              className="w-20 border border-hairline rounded px-2 py-1 font-mono text-sm text-paper bg-charcoal focus:outline-none focus:ring-1 focus:ring-ember"
-                            />
+                            <select
+                              defaultValue={line.UnitId ?? ''}
+                              onChange={(e) => updateLine(line, { UnitId: e.target.value ? Number(e.target.value) : null })}
+                              className="w-28 border border-hairline rounded px-2 py-1 font-mono text-xs text-paper bg-charcoal focus:outline-none focus:ring-1 focus:ring-ember"
+                            >
+                              <option value="">
+                                {line.StockUnitCode ? `stok (${line.StockUnitCode})` : 'stok birimi'}
+                              </option>
+                              {units.map((u) => (
+                                <option key={u.UnitId} value={u.UnitId}>{u.Code}</option>
+                              ))}
+                            </select>
+                            {line.UnitId && line.StockUnitCode && (
+                              <p className="font-mono text-[9px] text-slate mt-0.5">
+                                = {num(Number(line.Quantity) * Number(line.ConversionFactor ?? 1))} {line.StockUnitCode}
+                              </p>
+                            )}
                           </td>
                           <td className="px-4 py-2 text-right font-mono text-xs text-slate">{line.RawMaterialStock == null ? '—' : num(line.RawMaterialStock)}</td>
                           <td className="px-4 py-2 text-center">
@@ -201,10 +244,15 @@ export default function Recipes() {
                     <input type="number" min="0" step="0.001" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="0.000"
                       className="w-full border border-hairline rounded-lg px-3 py-2 font-mono text-sm text-paper bg-charcoal focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember" />
                   </div>
-                  <div className="w-24">
+                  <div className="w-32">
                     <label className="block font-mono text-[9px] uppercase tracking-wide text-slate/70 mb-1">Birim</label>
-                    <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="gr, ml…"
-                      className="w-full border border-hairline rounded-lg px-3 py-2 font-mono text-sm text-paper bg-charcoal focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember" />
+                    <select value={unitId} onChange={(e) => setUnitId(e.target.value)}
+                      className="w-full border border-hairline rounded-lg px-3 py-2 font-mono text-xs text-paper bg-charcoal focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember">
+                      <option value="">stok birimi</option>
+                      {units.map((u) => (
+                        <option key={u.UnitId} value={u.UnitId}>{u.Code}</option>
+                      ))}
+                    </select>
                   </div>
                   <button onClick={addLine} disabled={adding}
                     className="font-mono text-xs uppercase tracking-wide text-cream bg-ember hover:bg-ember/90 disabled:opacity-40 rounded-lg px-4 py-2 min-h-[2.5rem] transition-colors">

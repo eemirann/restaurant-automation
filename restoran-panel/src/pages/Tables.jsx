@@ -89,7 +89,7 @@ const fmtResTime = (v) => {
 // ============================================================
 // Premium masa kartı — minimal, sürükle-bırak destekli
 // ============================================================
-function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isAdmin, canManageReservation, isDragging, isDropTarget, onOpen, onPayment, onBill, onEdit, onDelete, onReserve, onCancelReservation, onDragStart, onDragOverCard, onDropCard, onDragEnd }) {
+function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isAdmin, canManageReservation, canTakePayment, isDragging, isDropTarget, onOpen, onPayment, onBill, onEdit, onDelete, onReserve, onCancelReservation, onDragStart, onDragOverCard, onDropCard, onDragEnd }) {
   const hasActiveOrder = Boolean(table.ActiveOrderId);
   const cfg = STATUS_CONFIG[table.Status] || STATUS_CONFIG.Empty;
 
@@ -169,23 +169,27 @@ function TableCard({ table, reservation, areaLabel, now, flashing, needsPay, isA
       <div className="mt-auto pt-3">
         {hasActiveOrder ? (
           <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onPayment(); }}
-              className="flex-1 flex items-center justify-center gap-2 font-mono text-sm uppercase tracking-wide text-cream
-                         bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl py-3 min-h-[3rem]
-                         shadow-sm transition-colors"
-            >
-              💳 Ödeme Al
-            </button>
+            {canTakePayment && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onPayment(); }}
+                className="flex-1 flex items-center justify-center gap-2 font-mono text-sm uppercase tracking-wide text-cream
+                           bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl py-3 min-h-[3rem]
+                           shadow-sm transition-colors"
+              >
+                💳 Ödeme Al
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onBill(); }}
               title="Fatura Görüntüle"
-              className="flex items-center justify-center font-mono text-sm text-slate border border-hairline
-                         hover:border-ember hover:text-ember rounded-xl px-3 min-h-[3rem] transition-colors"
+              className={`flex items-center justify-center font-mono text-sm text-slate border border-hairline
+                         hover:border-ember hover:text-ember rounded-xl px-3 min-h-[3rem] transition-colors ${
+                           canTakePayment ? '' : 'flex-1'
+                         }`}
             >
-              🧾
+              🧾{!canTakePayment && <span className="ml-2 uppercase tracking-wide">Fatura Görüntüle</span>}
             </button>
           </div>
         ) : table.Status === 'Reserved' ? (
@@ -302,6 +306,9 @@ export default function Tables() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
   const canManageReservation = isAdmin || user?.role === 'Cashier';
+  // Garson ödeme alamaz/hesap kapatamaz — sadece sipariş girer (bkz.
+  // routes/payment.js: backend de aynı kısıtı uyguluyor, bu sadece UI'ı gizler).
+  const canTakePayment = canManageReservation;
 
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -423,7 +430,9 @@ export default function Tables() {
   }, []);
 
   useEffect(() => {
-    client.get('/products').then((res) => setProducts(res.data)).catch(() => {});
+    // activeOnly=1: pasife alınmış ("86'lanmış") ürünler yeni sipariş
+    // ekranında hiç görünmesin (bkz. controllers/productController.js).
+    client.get('/products', { params: { activeOnly: 1 } }).then((res) => setProducts(res.data)).catch(() => {});
     client.get('/categories').then((res) => setCategories(res.data)).catch(() => {});
     fetchAreas();
   }, [fetchAreas]);
@@ -669,6 +678,7 @@ export default function Tables() {
               needsPay={needsPayment(table)}
               isAdmin={isAdmin}
               canManageReservation={canManageReservation}
+              canTakePayment={canTakePayment}
               isDragging={draggingId === table.TableId}
               isDropTarget={dragOverId === table.TableId && draggingId != null && draggingId !== table.TableId}
               onOpen={() => openDetail(table.TableId)}
@@ -799,6 +809,8 @@ export default function Tables() {
 // Masa detay paneli: aktif sipariş, elle durum değiştirme, taşı/birleştir
 // ============================================================
 function TableDetailModal({ tableId, tables, products, categories, userId, productName, initialShowTransfer = false, onClose, onChanged, onPaymentSuccess, onOrderCreated }) {
+  const { user } = useAuth();
+  const canTakePayment = ['Cashier', 'Admin'].includes(user?.role);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -938,20 +950,26 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 
           {!['Paid', 'Cancelled', 'Merged'].includes(detail.activeOrder.Status) && (
             <div className="mt-6 pt-5 border-t border-hairline">
-              <PaymentDrawer
-                order={detail.activeOrder}
-                resolveProductName={(productId) => productName(productId)}
-                tableLabel={`Masa ${detail.TableNumber}`}
-                triggerClassName="w-full flex items-center justify-center gap-2 font-mono text-base uppercase tracking-wide
-                                  text-cream bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800
-                                  rounded-sm px-6 py-4 min-h-[3.25rem] transition-colors shadow-sm"
-                triggerLabel={<><span className="text-lg leading-none">💳</span> Ödeme Al</>}
-                onPaid={async (fullyPaid) => {
-                  await load();
-                  onChanged();
-                  if (fullyPaid) onPaymentSuccess?.(detail.TableId);
-                }}
-              />
+              {canTakePayment ? (
+                <PaymentDrawer
+                  order={detail.activeOrder}
+                  resolveProductName={(productId) => productName(productId)}
+                  tableLabel={`Masa ${detail.TableNumber}`}
+                  triggerClassName="w-full flex items-center justify-center gap-2 font-mono text-base uppercase tracking-wide
+                                    text-cream bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800
+                                    rounded-sm px-6 py-4 min-h-[3.25rem] transition-colors shadow-sm"
+                  triggerLabel={<><span className="text-lg leading-none">💳</span> Ödeme Al</>}
+                  onPaid={async (fullyPaid) => {
+                    await load();
+                    onChanged();
+                    if (fullyPaid) onPaymentSuccess?.(detail.TableId);
+                  }}
+                />
+              ) : (
+                <p className="font-mono text-xs text-slate text-center py-2">
+                  Ödeme almak için kasiyer veya yöneticiye başvurun.
+                </p>
+              )}
             </div>
           )}
         </>
@@ -988,6 +1006,12 @@ function TableDetailModal({ tableId, tables, products, categories, userId, produ
 // ============================================================
 function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, products, categories, tableLabel, onOrdered, onError }) {
   const { ProductOptionsPopupEnabled, KitchenAutoPrintEnabled, PrinterPaperWidth, KitchenPrinterName } = useSettings();
+  // Garson gönderilmiş bir kalemin adedini azaltamaz/çıkaramaz (bkz. backend:
+  // orderController.updateOrderItemQuantity + routes/orders.js) — sadece
+  // artırabilir/yeni ürün ekleyebilir. Bu, sadece UI'ı gizler; asıl kısıt
+  // sunucuda.
+  const { user } = useAuth();
+  const canDecreaseItem = ['Cashier', 'Admin'].includes(user?.role);
   // { [ProductId]: { quantity, extras: { [ExtraProductId]: quantity }, syrups: { [SyrupProductId]: quantity } } }
   const [cart, setCart] = useState({});
   const [activeCategoryId, setActiveCategoryId] = useState('all');
@@ -1536,16 +1560,18 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                         )}
                         {/* 2. satır: dokunmatik adet kontrolü (44×44) + çıkar */}
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            aria-label="Adet azalt"
-                            onClick={() => changeExistingItemQuantity(item, -1)}
-                            className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal
-                                       border border-hairline rounded-sm select-none touch-manipulation disabled:opacity-30 transition-colors"
-                          >
-                            −
-                          </button>
+                          {canDecreaseItem && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              aria-label="Adet azalt"
+                              onClick={() => changeExistingItemQuantity(item, -1)}
+                              className="w-11 h-11 flex items-center justify-center font-mono text-base text-slate hover:text-ember active:bg-charcoal
+                                         border border-hairline rounded-sm select-none touch-manipulation disabled:opacity-30 transition-colors"
+                            >
+                              −
+                            </button>
+                          )}
                           <span className="font-mono text-sm text-paper w-6 text-center tabular-nums">{item.Quantity}</span>
                           <button
                             type="button"
@@ -1560,17 +1586,19 @@ function TableOrderCart({ tableId, existingOrderId, existingOrder, userId, produ
                           <span className="font-mono text-[10px] text-slate ml-1 truncate">
                             {money(item.UnitPrice)} / adet
                           </span>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => removeExistingItem(item)}
-                            title="Siparişten çıkar"
-                            aria-label="Siparişten çıkar"
-                            className="w-11 h-11 ml-auto shrink-0 flex items-center justify-center font-mono text-xs text-slate hover:text-ember
-                                       touch-manipulation disabled:opacity-30 transition-colors"
-                          >
-                            ✕
-                          </button>
+                          {canDecreaseItem && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => removeExistingItem(item)}
+                              title="Siparişten çıkar"
+                              aria-label="Siparişten çıkar"
+                              className="w-11 h-11 ml-auto shrink-0 flex items-center justify-center font-mono text-xs text-slate hover:text-ember
+                                         touch-manipulation disabled:opacity-30 transition-colors"
+                            >
+                              ✕
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -2190,6 +2218,8 @@ function ReservationFormModal({ table, onClose, onSubmit }) {
 // Hızlı ödeme — masa kartındaki 💳 butonu için.
 // ============================================================
 function QuickPaymentModal({ tableId, productName, onClose, onFullyPaid }) {
+  const { user } = useAuth();
+  const canTakePayment = ['Cashier', 'Admin'].includes(user?.role);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -2206,6 +2236,22 @@ function QuickPaymentModal({ tableId, productName, onClose, onFullyPaid }) {
   }, [tableId]);
 
   if (loading) return null;
+
+  if (!canTakePayment) {
+    return (
+      <div className="fixed inset-0 bg-ink/40 flex items-center justify-center px-4 z-50" onClick={onClose}>
+        <div className="bg-panel rounded-sm border border-hairline w-full max-w-sm p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <p className="text-slate text-sm font-medium mb-4">Ödeme almak için kasiyer veya yöneticiye başvurun.</p>
+          <button
+            onClick={onClose}
+            className="font-mono text-xs uppercase tracking-wide text-slate hover:text-paper border border-hairline rounded-sm px-4 py-2"
+          >
+            Kapat
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (error || !detail?.activeOrder) {
     return (

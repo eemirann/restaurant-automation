@@ -17,9 +17,11 @@ const initials = (fullName) =>
     .toUpperCase();
 
 export default function Login() {
-  // Varsayılan giriş yöntemi kullanıcı adı + şifre. PIN, tablet/kasa için
-  // ikincil yol olarak duruyor ('PIN ile giriş' bağlantısı).
-  const [mode, setMode] = useState('password');
+  // Varsayılan giriş yöntemi PIN — POS/tablet kullanımında personel her
+  // seferinde kullanıcı adı+şifre yazmak yerine kartından seçip 4 haneli
+  // PIN girsin diye. Şifre ile giriş hâlâ mevcut, ikincil yol olarak
+  // duruyor ('Kullanıcı adı & şifre ile giriş' bağlantısı).
+  const [mode, setMode] = useState('pin');
   const { login, loginWithPin, error, loading } = useAuth();
   const { RestaurantName, LogoUrl } = useSettings();
   const navigate = useNavigate();

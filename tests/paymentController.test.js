@@ -18,10 +18,13 @@ const adminToken = tokenFor('Admin');
 afterEach(() => fakeDb.__reset());
 
 describe('POST /api/payments - doğrulama', () => {
+    // Doğrulama testleri Cashier token'ıyla yapılır (Waiter route seviyesinde
+    // zaten engelleniyor, bkz. aşağıdaki "yetki" describe bloğu — burada asıl
+    // test edilen Amount/PaymentMethod doğrulaması, rol kısıtı değil).
     test('OrderId veya PaymentMethod eksikse 400 döner', async () => {
         const res = await request(app)
             .post('/api/payments')
-            .set('Authorization', `Bearer ${waiterToken}`)
+            .set('Authorization', `Bearer ${cashierToken}`)
             .send({ Amount: 10 });
         expect(res.status).toBe(400);
     });
@@ -29,7 +32,7 @@ describe('POST /api/payments - doğrulama', () => {
     test('Amount negatifse ve Items yoksa 400 döner', async () => {
         const res = await request(app)
             .post('/api/payments')
-            .set('Authorization', `Bearer ${waiterToken}`)
+            .set('Authorization', `Bearer ${cashierToken}`)
             .send({ OrderId: 1, PaymentMethod: 'Cash', Amount: -5 });
         expect(res.status).toBe(400);
     });
@@ -37,7 +40,7 @@ describe('POST /api/payments - doğrulama', () => {
     test('geçersiz PaymentMethod 400 döner', async () => {
         const res = await request(app)
             .post('/api/payments')
-            .set('Authorization', `Bearer ${waiterToken}`)
+            .set('Authorization', `Bearer ${cashierToken}`)
             .send({ OrderId: 1, PaymentMethod: 'Bitcoin', Amount: 10 });
         expect(res.status).toBe(400);
     });
@@ -53,6 +56,19 @@ describe('POST /api/payments - doğrulama', () => {
     test('token yoksa 401 döner', async () => {
         const res = await request(app).post('/api/payments').send({ OrderId: 1, PaymentMethod: 'Cash', Amount: 10 });
         expect(res.status).toBe(401);
+    });
+});
+
+describe('POST /api/payments - yetki (Garson ödeme alamaz)', () => {
+    // Cashier'ın normal ödeme alabildiği zaten yukarıdaki "kalem bazlı tutar
+    // hesaplama" testinde (201 dönüyor) kanıtlanıyor — burada sadece Waiter'ın
+    // engellendiğini doğrulamak yeterli.
+    test('Waiter, geçerli bir ödeme isteğinde bile 403 alır (route seviyesinde requireRole)', async () => {
+        const res = await request(app)
+            .post('/api/payments')
+            .set('Authorization', `Bearer ${waiterToken}`)
+            .send({ OrderId: 1, PaymentMethod: 'Cash', Amount: 10 });
+        expect(res.status).toBe(403);
     });
 });
 
@@ -90,7 +106,7 @@ describe('POST /api/payments - kalem bazlı (Items) tutar hesaplama', () => {
 
         const res = await request(app)
             .post('/api/payments')
-            .set('Authorization', `Bearer ${waiterToken}`)
+            .set('Authorization', `Bearer ${cashierToken}`)
             .send({ OrderId: 1, PaymentMethod: 'Cash', Items: [{ OrderDetailsId: 1, Quantity: 2 }] });
 
         expect(res.status).toBe(201);

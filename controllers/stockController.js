@@ -2,6 +2,31 @@ const { sql, connectDB } = require('../config/db');
 const { logAudit } = require('../utils/audit');
 
 // ============================================================
+// BİR ÜRÜNÜN STOK DURUMU (varsa) — ProductModal.jsx'teki "Stok Takibi"
+// düğmesi için. Menü ürünleri VARSAYILAN OLARAK stokta izlenmez (bkz.
+// controllers/productController.js: getAllProducts raw=stockable notu) —
+// bu uç, dolapta/hazır bekleyen (soğuk içecek gibi) belirli bir ürünü
+// İSTEĞE BAĞLI olarak stoğa bağlamak/durumunu görmek için var.
+// ============================================================
+async function getStockByProduct(req, res) {
+    try {
+        const { productId } = req.params;
+        const pool = await connectDB();
+        const result = await pool.request()
+            .input('ProductId', sql.Int, productId)
+            .query(`SELECT StockId, ProductId, Quantity, MinStockLevel, IsTracked FROM Stock WHERE ProductId = @ProductId`);
+
+        if (result.recordset.length === 0) {
+            return res.status(200).json(null);
+        }
+        res.status(200).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Ürünün stok durumu getirilirken hata:', err);
+        res.status(500).json({ error: 'Stok durumu getirilemedi' });
+    }
+}
+
+// ============================================================
 // TÜM STOK KALEMLERİNİ LİSTELE (ürün adıyla birlikte)
 // ============================================================
 async function getAllStock(req, res) {
@@ -9,7 +34,8 @@ async function getAllStock(req, res) {
         const pool = await connectDB();
         const result = await pool.request().query(`
             SELECT s.StockId, s.ProductId, p.Name AS ProductName,
-                   s.Quantity, s.MinStockLevel, s.IsTracked, s.UpdatedAt
+                   s.Quantity, s.MinStockLevel, s.IsTracked, s.UpdatedAt,
+                   p.IsSyrup, p.IsExtra, p.Price
             FROM Stock s
             JOIN Products p ON p.ProductId = s.ProductId
             ORDER BY p.Name ASC
@@ -413,7 +439,82 @@ async function recordStockPurchase(req, res) {
     }
 }
 
+// ============================================================
+// STOK KALEMİNİ ŞURUP/EKSTRA OLARAK İŞARETLE (SADECE ADMIN)
+// Stok sayfasından, ürünün kendisini (Products.IsSyrup/IsExtra) değiştirir
+// — Şuruplar/Ekstralar sayfasından AYRI bir kayıt AÇMAZ, aynı stok kaydına
+// bağlı ürün doğrudan güncellenir (bkz. syrupController.createSyrup'taki
+// "var olanı bağla" mantığıyla aynı amaç, burada tersinden: zaten stoğu
+// olan bir ürünü şurup/ekstra yapmak).
+// Body: { IsSyrup, IsExtra, Price } — Price, en az biri açılıyorsa (ekstra
+// ücret için) zorunludur.
+// ============================================================
+async function setStockItemType(req, res) {
+    try {
+        const { id } = req.params;
+        const { IsSyrup, IsExtra, Price } = req.body;
+
+        if (typeof IsSyrup !== 'boolean' || typeof IsExtra !== 'boolean') {
+            return res.status(400).json({ error: 'IsSyrup ve IsExtra boolean olmalıdır' });
+        }
+        if ((IsSyrup || IsExtra) && (typeof Price !== 'number' || Price < 0)) {
+            return res.status(400).json({ error: 'Şurup/Ekstra olarak işaretlerken negatif olmayan bir Fiyat girilmelidir' });
+        }
+
+        const pool = await connectDB();
+
+        const stockResult = await pool.request()
+            .input('StockId', sql.Int, id)
+            .query(`SELECT ProductId FROM Stock WHERE StockId = @StockId`);
+
+        if (stockResult.recordset.length === 0) {
+            return res.status(404).json({ error: 'Stok kalemi bulunamadı' });
+        }
+        const productId = stockResult.recordset[0].ProductId;
+
+        // Açılan bayrağa göre uygun kategoriye taşınır (Şurup > Ekstra
+        // önceliğiyle — ikisi birden açıksa Şurup kategorisi kullanılır).
+        // İkisi de kapatılıyorsa kategori DOKUNULMAZ (Hammadde'ye zorla
+        // geri atmak, kullanıcının elle seçtiği başka bir kategoriyi bozabilir).
+        let categoryId = null;
+        if (IsSyrup || IsExtra) {
+            const categoryName = IsSyrup ? 'Şurup' : 'Ekstra';
+            const categoryResult = await pool.request()
+                .input('CategoryName', sql.NVarChar(50), categoryName)
+                .query(`SELECT TOP 1 CategoryId FROM Categories WHERE Name = @CategoryName`);
+            if (categoryResult.recordset.length === 0) {
+                return res.status(500).json({ error: `"${categoryName}" kategorisi bulunamadı, migration çalıştırılmamış olabilir` });
+            }
+            categoryId = categoryResult.recordset[0].CategoryId;
+        }
+
+        const request = pool.request()
+            .input('ProductId', sql.Int, productId)
+            .input('IsSyrup', sql.Bit, IsSyrup ? 1 : 0)
+            .input('IsExtra', sql.Bit, IsExtra ? 1 : 0);
+
+        let setClause = 'IsSyrup = @IsSyrup, IsExtra = @IsExtra';
+        if (IsSyrup || IsExtra) {
+            request.input('Price', sql.Decimal(10, 2), Price);
+            request.input('CategoryId', sql.Int, categoryId);
+            setClause += ', Price = @Price, CategoryId = @CategoryId';
+        }
+
+        const result = await request.query(`
+            UPDATE Products SET ${setClause}
+            OUTPUT INSERTED.ProductId, INSERTED.Name, INSERTED.IsSyrup, INSERTED.IsExtra, INSERTED.Price
+            WHERE ProductId = @ProductId
+        `);
+
+        res.status(200).json(result.recordset[0]);
+    } catch (err) {
+        console.error('Stok kalemi türü güncellenirken hata:', err);
+        res.status(500).json({ error: 'Stok kalemi türü güncellenemedi' });
+    }
+}
+
 module.exports = {
+    getStockByProduct,
     getAllStock,
     createStockItem,
     updateStockItem,
@@ -422,5 +523,6 @@ module.exports = {
     increaseStock,
     decreaseStock,
     getAllStockMovements,
-    recordStockPurchase
+    recordStockPurchase,
+    setStockItemType
 };

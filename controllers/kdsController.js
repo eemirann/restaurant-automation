@@ -8,7 +8,11 @@ const PREP_STATUSES = ['New', 'Preparing', 'Ready', 'Served'];
 // Aktif siparişlerdeki (Paid/Cancelled/Merged olmayan) ve henüz
 // hazırlanmamış (New/Preparing) kalemleri, en eski önce olacak
 // şekilde masa/ürün/not bilgisiyle listeler.
-// Opsiyonel: ?status=all -> Ready dahil tüm aktif kalemleri getirir.
+// Opsiyonel: ?status=all -> Ready VE Served dahil, ÖDEME ALINANA KADAR
+// (o.Status NOT IN Paid/Cancelled/Merged zaten bunu garanti ediyor) tüm
+// kalemleri getirir — garson/kasiyer "hazır mı, servis edildi mi" diye
+// buradan takip edebilsin diye Served kaleme ekranından tamamen
+// kaybolmaz, sadece ödeme alınınca (Orders.Status='Paid') düşer.
 // ============================================================
 async function getQueue(req, res) {
     try {
@@ -16,7 +20,7 @@ async function getQueue(req, res) {
         const pool = await connectDB();
 
         const statusFilter = showAll
-            ? `od.PrepStatus IN ('New','Preparing','Ready')`
+            ? `od.PrepStatus IN ('New','Preparing','Ready','Served')`
             : `od.PrepStatus IN ('New','Preparing')`;
 
         const result = await pool.request().query(`

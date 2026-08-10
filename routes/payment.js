@@ -10,9 +10,9 @@ const {
     refundPayment
 } = require('../controllers/paymentController');
 
-// Giriş yapmış herkes erişebilir (Garson, Kasiyer, Yönetici - normal ödeme akışı)
-// Not: İndirim (DiscountAmount) uygulama kontrolü controller içinde role göre yapılıyor
-router.post('/', verifyToken, createPayment);
+// SADECE KASİYER/YÖNETİCİ ödeme alabilir — Garson hesabı göremez/kapatamaz,
+// sadece sipariş girer. (Daha önce herkese açıktı, bilerek kısıtlandı.)
+router.post('/', verifyToken, requireRole('Cashier', 'Admin'), createPayment);
 router.get('/order/:orderId', verifyToken, getPaymentsByOrder);
 router.get('/order/:orderId/balance', verifyToken, getOrderBalance);
 

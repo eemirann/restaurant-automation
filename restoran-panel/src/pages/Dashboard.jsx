@@ -38,6 +38,16 @@ const ACCENT_STYLES = {
 // Layout.jsx'teki SIDEBAR_COLLAPSED_KEY ile aynı desen (localStorage, JSON dizi).
 const DASHBOARD_WIDGETS_KEY = 'dashboardWidgets';
 const DEFAULT_WIDGET_IDS = ['revenue', 'orders', 'avgTicket', 'occupancy', 'lowStock', 'totalProducts'];
+
+// "En Çok Satan Ürünler" tarih ön ayarları — 'all' seçiliyken from/to hiç
+// gönderilmez (backend'in eski, tüm-zamanlar davranışı).
+const toISODate = (d) => d.toISOString().slice(0, 10);
+const BEST_SELLING_PRESETS = [
+  { key: 'today', label: 'Bugün', range: () => { const d = new Date(); return { from: toISODate(d), to: toISODate(d) }; } },
+  { key: '7d', label: 'Son 7 Gün', range: () => { const to = new Date(); const from = new Date(); from.setDate(from.getDate() - 6); return { from: toISODate(from), to: toISODate(to) }; } },
+  { key: '30d', label: 'Son 30 Gün', range: () => { const to = new Date(); const from = new Date(); from.setDate(from.getDate() - 29); return { from: toISODate(from), to: toISODate(to) }; } },
+  { key: 'all', label: 'Tüm Zamanlar', range: () => ({ from: null, to: null }) },
+];
 const WIDGET_LABELS = {
   revenue: 'Günlük Ciro',
   orders: 'Bugünkü Sipariş',
@@ -104,17 +114,35 @@ export default function Dashboard() {
   const liveTime = new Date(clockNow).toLocaleTimeString('tr-TR');
   const liveDate = new Date(clockNow).toLocaleDateString('tr-TR', { weekday: 'long', day: '2-digit', month: 'long' });
 
+  // "En Çok Satan Ürünler" için seçili tarih ön ayarı — varsayılan 'all'
+  // (eski davranış: tüm zamanlar), böylece mevcut kurulumlarda görünüm
+  // aniden değişmez. Ref, canlı-veri (socket) tazelemesinin en son seçilen
+  // ön ayarı kullanmasını garantiler (effect closure'ı state'i değil ref'i okur).
+  const [bestSellingPreset, setBestSellingPreset] = useState('all');
+  const bestSellingPresetRef = useRef('all');
+  useEffect(() => { bestSellingPresetRef.current = bestSellingPreset; }, [bestSellingPreset]);
+
   const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await client.get('/dashboard');
+      const { from, to } = BEST_SELLING_PRESETS.find((p) => p.key === bestSellingPresetRef.current).range();
+      const params = {};
+      if (from) params.bestSellingFrom = from;
+      if (to) params.bestSellingTo = to;
+      const res = await client.get('/dashboard', { params });
       setData(res.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Dashboard verileri getirilemedi.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const changeBestSellingPreset = (preset) => {
+    setBestSellingPreset(preset);
+    bestSellingPresetRef.current = preset;
+    fetchData();
   };
 
   useEffect(() => {
@@ -473,7 +501,26 @@ export default function Dashboard() {
       )}
 
       {/* En Çok Satan Ürünler */}
-      <Panel title="En Çok Satan Ürünler" className="mb-8">
+      <Panel
+        title="En Çok Satan Ürünler"
+        className="mb-8"
+        action={
+          <div className="flex gap-1">
+            {BEST_SELLING_PRESETS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => changeBestSellingPreset(p.key)}
+                disabled={loading}
+                className={`font-mono text-[10px] uppercase tracking-wide px-2.5 py-1.5 rounded-md border transition-colors disabled:opacity-50 ${
+                  bestSellingPreset === p.key ? 'border-ember bg-ember/10 text-ember font-semibold' : 'border-hairline text-slate hover:text-paper'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        }
+      >
         {!data ? (
           <p className="text-slate font-mono text-sm">Yükleniyor...</p>
         ) : data.bestSellingProducts.length === 0 ? (

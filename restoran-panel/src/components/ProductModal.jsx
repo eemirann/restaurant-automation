@@ -31,6 +31,49 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
   const [selectedExtras, setSelectedExtras] = useState(new Map());
   const [selectedSyrups, setSelectedSyrups] = useState(new Map());
 
+  // Stok Takibi — VARSAYILAN KAPALI: menü ürünleri normalde stokta hiç
+  // görünmez (reçete/hammadde bazlı takip edilir). Ama dolapta hazır
+  // bekleyen (ör. şişe/kutu soğuk içecek gibi reçetesiz satılan) ürünler
+  // için bu düğmeyle İSTEĞE BAĞLI olarak açılabilir (bkz. controllers/
+  // stockController.js: getStockByProduct/createStockItem).
+  const [stockInfo, setStockInfo] = useState(null); // { StockId, Quantity, IsTracked } | null
+  const [stockLoading, setStockLoading] = useState(false);
+  const [stockToggling, setStockToggling] = useState(false);
+  const [stockError, setStockError] = useState('');
+
+  useEffect(() => {
+    if (!productId) return;
+    setStockLoading(true);
+    client
+      .get(`/stock/product/${productId}`)
+      .then((res) => setStockInfo(res.data))
+      .catch(() => setStockInfo(null))
+      .finally(() => setStockLoading(false));
+  }, [productId]);
+
+  const stockTracked = !!stockInfo && stockInfo.IsTracked;
+
+  const toggleStockTracking = async () => {
+    setStockError('');
+    setStockToggling(true);
+    try {
+      if (stockTracked) {
+        await client.delete(`/stock/${stockInfo.StockId}`);
+        setStockInfo({ ...stockInfo, IsTracked: false });
+      } else if (stockInfo) {
+        await client.patch(`/stock/${stockInfo.StockId}/reactivate`);
+        setStockInfo({ ...stockInfo, IsTracked: true });
+      } else {
+        const res = await client.post('/stock', { ProductId: productId, Quantity: 0, MinStockLevel: 5 });
+        setStockInfo({ StockId: res.data.StockId, Quantity: res.data.Quantity, IsTracked: true });
+      }
+    } catch (err) {
+      setStockError(err.response?.data?.error || 'Stok takibi değiştirilemedi.');
+    } finally {
+      setStockToggling(false);
+    }
+  };
+
   useEffect(() => {
     if (!productId) return;
     setOptionsLoading(true);
@@ -274,6 +317,46 @@ export default function ProductModal({ title, initial, categories, onClose, onSu
               />
             </div>
           </div>
+
+          {productId ? (
+            <div className="border border-hairline rounded-sm px-3 py-3 bg-hairline/20">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-xs uppercase tracking-wide text-paper">📦 Stok Takibi</p>
+                  <p className="font-mono text-[11px] text-slate mt-0.5">
+                    Kapalıysa bu ürün stokta hiç görünmez (reçeteyle takip edilir). Dolapta hazır bekleyen,
+                    reçetesiz satılan ürünler (ör. şişe/kutu soğuk içecek) için açabilirsiniz.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleStockTracking}
+                  disabled={stockLoading || stockToggling}
+                  role="switch"
+                  aria-checked={stockTracked}
+                  className={`relative w-10 h-6 rounded-full transition-colors shrink-0 disabled:opacity-50 ${
+                    stockTracked ? 'bg-ember' : 'bg-hairline'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-cream shadow-sm transition-transform ${
+                      stockTracked ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+              {stockTracked && (
+                <p className="font-mono text-[11px] text-moss mt-2">
+                  Açık — mevcut adet: {stockInfo?.Quantity ?? 0}. Adedi değiştirmek için Stok sayfasını kullanın.
+                </p>
+              )}
+              {stockError && <p className="text-ember text-xs font-medium mt-2">{stockError}</p>}
+            </div>
+          ) : (
+            <p className="font-mono text-[11px] text-slate bg-hairline/60 border border-hairline rounded-sm px-3 py-2">
+              Stok takibi için önce ürünü kaydedin, ardından tekrar düzenleyin.
+            </p>
+          )}
 
           <label className="flex items-center gap-2 cursor-pointer">
             <input

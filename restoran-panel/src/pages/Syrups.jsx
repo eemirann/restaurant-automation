@@ -132,6 +132,7 @@ export default function Syrups() {
               <tr className="bg-hairline/60 border-b border-hairline text-left font-mono text-[10px] uppercase tracking-widest text-slate">
                 <th className="px-5 py-3">Ad</th>
                 <th className="px-5 py-3">Ekstra Ücret</th>
+                <th className="px-5 py-3">Porsiyon Tüketimi</th>
                 <th className="px-5 py-3">Stok</th>
                 <th className="px-5 py-3">Durum</th>
                 <th className="px-5 py-3 text-right">İşlemler</th>
@@ -145,6 +146,9 @@ export default function Syrups() {
                   <tr key={syrup.ProductId} className="border-b border-hairline last:border-b-0 hover:bg-hairline/30">
                     <td className="px-5 py-3 text-paper font-medium">{syrup.Name}</td>
                     <td className="px-5 py-3 font-mono text-paper">{money(syrup.Price)}</td>
+                    <td className="px-5 py-3 font-mono text-slate">
+                      {syrup.ServingSize ? `1 porsiyon = ${syrup.ServingSize} birim` : '1 porsiyon = 1 birim (varsayılan)'}
+                    </td>
                     <td className="px-5 py-3 font-mono text-slate">
                       {hasStock ? `${syrup.StockQuantity}` : '— takip edilmiyor'}
                     </td>
@@ -198,6 +202,7 @@ export default function Syrups() {
 function SyrupFormModal({ syrup, onClose, onSaved }) {
   const [name, setName] = useState(syrup?.Name || '');
   const [price, setPrice] = useState(syrup?.Price ?? '');
+  const [servingSize, setServingSize] = useState(syrup?.ServingSize ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -207,13 +212,15 @@ function SyrupFormModal({ syrup, onClose, onSaved }) {
 
     if (!name.trim()) { setError('Şurup adı zorunludur.'); return; }
     if (price === '' || Number(price) < 0) { setError('Fiyat negatif olmayan bir sayı olmalıdır.'); return; }
+    if (servingSize !== '' && Number(servingSize) <= 0) { setError('Porsiyon başına tüketim 0\'dan büyük olmalıdır.'); return; }
 
     setSubmitting(true);
     try {
+      const body = { Name: name.trim(), Price: Number(price), ServingSize: servingSize === '' ? null : Number(servingSize) };
       if (syrup) {
-        await client.put(`/syrups/${syrup.ProductId}`, { Name: name.trim(), Price: Number(price) });
+        await client.put(`/syrups/${syrup.ProductId}`, body);
       } else {
-        await client.post('/syrups', { Name: name.trim(), Price: Number(price) });
+        await client.post('/syrups', body);
       }
       onSaved();
     } catch (err) {
@@ -275,6 +282,28 @@ function SyrupFormModal({ syrup, onClose, onSaved }) {
               className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
                          focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
             />
+          </div>
+
+          <div>
+            <label className="block font-mono text-xs uppercase tracking-wide text-slate mb-1.5">
+              1 Porsiyon Kaç Stok Birimi Tüketir? (opsiyonel)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.001"
+              value={servingSize}
+              onChange={(e) => setServingSize(e.target.value)}
+              placeholder="ör. 15 (stok ml ise, 1 pompa = 15 ml)"
+              className="w-full border border-hairline rounded-sm px-3 py-2.5 font-mono text-paper bg-panel
+                         focus:outline-none focus:ring-2 focus:ring-ember/40 focus:border-ember"
+            />
+            <p className="font-mono text-[11px] text-slate mt-1.5">
+              Boş bırakılırsa 1 porsiyon = 1 stok birimi sayılır (eski davranış). Stok ml/gr
+              tutuluyorsa ve müşteri "1 pompa" seçtiğinde stoktan gerçek ml düşmesini
+              istiyorsanız buraya o miktarı girin — sipariş ekranında hâlâ "1 adet" görünür,
+              sadece stoktan doğru miktar düşer.
+            </p>
           </div>
 
           {!syrup && (

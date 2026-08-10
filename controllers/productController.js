@@ -5,15 +5,35 @@ const { logAudit } = require('../utils/audit');
 // ürünler varsayılan olarak listelenmez — hammaddeler Stok modülünden eklenen
 // envanter malzemeleridir, ekstralar/şuruplar ise /api/extras ve /api/syrups'tan
 // yönetilen eklentilerdir; hiçbiri menüde/POS ürün listesinde ayrı bir "ürün"
-// gibi görünmemeli. Opsiyonel ?raw parametresi (reçete/BOM ekranı için):
-//   raw=1   -> yalnızca hammaddeler
-//   raw=all -> hepsi (menü + hammadde + ekstra + şurup)
+// gibi görünmemeli. Opsiyonel ?raw parametresi:
+//   raw=1          -> yalnızca hammaddeler
+//   raw=stockable  -> stokta izlenebilecek her şey (hammadde+ekstra+şurup,
+//                     menü ürünleri HARİÇ) — Stok sayfasının "Yeni Stok
+//                     Kalemi" seçicisi bunu kullanır. Satılan bitmiş bir
+//                     menü ürününün (ör. "Cappuccino") doğrudan stok
+//                     kalemi olarak seçilmesi kavramsal olarak yanlıştı —
+//                     stok, ürünlerde KULLANILAN malzemeleri (reçete/
+//                     ekstra/şurup) takip eder, satılan ürünün kendisini değil.
+//   raw=all        -> hepsi (menü + hammadde + ekstra + şurup) — reçete/BOM
+//                     ekranı, hammaddeyi menüden de arayabilmeli
+//
+// Opsiyonel ?activeOnly=1: SADECE IsActive=1 döner. Bilerek varsayılan
+// DEĞİL — Orders.jsx/Payments.jsx gibi geçmiş kayıt ekranları, artık pasife
+// alınmış bir ürünün adını hâlâ çözebilmek için TÜM ürünlere ihtiyaç duyar.
+// Sadece yeni sipariş kurulan ekranlar (ör. Tables.jsx) bunu gönderir —
+// pasife alınmış ("86'lanmış") bir ürün garson tarafından yeni sipariş
+// olarak hâlâ seçilebilir görünmesin diye.
 async function getAllProducts(req, res) {
     try {
-        const { raw } = req.query;
+        const { raw, activeOnly } = req.query;
         let where = 'WHERE IsRawMaterial = 0 AND IsExtra = 0 AND IsSyrup = 0';
         if (raw === '1' || raw === 'true') where = 'WHERE IsRawMaterial = 1';
+        else if (raw === 'stockable') where = 'WHERE IsRawMaterial = 1 OR IsExtra = 1 OR IsSyrup = 1';
         else if (raw === 'all') where = '';
+
+        if (activeOnly === '1' || activeOnly === 'true') {
+            where += where ? ' AND IsActive = 1' : 'WHERE IsActive = 1';
+        }
 
         const pool = await connectDB();
         const result = await pool.request().query(`SELECT * FROM Products ${where}`);
